@@ -91,7 +91,7 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
                 }
             },
             2 => {
-                let mut diff_ms: usize = 0;
+                let mut diff_us: usize = 0;
                 // debug!("Command 2 inceput");
                 let res = self
                     .app
@@ -109,11 +109,12 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
                             diff = new.wrapping_sub(last_value);
                         }
 
-                        diff_ms = ((diff.into_u32() * 1000000)/ Freq16KHz::frequency()) as usize;
+                        // microseconds
+                        diff_us = ((diff.into_u32() * 1000000)/ Freq16KHz::frequency()) as usize;
 
                         // debug!("Command 2, diff_ms: {:?}", diff_ms);
                         // debug!("Command 2, new: {:?}", new.into_usize());
-                        td.callback.schedule(0, new.into_usize(), diff_ms);
+                        td.callback.schedule(0, new.into_usize(), diff_us);
                     })
                     .map_err(ErrorCode::from);
 
