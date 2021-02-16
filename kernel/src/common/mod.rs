@@ -44,3 +44,7 @@ pub mod cells {
     pub use tock_cells::take_cell::TakeCell;
     pub use tock_cells::volatile_cell::VolatileCell;
 }
+
+pub mod byteorder {
+    pub use byteorder::{ByteOrder, LittleEndian, BigEndian};
+}

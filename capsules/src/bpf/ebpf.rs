@@ -17,8 +17,12 @@
 //! To learn more about these instructions, see the Linux kernel documentation:
 //! <https://www.kernel.org/doc/Documentation/networking/filter.txt>, or for a shorter version of
 //! the list of the operation codes: <https://github.com/iovisor/bpf-docs/blob/master/eBPF.md>
+#![feature(alloc)]
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::vec;
 
-use byteorder::{ByteOrder, LittleEndian};
+use kernel::common::byteorder::{ByteOrder, LittleEndian};
 
 /// Maximum number of instructions in an eBPF program.
 pub const PROG_MAX_INSNS: usize = 4096;

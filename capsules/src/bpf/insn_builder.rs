@@ -6,7 +6,11 @@
 
 //! Module provides API to create eBPF programs by Rust programming language
 
-use ebpf::*;
+#![feature(alloc)]
+use crate::bpf::ebpf::*;
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::vec;
 
 /// Represents single eBPF instruction
 pub trait Instruction: Sized {
@@ -338,7 +342,7 @@ pub struct Move<'i> {
 
 impl<'i> Move<'i> {
     /// push MOV instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -406,7 +410,7 @@ pub struct SwapBytes<'i> {
 
 impl<'i> SwapBytes<'i> {
     /// push bytes swap instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -447,7 +451,7 @@ pub struct Load<'i> {
 
 impl<'i> Load<'i> {
     /// push LOAD instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -480,7 +484,7 @@ pub struct Store<'i> {
 
 impl<'i> Store<'i> {
     /// push STORE instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -533,7 +537,7 @@ pub struct Jump<'i> {
 
 impl<'i> Jump<'i> {
     /// push JMP instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -593,7 +597,7 @@ pub struct FunctionCall<'i> {
 
 impl<'i> FunctionCall<'i> {
     /// push CALL instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code
@@ -622,7 +626,7 @@ pub struct Exit<'i> {
 
 impl<'i> Exit<'i> {
     /// push EXIT instruction into BpfCode instruction stack
-    pub fn push(mut self) -> &'i mut BpfCode {
+    pub fn push(self) -> &'i mut BpfCode {
         let mut asm = self.into_bytes();
         self.bpf_code.instructions.append(&mut asm);
         self.bpf_code

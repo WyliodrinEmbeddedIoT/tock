@@ -50,6 +50,7 @@ struct STM32F412GDiscovery {
     ipc: kernel::ipc::IPC,
     led:
         &'static capsules::led::LedDriver<'static, LedLow<'static, stm32f412g::gpio::Pin<'static>>>,
+    bpf: &'static capsules::bpf_exec::BpfDriver,
     button: &'static capsules::button::Button<'static, stm32f412g::gpio::Pin<'static>>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
@@ -73,6 +74,7 @@ impl Platform for STM32F412GDiscovery {
         match driver_num {
             capsules::console::DRIVER_NUM => f(Some(Ok(self.console))),
             capsules::led::DRIVER_NUM => f(Some(Ok(self.led))),
+            capsules::bpf_exec::DRIVER_NUM => f(Some(Ok(self.bpf))),
             capsules::button::DRIVER_NUM => f(Some(Err(self.button))),
             capsules::alarm::DRIVER_NUM => f(Some(Err(self.alarm))),
             kernel::ipc::DRIVER_NUM => f(Some(Err(&self.ipc))),
@@ -498,6 +500,15 @@ pub unsafe fn reset_handler() {
         LedLow<'static, stm32f412g::gpio::Pin>
     ));
 
+    // BPF 
+    let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
+    let grant_bpf = board_kernel.create_grant(&grant_capt);
+    let bpf = static_init!(
+            capsules::bpf_exec::BpfDriver, 
+            capsules::bpf_exec::BpfDriver::new(grant_bpf)
+        );
+
+
     // BUTTONs
     let button = components::button::ButtonComponent::new(
         board_kernel,
@@ -724,6 +735,7 @@ pub unsafe fn reset_handler() {
         console: console,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
         led: led,
+        bpf: bpf,
         button: button,
         alarm: alarm,
         gpio: gpio,
