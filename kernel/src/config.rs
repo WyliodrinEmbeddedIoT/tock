@@ -46,5 +46,5 @@ pub(crate) struct Config {
 /// options are available in the kernel crate to be used for relevant configuration.
 pub(crate) const CONFIG: Config = Config {
     trace_syscalls: false,
-    debug_load_processes: false,
+    debug_load_processes: true,
 };

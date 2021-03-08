@@ -166,7 +166,7 @@ impl<'a, P: gpio::InterruptPin<'a>> LegacyDriver for Button<'a, P> {
                             pins[data]
                                 .0
                                 .enable_interrupts(gpio::InterruptEdge::EitherEdge);
-                            ReturnCode::SUCCESS
+                          ReturnCode::SUCCESS
                         })
                         .unwrap_or_else(|err| err.into())
                 } else {

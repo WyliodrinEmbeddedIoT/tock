@@ -60,6 +60,7 @@ struct NucleoF429ZI {
         VirtualMuxAlarm<'static, stm32f429zi::tim2::Tim2<'static>>,
     >,
     temperature: &'static capsules::temperature::TemperatureSensor<'static>,
+    timer: &'static capsules::timer::TimerDriver<'static, stm32f429zi::tim5::Tim5<'static>>,
     gpio: &'static capsules::gpio::GPIO<'static, stm32f429zi::gpio::Pin<'static>>,
 }
 
@@ -76,6 +77,7 @@ impl Platform for NucleoF429ZI {
             capsules::adc::DRIVER_NUM => f(Some(Err(self.adc))),
             capsules::alarm::DRIVER_NUM => f(Some(Err(self.alarm))),
             capsules::temperature::DRIVER_NUM => f(Some(Ok(self.temperature))),
+            capsules::timer::DRIVER_NUM => f(Some(Ok(self.timer))),
             kernel::ipc::DRIVER_NUM => f(Some(Err(&self.ipc))),
             capsules::gpio::DRIVER_NUM => f(Some(Err(self.gpio))),
             _ => f(None),
@@ -203,7 +205,7 @@ unsafe fn set_pin_primary_functions(
 }
 
 /// Helper function for miscellaneous peripheral functions
-unsafe fn setup_peripherals(tim2: &stm32f429zi::tim2::Tim2) {
+unsafe fn setup_peripherals(tim2: &stm32f429zi::tim2::Tim2, tim5: &stm32f429zi::tim5::Tim5) {
     // USART3 IRQn is 39
     cortexm4::nvic::Nvic::new(stm32f429zi::nvic::USART3).enable();
 
@@ -211,6 +213,10 @@ unsafe fn setup_peripherals(tim2: &stm32f429zi::tim2::Tim2) {
     tim2.enable_clock();
     tim2.start();
     cortexm4::nvic::Nvic::new(stm32f429zi::nvic::TIM2).enable();
+
+    // TIM 5
+    tim5.enable_clock();
+    tim5.start();
 }
 
 /// Reset Handler.
@@ -241,7 +247,7 @@ pub unsafe fn reset_handler() {
     peripherals.init();
     let base_peripherals = &peripherals.stm32f4;
 
-    setup_peripherals(&base_peripherals.tim2);
+    setup_peripherals(&base_peripherals.tim2, &base_peripherals.tim5);
 
     set_pin_primary_functions(syscfg, &base_peripherals.exti, &base_peripherals.gpio_ports);
 
@@ -350,6 +356,15 @@ pub unsafe fn reset_handler() {
 
     let alarm = components::alarm::AlarmDriverComponent::new(board_kernel, mux_alarm)
         .finalize(components::alarm_component_helper!(stm32f429zi::tim2::Tim2));
+
+    // TIMER 
+    let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
+    let grant_timer = board_kernel.create_grant(&grant_capt);
+    base_peripherals.tim5.start();
+    let timer = static_init!(
+            capsules::timer::TimerDriver<'static, stm32f429zi::tim5::Tim5>, 
+            capsules::timer::TimerDriver::new(&base_peripherals.tim5, grant_timer)
+        );
 
     // GPIO
     let gpio = GpioComponent::new(
@@ -518,6 +533,7 @@ pub unsafe fn reset_handler() {
         button: button,
         alarm: alarm,
         gpio: gpio,
+        timer: timer
     };
 
     // // Optional kernel tests
