@@ -81,7 +81,7 @@ impl Platform for STM32F412GDiscovery {
             capsules::touch::DRIVER_NUM => f(Some(self.touch)),
             capsules::screen::DRIVER_NUM => f(Some(self.screen)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
-            capsules::timer::DRIVER_NUM => f(Some(Ok(self.timer))),
+            capsules::timer::DRIVER_NUM => f(Some(self.timer)),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             _ => f(None),
         }
@@ -341,6 +341,7 @@ unsafe fn set_pin_primary_functions(
 /// Helper function for miscellaneous peripheral functions
 unsafe fn setup_peripherals(
     tim2: &stm32f412g::tim2::Tim2,
+    tim5: &stm32f412g::tim5::Tim5,
     fsmc: &stm32f412g::fsmc::Fsmc,
     trng: &stm32f412g::trng::Trng,
 ) {
@@ -351,6 +352,10 @@ unsafe fn setup_peripherals(
     tim2.enable_clock();
     tim2.start();
     cortexm4::nvic::Nvic::new(stm32f412g::nvic::TIM2).enable();
+
+    // TIM 5
+    tim5.enable_clock();
+    tim5.start();
 
     // FSMC
     fsmc.enable();
@@ -384,6 +389,7 @@ pub unsafe fn reset_handler() {
     let base_peripherals = &peripherals.stm32f4;
     setup_peripherals(
         &base_peripherals.tim2,
+        &base_peripherals.tim5,
         &base_peripherals.fsmc,
         &peripherals.trng,
     );
