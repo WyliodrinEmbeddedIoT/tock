@@ -4,7 +4,7 @@ use core::cell::Cell;
 use core::mem;
 // use kernel::debug;
 use kernel::hil::time::{Counter, Ticks, Ticks16, Freq16KHz, Frequency};
-use kernel::{AppId, Callback, CommandResult, Driver, ErrorCode, Grant};
+use kernel::{AppId, Upcall, CommandReturn, Driver, ErrorCode, Grant};
 
 /// Syscall driver number.
 use crate::driver;
@@ -12,7 +12,7 @@ pub const DRIVER_NUM: usize = driver::NUM::Timer as usize;
 
 #[derive(Clone)]
 pub struct TimerData {
-    callback: Callback,
+    callback: Upcall,
     last_value: Cell<u16>,
     command_to_subscribe: Cell<usize>
 }
@@ -20,7 +20,7 @@ pub struct TimerData {
 impl Default for TimerData {
     fn default() -> TimerData {
         TimerData {
-            callback: Callback::default(),
+            callback: Upcall::default(),
             last_value: Cell::new(0),
             command_to_subscribe: Cell::new(0)
         }
@@ -50,9 +50,9 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
     fn subscribe(
         &self,
         subscribe_num: usize,
-        mut callback: Callback,
+        mut callback: Upcall,
         app_id: AppId,
-    ) -> Result<Callback, (Callback, ErrorCode)> {
+    ) -> Result<Upcall, (Upcall, ErrorCode)> {
         match subscribe_num {
             0 => {
                 let res = self
@@ -88,9 +88,9 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
         }
     }
 
-    fn command(&self, cmd_num: usize, _arg1: usize, _: usize, _appid: AppId) -> CommandResult{
+    fn command(&self, cmd_num: usize, _arg1: usize, _: usize, _appid: AppId) -> CommandReturn{
         match cmd_num {
-            0 => CommandResult::success(),
+            0 => CommandReturn::success(),
             1 => {
                 let res = self
                     .app
@@ -103,9 +103,9 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
                     .map_err(ErrorCode::from);
 
                 if let Err(e) = res {
-                    CommandResult::failure(e)
+                    CommandReturn::failure(e)
                 } else {
-                    CommandResult::success()
+                    CommandReturn::success()
                 }
             },
             2 => {
@@ -140,10 +140,10 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
 
                 if let Err(e) = res {
                     // debug!("Error: {:?}", e);
-                    CommandResult::failure(e)
+                    CommandReturn::failure(e)
                 } else {
                     // debug!("Succes cica? {:?}", diff_ms);
-                    CommandResult::success()
+                    CommandReturn::success()
                 }
             },
             3 => {
@@ -158,9 +158,9 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
                     .map_err(ErrorCode::from);
 
                 if let Err(e) = res {
-                    CommandResult::failure(e)
+                    CommandReturn::failure(e)
                 } else {
-                    CommandResult::success()
+                    CommandReturn::success()
                 }
             },
             4 => {
@@ -195,13 +195,13 @@ impl<'a, C: Counter<'a>> Driver for TimerDriver<'a, C> {
 
                 if let Err(e) = res {
                     // debug!("Error: {:?}", e);
-                    CommandResult::failure(e)
+                    CommandReturn::failure(e)
                 } else {
                     // debug!("Succes cica? {:?}", diff_us);
-                    CommandResult::success_u32(diff_us)
+                    CommandReturn::success_u32(diff_us)
                 }
             },
-            _ => CommandResult::failure(ErrorCode::NOSUPPORT)
+            _ => CommandReturn::failure(ErrorCode::NOSUPPORT)
         }
     }
 }

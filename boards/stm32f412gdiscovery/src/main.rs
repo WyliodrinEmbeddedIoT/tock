@@ -60,6 +60,7 @@ struct STM32F412GDiscovery {
     touch: &'static capsules::touch::Touch<'static>,
     screen: &'static capsules::screen::Screen<'static>,
     temperature: &'static capsules::temperature::TemperatureSensor<'static>,
+    timer: &'static capsules::timer::TimerDriver<'static, stm32f412g::tim5::Tim5<'static>>,
     rng: &'static capsules::rng::RngDriver<'static>,
 }
 
@@ -80,6 +81,7 @@ impl Platform for STM32F412GDiscovery {
             capsules::touch::DRIVER_NUM => f(Some(self.touch)),
             capsules::screen::DRIVER_NUM => f(Some(self.screen)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
+            capsules::timer::DRIVER_NUM => f(Some(Ok(self.timer))),
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             _ => f(None),
         }
@@ -560,6 +562,15 @@ pub unsafe fn reset_handler() {
     let alarm = components::alarm::AlarmDriverComponent::new(board_kernel, mux_alarm)
         .finalize(components::alarm_component_helper!(stm32f412g::tim2::Tim2));
 
+    // TIMER 
+    let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
+    let grant_timer = board_kernel.create_grant(&grant_capt);
+    base_peripherals.tim5.start();
+    let timer = static_init!(
+            capsules::timer::TimerDriver<'static, stm32f412g::tim5::Tim5>, 
+            capsules::timer::TimerDriver::new(&base_peripherals.tim5, grant_timer)
+        );
+
     // GPIO
     let gpio = GpioComponent::new(
         board_kernel,
@@ -729,6 +740,7 @@ pub unsafe fn reset_handler() {
         touch: touch,
         screen: screen,
         temperature: temp,
+        timer: timer,
         rng: rng,
     };
 
