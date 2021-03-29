@@ -1,0 +1,13 @@
+[package]
+name = "byteorder"
+version = "1.4.2"
+authors = ["Andrew Gallant <jamslam@gmail.com>"]
+description = "Library for reading/writing numbers in big-endian and little-endian."
+documentation = "https://docs.rs/byteorder"
+homepage = "https://github.com/BurntSushi/byteorder"
+repository = "https://github.com/BurntSushi/byteorder"
+readme = "README.md"
+keywords = ["byte", "endian", "big-endian", "little-endian", "binary"]
+license = "Unlicense OR MIT"
+exclude = ["/ci/*"]
+edition = "2018"
