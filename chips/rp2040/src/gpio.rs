@@ -12,7 +12,7 @@ use kernel::common::StaticRef;
 use kernel::hil;
 
 use crate::chip::Processor;
-
+#[repr(C)]
 struct GpioPin {
     status: ReadOnly<u32, GPIOx_STATUS::Register>,
     ctrl: ReadWrite<u32, GPIOx_CTRL::Register>,
@@ -419,7 +419,8 @@ impl<'a> RPGpioPin<'a> {
         }
     }
 
-    fn set_function(&self, f: GpioFunction) {
+    pub fn set_function(&self, f: GpioFunction) {
+        self.activate_pads();
         self.gpio_registers.pin[self.pin]
             .ctrl
             .write(GPIOx_CTRL::FUNCSEL.val(f as u32));

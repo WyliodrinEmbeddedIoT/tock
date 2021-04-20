@@ -3,12 +3,11 @@ use core::panic::PanicInfo;
 
 use kernel::debug::{self, IoWrite};
 use kernel::hil::led::LedHigh;
-use rp2040::gpio::{RPGpio, RPGpioPin};
+use rp2040::gpio::{GpioFunction, RPGpio, RPGpioPin};
+use rp2040::uart::Uart;
 
 use crate::CHIP;
 use crate::PROCESSES;
-
-use cortex_m_semihosting::hprint;
 
 /// Writer is used by kernel::debug to panic message to the serial port.
 pub struct Writer {}
@@ -27,8 +26,10 @@ impl Write for Writer {
 
 impl IoWrite for Writer {
     fn write(&mut self, buf: &[u8]) {
+        let uart = Uart::new_uart0();
         for &c in buf {
-            hprint!("{}", c as char).unwrap_or_else(|_| {});
+            uart.send_byte(c);
+            //hprint!("{}", c as char).unwrap_or_else(|_| {}); //aici pun serialul
         }
     }
 }

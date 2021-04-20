@@ -8,6 +8,9 @@
 #![cfg_attr(not(doc), no_main)]
 #![deny(missing_docs)]
 #![feature(asm, naked_functions)]
+use kernel::hil::uart::{Parameters, Parity, StopBits, Width};
+
+use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use components::gpio::GpioComponent;
@@ -21,6 +24,9 @@ use kernel::hil::led::LedHigh;
 use kernel::hil::time::{Alarm, AlarmClient, Time};
 use kernel::{capabilities, create_capability, static_init, Kernel, Platform};
 
+use kernel::hil::uart;
+
+use kernel::debug;
 use rp2040;
 use rp2040::chip::{Rp2040, Rp2040DefaultPeripherals};
 use rp2040::clocks::{
@@ -28,7 +34,7 @@ use rp2040::clocks::{
     ReferenceAuxiliaryClockSource, ReferenceClockSource, RtcAuxiliaryClockSource,
     SystemAuxiliaryClockSource, SystemClockSource, UsbAuxiliaryClockSource,
 };
-use rp2040::gpio::{RPGpio, RPGpioPin};
+use rp2040::gpio::{GpioFunction, RPGpio, RPGpioPin};
 use rp2040::resets::Peripheral;
 use rp2040::timer::RPTimer;
 mod io;
@@ -63,6 +69,7 @@ static mut CHIP: Option<&'static Rp2040<Rp2040DefaultPeripherals>> = None;
 /// Supported drivers by the platform
 pub struct RaspberryPiPico {
     ipc: kernel::ipc::IPC<NUM_PROCS>,
+    console: &'static capsules::console::Console<'static>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
         VirtualMuxAlarm<'static, rp2040::timer::RPTimer<'static>>,
@@ -77,6 +84,7 @@ impl Platform for RaspberryPiPico {
         F: FnOnce(Option<&dyn kernel::Driver>) -> R,
     {
         match driver_num {
+            capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::led::DRIVER_NUM => f(Some(self.led)),
@@ -89,7 +97,7 @@ impl Platform for RaspberryPiPico {
 
 // struct AlarmTest<'a> {
 //     alarm: &'a RPTimer<'a>,
-//     led: RPGpioPin<'a>,
+//     led: RPGpioPin,<'a>,
 // }
 
 // impl AlarmClient for AlarmTest<'_> {
@@ -188,6 +196,7 @@ fn init_clocks(peripherals: &Rp2040DefaultPeripherals) {
 
 /// Entry point in the vector table called on hard reset.
 #[no_mangle]
+
 pub unsafe fn main() {
     // Loads relocations and clears BSS
     rp2040::init();
@@ -221,6 +230,24 @@ pub unsafe fn main() {
 
     // Unreset all peripherals
     peripherals.resets.unreset_all_except(&[], true);
+    peripherals.resets.reset(&[Peripheral::Uart0]);
+    peripherals.resets.unreset(&[Peripheral::Uart0], true);
+
+    //set RX and TX pins in UART mode
+    let gpio_tx = RPGpioPin::new(RPGpio::GPIO0);
+    let gpio_rx = RPGpioPin::new(RPGpio::GPIO1);
+    gpio_rx.set_function(GpioFunction::UART);
+    gpio_tx.set_function(GpioFunction::UART);
+
+    // let parameters = Parameters {
+    //     baud_rate: 115200,
+    //     width: Width::Eight,
+    //     parity: Parity::None,
+    //     stop_bits: StopBits::One,
+    //     hw_flow_control: false,
+    // };
+    // //configure parameters of uart for sending bytes
+    // peripherals.uart0.configure(parameters);
 
     // Disable IE for pads 26-29 (the Pico SDK runtime does this, not sure why)
     for pin in 26..30 {
@@ -232,16 +259,16 @@ pub unsafe fn main() {
     use kernel::hil::time::{Alarm, Time};
 
     // fn off (){
-    //     let pin = RPGpioPin::new(RPGpio::GPIO25);
+    //     let pin = RPGpioPin,::new(RPGpio::GPIO25);
     //     pin.make_output();
     //     pin.clear();
     // }
 
-    // let pin = RPGpioPin::new(RPGpio::GPIO25);
+    // let pin = RPGpioPin,::new(RPGpio::GPIO25);
     // pin.make_output();
     // pin.set();
 
-    // let pin = RPGpioPin::new(RPGpio::GPIO25);
+    // let pin = RPGpioPin,::new(RPGpio::GPIO25);
     // pin.make_output();
     // // pin.set();
 
@@ -272,6 +299,14 @@ pub unsafe fn main() {
         create_capability!(capabilities::ProcessManagementCapability);
     let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
     let memory_allocation_capability = create_capability!(capabilities::MemoryAllocationCapability);
+
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
 
     let mux_alarm = components::alarm::AlarmMuxComponent::new(&peripherals.timer)
         .finalize(components::alarm_mux_component_helper!(RPTimer));
@@ -327,12 +362,28 @@ pub unsafe fn main() {
         LedHigh<'static, RPGpioPin<'static>>
     ));
 
+    // UART
+    // Create a shared UART channel for kernel debug.
+    let uart_mux = components::console::UartMuxComponent::new(
+        &peripherals.uart0,
+        115200,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
+
+    // Setup the console.
+    let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
+    // Create the debugger object that handles calls to `debug!()`.
+    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
+
     let raspberry_pi_pico = RaspberryPiPico {
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
         alarm: alarm,
         gpio: gpio,
         led: led,
+        console: console,
     };
+    debug!("Initialization complete. Entering main loop");
 
     /// These symbols are defined in the linker script.
     extern "C" {

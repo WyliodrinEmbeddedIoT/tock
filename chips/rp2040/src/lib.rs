@@ -8,6 +8,7 @@ pub mod gpio;
 pub mod interrupts;
 pub mod resets;
 pub mod timer;
+pub mod uart;
 pub mod watchdog;
 pub mod xosc;
 

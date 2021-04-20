@@ -11,6 +11,7 @@ use crate::gpio::{RPPins, SIO};
 use crate::interrupts;
 use crate::resets::Resets;
 use crate::timer::RPTimer;
+use crate::uart::Uart;
 use crate::watchdog::Watchdog;
 use crate::xosc::Xosc;
 use cortexm0p::interrupt_mask;
@@ -132,6 +133,7 @@ pub struct Rp2040DefaultPeripherals<'a> {
     pub timer: RPTimer<'a>,
     pub watchdog: Watchdog,
     pub pins: RPPins<'a>,
+    pub uart0: Uart<'a>,
 }
 
 impl Rp2040DefaultPeripherals<'_> {
@@ -144,6 +146,7 @@ impl Rp2040DefaultPeripherals<'_> {
             timer: RPTimer::new(),
             watchdog: Watchdog::new(),
             pins: RPPins::new(),
+            uart0: Uart::new_uart0(),
         }
     }
 }
@@ -161,6 +164,10 @@ impl InterruptService<DeferredCallTask> for Rp2040DefaultPeripherals<'_> {
             }
             interrupts::SIO_IRQ_PROC1 => {
                 self.sio.handle_proc_interrupt(Processor::Processor1);
+                true
+            }
+            interrupts::UART0_IRQ => {
+                self.uart0.handle_interrupt();
                 true
             }
             _ => false,
