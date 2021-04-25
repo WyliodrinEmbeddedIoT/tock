@@ -573,7 +573,7 @@ impl<'a> hil::gpio::Interrupt<'a> for RPGpioPin<'a> {
         unimplemented!();
     }
 
-    fn enable_interrupts(&self, mode: hil::gpio::InterruptEdge) {
+    fn enable_interrupts(&self, _mode: hil::gpio::InterruptEdge) {
         unimplemented!();
     }
 
