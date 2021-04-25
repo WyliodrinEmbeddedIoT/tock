@@ -9,7 +9,6 @@
 #![deny(missing_docs)]
 #![feature(asm, naked_functions)]
 
-
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
@@ -17,9 +16,9 @@ use components::gpio::GpioComponent;
 use components::led::LedsComponent;
 use enum_primitive::cast::FromPrimitive;
 use kernel::component::Component;
+use kernel::debug;
 use kernel::hil::led::LedHigh;
 use kernel::{capabilities, create_capability, static_init, Kernel, Platform};
-use kernel::debug;
 use rp2040;
 use rp2040::chip::{Rp2040, Rp2040DefaultPeripherals};
 use rp2040::clocks::{
@@ -231,6 +230,7 @@ pub unsafe fn main() {
     let gpio_rx = RPGpioPin::new(RPGpio::GPIO1);
     gpio_rx.set_function(GpioFunction::UART);
     gpio_tx.set_function(GpioFunction::UART);
+
     // Disable IE for pads 26-29 (the Pico SDK runtime does this, not sure why)
     for pin in 26..30 {
         let gpio = RPGpioPin::new(RPGpio::from_usize(pin).unwrap());
@@ -360,8 +360,8 @@ pub unsafe fn main() {
 
     // // PROCESS CONSOLE
     let process_console =
-    components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
-        .finalize(());
+        components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
+            .finalize(());
     let _ = process_console.start();
 
     let raspberry_pi_pico = RaspberryPiPico {
@@ -371,7 +371,6 @@ pub unsafe fn main() {
         led: led,
         console: console,
     };
-    
     // debug!("D");
     // debug!("V");
     debug!("Initialization complete. Enter main loop");
