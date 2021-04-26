@@ -18,19 +18,10 @@ struct GpioPin {
     ctrl: ReadWrite<u32, GPIOx_CTRL::Register>,
 }
 
-#[repr(C)]
-struct GpioInterrupt {
-    intr0: ReadWrite<u32, GPIO_INTR0::Register>,
-    intr1: ReadWrite<u32, GPIO_INTR1::Register>,
-    intr2: ReadWrite<u32, GPIO_INTR1::Register>,
-    intr3: ReadWrite<u32, GPIO_INTR3::Register>,
-}
-
-#[repr(C)]
 struct GpioProc {
-    enable: GpioInterrupt,
-    force: GpioInterrupt,
-    status: GpioInterrupt,
+    enable: [ReadWrite<u32, GPIO_INTxx::Register>; 4],
+    force: [ReadWrite<u32, GPIO_INTxx::Register>; 4],
+    status: [ReadWrite<u32, GPIO_INTxx::Register>; 4],
 }
 
 register_structs! {
@@ -39,7 +30,13 @@ register_structs! {
         (0x000 => pin: [GpioPin; 30]),
 
         /// Raw interrupts
-        (0x0f0 => intr: GpioInterrupt),
+        (0x0f0 => intr: [ReadWrite<u32, GPIO_INTxx::Register>; 4]),
+
+        /// Interrupt enable for proc0
+        (0x100 => intre: [ReadWrite<u32, GPIO_INTxx::Register>; 4]),
+
+        /// Interrupt status for proc0
+        (0x100 => intrs: [ReadWrite<u32, GPIO_INTxx::Register>; 4]),
 
         /// Interrupts for procs
         (0x100 => proc: [GpioProc; 2]),
@@ -179,7 +176,7 @@ register_bitfields![u32,
             GPIO_FUNC_NULL = 0x1f
         ]
     ],
-    GPIO_INTR0 [
+    GPIO_INTxx [
         GPIO7_EDGE_HIGH OFFSET(31) NUMBITS(1) [],
         GPIO7_EDGE_LOW OFFSET(30) NUMBITS(1) [],
         GPIO7_LEVEL_HIGH OFFSET(29) NUMBITS(1) [],
@@ -219,119 +216,6 @@ register_bitfields![u32,
         GPIO0_EDGE_LOW OFFSET(2) NUMBITS(1) [],
         GPIO0_LEVEL_HIGH OFFSET(1) NUMBITS(1) [],
         GPIO0_LEVEL_LOW OFFSET(0) NUMBITS(1) []
-    ],
-    GPIO_INTR1[
-        GPIO15_EDGE_HIGH OFFSET(31) NUMBITS(1) [],
-        GPIO15_EDGE_LOW OFFSET(30) NUMBITS(1) [],
-        GPIO15_LEVEL_HIGH OFFSET(29) NUMBITS(1) [],
-        GPIO15_LEVEL_LOW OFFSET(28) NUMBITS(1) [],
-
-        GPIO14_EDGE_HIGH OFFSET(27) NUMBITS(1) [],
-        GPIO14_EDGE_LOW OFFSET(26) NUMBITS(1) [],
-        GPIO14_LEVEL_HIGH OFFSET(25) NUMBITS(1) [],
-        GPIO14_LEVEL_LOW OFFSET(24) NUMBITS(1) [],
-
-        GPIO13_EDGE_HIGH OFFSET(23) NUMBITS(1) [],
-        GPIO13_EDGE_LOW OFFSET(22) NUMBITS(1) [],
-        GPIO13_LEVEL_HIGH OFFSET(21) NUMBITS(1) [],
-        GPIO13_LEVEL_LOW OFFSET(20) NUMBITS(1) [],
-
-        GPIO12_EDGE_HIGH OFFSET(19) NUMBITS(1) [],
-        GPIO12_EDGE_LOW OFFSET(18) NUMBITS(1) [],
-        GPIO12_LEVEL_HIGH OFFSET(17) NUMBITS(1) [],
-        GPIO12_LEVEL_LOW OFFSET(16) NUMBITS(1) [],
-
-        GPIO11_EDGE_HIGH OFFSET(15) NUMBITS(1) [],
-        GPIO11_EDGE_LOW OFFSET(14) NUMBITS(1) [],
-        GPIO11_LEVEL_HIGH OFFSET(13) NUMBITS(1) [],
-        GPIO11_LEVEL_LOW OFFSET(12) NUMBITS(1) [],
-
-        GPIO10_EDGE_HIGH OFFSET(11) NUMBITS(1) [],
-        GPIO10_EDGE_LOW OFFSET(10) NUMBITS(1) [],
-        GPIO10_LEVEL_HIGH OFFSET(9) NUMBITS(1) [],
-        GPIO10_LEVEL_LOW OFFSET(8) NUMBITS(1) [],
-
-        GPIO9_EDGE_HIGH OFFSET(7) NUMBITS(1) [],
-        GPIO9_EDGE_LOW OFFSET(6) NUMBITS(1) [],
-        GPIO9_LEVEL_HIGH OFFSET(5) NUMBITS(1) [],
-        GPIO9_LEVEL_LOW OFFSET(4) NUMBITS(1) [],
-
-        GPIO8_EDGE_HIGH OFFSET(3) NUMBITS(1) [],
-        GPIO8_EDGE_LOW OFFSET(2) NUMBITS(1) [],
-        GPIO8_LEVEL_HIGH OFFSET(1) NUMBITS(1) [],
-        GPIO8_LEVEL_LOW OFFSET(0) NUMBITS(1) []
-    ],
-    GPIO_INTR2[
-        GPIO23_EDGE_HIGH OFFSET(31) NUMBITS(1) [],
-        GPIO23_EDGE_LOW OFFSET(30) NUMBITS(1) [],
-        GPIO23_LEVEL_HIGH OFFSET(29) NUMBITS(1) [],
-        GPIO23_LEVEL_LOW OFFSET(28) NUMBITS(1) [],
-
-        GPIO22_EDGE_HIGH OFFSET(27) NUMBITS(1) [],
-        GPIO22_EDGE_LOW OFFSET(26) NUMBITS(1) [],
-        GPIO22_LEVEL_HIGH OFFSET(25) NUMBITS(1) [],
-        GPIO22_LEVEL_LOW OFFSET(24) NUMBITS(1) [],
-
-        GPIO21_EDGE_HIGH OFFSET(23) NUMBITS(1) [],
-        GPIO21_EDGE_LOW OFFSET(22) NUMBITS(1) [],
-        GPIO21_LEVEL_HIGH OFFSET(21) NUMBITS(1) [],
-        GPIO21_LEVEL_LOW OFFSET(20) NUMBITS(1) [],
-
-        GPIO20_EDGE_HIGH OFFSET(19) NUMBITS(1) [],
-        GPIO20_EDGE_LOW OFFSET(18) NUMBITS(1) [],
-        GPIO20_LEVEL_HIGH OFFSET(17) NUMBITS(1) [],
-        GPIO20_LEVEL_LOW OFFSET(16) NUMBITS(1) [],
-
-        GPIO19_EDGE_HIGH OFFSET(15) NUMBITS(1) [],
-        GPIO19_EDGE_LOW OFFSET(14) NUMBITS(1) [],
-        GPIO19_LEVEL_HIGH OFFSET(13) NUMBITS(1) [],
-        GPIO19_LEVEL_LOW OFFSET(12) NUMBITS(1) [],
-
-        GPIO18_EDGE_HIGH OFFSET(11) NUMBITS(1) [],
-        GPIO18_EDGE_LOW OFFSET(10) NUMBITS(1) [],
-        GPIO18_LEVEL_HIGH OFFSET(9) NUMBITS(1) [],
-        GPIO18_LEVEL_LOW OFFSET(8) NUMBITS(1) [],
-
-        GPIO17_EDGE_HIGH OFFSET(7) NUMBITS(1) [],
-        GPIO17_EDGE_LOW OFFSET(6) NUMBITS(1) [],
-        GPIO17_LEVEL_HIGH OFFSET(5) NUMBITS(1) [],
-        GPIO17_LEVEL_LOW OFFSET(4) NUMBITS(1) [],
-
-        GPIO16_EDGE_HIGH OFFSET(3) NUMBITS(1) [],
-        GPIO16_EDGE_LOW OFFSET(2) NUMBITS(1) [],
-        GPIO16_LEVEL_HIGH OFFSET(1) NUMBITS(1) [],
-        GPIO16_LEVEL_LOW OFFSET(0) NUMBITS(1) []
-    ],
-    GPIO_INTR3[
-        GPIO29_EDGE_HIGH OFFSET(23) NUMBITS(1) [],
-        GPIO29_EDGE_LOW OFFSET(22) NUMBITS(1) [],
-        GPIO29_LEVEL_HIGH OFFSET(21) NUMBITS(1) [],
-        GPIO29_LEVEL_LOW OFFSET(20) NUMBITS(1) [],
-
-        GPIO28_EDGE_HIGH OFFSET(19) NUMBITS(1) [],
-        GPIO28_EDGE_LOW OFFSET(18) NUMBITS(1) [],
-        GPIO28_LEVEL_HIGH OFFSET(17) NUMBITS(1) [],
-        GPIO28_LEVEL_LOW OFFSET(16) NUMBITS(1) [],
-
-        GPIO27_EDGE_HIGH OFFSET(15) NUMBITS(1) [],
-        GPIO27_EDGE_LOW OFFSET(14) NUMBITS(1) [],
-        GPIO27_LEVEL_HIGH OFFSET(13) NUMBITS(1) [],
-        GPIO27_LEVEL_LOW OFFSET(12) NUMBITS(1) [],
-
-        GPIO26_EDGE_HIGH OFFSET(11) NUMBITS(1) [],
-        GPIO26_EDGE_LOW OFFSET(10) NUMBITS(1) [],
-        GPIO26_LEVEL_HIGH OFFSET(9) NUMBITS(1) [],
-        GPIO26_LEVEL_LOW OFFSET(8) NUMBITS(1) [],
-
-        GPIO25_EDGE_HIGH OFFSET(7) NUMBITS(1) [],
-        GPIO25_EDGE_LOW OFFSET(6) NUMBITS(1) [],
-        GPIO25_LEVEL_HIGH OFFSET(5) NUMBITS(1) [],
-        GPI025_LEVEL_LOW OFFSET(4) NUMBITS(1) [],
-
-        GPIO24_EDGE_HIGH OFFSET(3) NUMBITS(1) [],
-        GPIO24_EDGE_LOW OFFSET(2) NUMBITS(1) [],
-        GPIO24_LEVEL_HIGH OFFSET(1) NUMBITS(1) [],
-        GPIO24_LEVEL_LOW OFFSET(0) NUMBITS(1) []
     ],
     VOLTAGE_SELECT[
         VOLTAGE OFFSET(0) NUMBITS(1) [
@@ -403,8 +287,22 @@ register_bitfields![u32,
     ],
 ];
 
+const GPIO_BASE_ADDRESS: usize = 0x40014000;
+const GPIO_BASE: StaticRef<GpioRegisters> =
+    unsafe { StaticRef::new(GPIO_BASE_ADDRESS as *const GpioRegisters) };
+
+const GPIO_PAD_BASE_ADDRESS: usize = 0x4001c000;
+const GPIO_PAD_BASE: StaticRef<GpioPadRegisters> =
+    unsafe { StaticRef::new(GPIO_PAD_BASE_ADDRESS as *const GpioPadRegisters) };
+
+const SIO_BASE_ADDRESS: usize = 0xd0000000;
+const SIO_BASE: StaticRef<SIORegisters> =
+    unsafe { StaticRef::new(SIO_BASE_ADDRESS as *const SIORegisters) };
+
+
 pub struct RPPins<'a> {
     pub pins: [RPGpioPin<'a>; 30],
+    gpio_registers: StaticRef<GpioRegisters>,
 }
 
 impl<'a> RPPins<'a> {
@@ -442,25 +340,27 @@ impl<'a> RPPins<'a> {
                 RPGpioPin::new(RPGpio::GPIO28),
                 RPGpioPin::new(RPGpio::GPIO29),
             ],
+            gpio_registers: GPIO_BASE,
         }
     }
 
     pub fn get_pin(&self, pin: RPGpio) -> &'a RPGpioPin {
         &self.pins[pin as usize]
     }
+
+    pub fn handle_interrupt(&self) {
+        for bank_no in 0..4 {
+            let current_val = self.gpio_registers.intrs[bank_no].get();
+            let enabled_val = self.gpio_registers.intre[bank_no].get();
+            for pin in 0..8 {
+                let l_low_reg_no = pin * 4;
+                if (current_val & enabled_val & (1 << l_low_reg_no)) != 0 {
+                    self.pins[pin * bank_no].handle_interrupt();
+                }  
+            }
+        }
+    }
 }
-
-const GPIO_BASE_ADDRESS: usize = 0x40014000;
-const GPIO_BASE: StaticRef<GpioRegisters> =
-    unsafe { StaticRef::new(GPIO_BASE_ADDRESS as *const GpioRegisters) };
-
-const GPIO_PAD_BASE_ADDRESS: usize = 0x4001c000;
-const GPIO_PAD_BASE: StaticRef<GpioPadRegisters> =
-    unsafe { StaticRef::new(GPIO_PAD_BASE_ADDRESS as *const GpioPadRegisters) };
-
-const SIO_BASE_ADDRESS: usize = 0xd0000000;
-const SIO_BASE: StaticRef<SIORegisters> =
-    unsafe { StaticRef::new(SIO_BASE_ADDRESS as *const SIORegisters) };
 
 enum_from_primitive! {
     #[derive(Copy, Clone, Debug, PartialEq)]
@@ -551,7 +451,7 @@ impl<'a> RPGpioPin<'a> {
             (0, 0) => hil::gpio::FloatingState::PullNone,
             (0, 1) => hil::gpio::FloatingState::PullDown,
             (1, 0) => hil::gpio::FloatingState::PullUp,
-            _ => panic!("Invalid GPIO floating state"),
+            _ => panic!("Invalid GPIO floating state."),
         }
     }
 
@@ -562,6 +462,10 @@ impl<'a> RPGpioPin<'a> {
     pub fn deactivate_pads(&self) {
         self.gpio_pad_registers.gpio_pad[self.pin].modify(GPIO_PAD::OD::SET + GPIO_PAD::IE::CLEAR);
     }
+
+    pub fn handle_interrupt(&self) {
+        self.client.map(|client| client.fired());
+    }
 }
 
 impl<'a> hil::gpio::Interrupt<'a> for RPGpioPin<'a> {
@@ -570,15 +474,51 @@ impl<'a> hil::gpio::Interrupt<'a> for RPGpioPin<'a> {
     }
 
     fn is_pending(&self) -> bool {
-        unimplemented!();
+        let interrupt_bank_no = self.pin/8;
+        let l_low_reg_no = (self.pin * 4) % 32;
+        let current_val = self.gpio_registers.intrs[interrupt_bank_no].get();
+        if (current_val & (1 << l_low_reg_no) & (1 << l_low_reg_no + 1) & (1 << l_low_reg_no + 2) & (1 << l_low_reg_no + 3)) == 0 {
+            false
+        }
+        else {
+            true
+        }
+           
     }
 
-    fn enable_interrupts(&self, _mode: hil::gpio::InterruptEdge) {
-        unimplemented!();
+    fn enable_interrupts(&self, mode: hil::gpio::InterruptEdge) {
+        let interrupt_bank_no = self.pin/8;
+
+        match mode{
+            hil::gpio::InterruptEdge::RisingEdge => {
+                let high_reg_no = (self.pin * 4 + 3) % 32;
+                let current_val = self.gpio_registers.intre[interrupt_bank_no].get();
+                self.gpio_registers.intre[interrupt_bank_no].set((1 << high_reg_no) | current_val);
+            },
+            hil::gpio::InterruptEdge::FallingEdge => {
+                let low_reg_no = (self.pin * 4 + 2) % 32;
+                let current_val = self.gpio_registers.intre[interrupt_bank_no].get();
+                self.gpio_registers.intre[interrupt_bank_no].set((1 << low_reg_no) | current_val);
+            },
+            hil::gpio::InterruptEdge::EitherEdge => {
+                let low_reg_no = (self.pin * 4 + 2) % 32;
+                let high_reg_no = low_reg_no + 1;
+                let current_val = self.gpio_registers.intre[interrupt_bank_no].get();
+                self.gpio_registers.intre[interrupt_bank_no].set((1 << high_reg_no) | (1 << low_reg_no) | current_val);
+            },
+            _ => {
+                panic!("Invalid GPIO interrupt mode.");
+            }
+        }
     }
 
     fn disable_interrupts(&self) {
-        unimplemented!();
+        let interrupt_bank_no = self.pin/8;
+
+        let low_reg_no = (self.pin * 4 + 2) % 32;
+        let high_reg_no = low_reg_no + 1;
+        let current_val = self.gpio_registers.intre[interrupt_bank_no].get();
+        self.gpio_registers.intre[interrupt_bank_no].set(current_val & !(1 << high_reg_no) & !(1 << low_reg_no));
     }
 }
 
