@@ -170,6 +170,10 @@ impl InterruptService<DeferredCallTask> for Rp2040DefaultPeripherals<'_> {
                 self.uart0.handle_interrupt();
                 true
             }
+            interrupts::IO_IRQ_BANK0 => {
+                self.pins.handle_interrupt();
+                true
+            }
             _ => false,
         }
         // true
