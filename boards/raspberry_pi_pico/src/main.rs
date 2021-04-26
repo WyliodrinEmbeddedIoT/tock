@@ -403,8 +403,8 @@ pub unsafe fn main() {
         &process_management_capability,
     )
     .unwrap_or_else(|_err| {
-        panic!("Error loading processes!");
-        // debug!("{:?}", err);
+        debug!("Error loading processes!");
+        debug!("{:?}", err);
     });
 
     let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
