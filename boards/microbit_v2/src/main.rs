@@ -11,6 +11,7 @@
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
+use kernel::hil::led::Led;
 use kernel::hil::time::Counter;
 
 #[allow(unused_imports)]
@@ -18,6 +19,12 @@ use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 
 use nrf52833::gpio::Pin;
 use nrf52833::interrupt_service::Nrf52833DefaultPeripherals;
+
+mod led;
+mod led_bar;
+
+use crate::led::LedFromMatrix;
+use crate::led_bar::LedBar;
 
 // Kernel LED (same as microphone LED)
 const LED_KERNEL_PIN: Pin = Pin::P0_20;
@@ -105,6 +112,7 @@ pub struct Platform {
     >,
     app_flash: &'static capsules::app_flash_driver::AppFlash<'static>,
     sound_pressure: &'static capsules::sound_pressure::SoundPressureSensor<'static>,
+    led_bar: &'static LedBar<'static>,
 }
 
 impl kernel::Platform for Platform {
@@ -127,6 +135,7 @@ impl kernel::Platform for Platform {
             capsules::buzzer_driver::DRIVER_NUM => f(Some(self.buzzer)),
             capsules::app_flash_driver::DRIVER_NUM => f(Some(self.app_flash)),
             capsules::sound_pressure::DRIVER_NUM => f(Some(self.sound_pressure)),
+            led_bar::DRIVER_NUM => f(Some(self.led_bar)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             _ => f(None),
         }
@@ -473,6 +482,55 @@ pub unsafe fn main() {
         nrf52::rtc::Rtc<'static>
     ));
 
+    let led0 = static_init!(
+        LedFromMatrix<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        LedFromMatrix::new(&led, 0, 0)
+    );
+
+    let led1 = static_init!(
+        LedFromMatrix<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        LedFromMatrix::new(&led, 0, 1)
+    );
+
+    let led2 = static_init!(
+        LedFromMatrix<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        LedFromMatrix::new(&led, 0, 2)
+    );
+
+    let led3 = static_init!(
+        LedFromMatrix<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        LedFromMatrix::new(&led, 0, 3)
+    );
+
+    let led4 = static_init!(
+        LedFromMatrix<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        LedFromMatrix::new(&led, 0, 4)
+    );
+
+    let led_array = static_init!([&'static dyn Led; 5], [led0, led1, led2, led3, led4]);
+
+    let led_bar = static_init!(LedBar<'static>, LedBar::new(led_array));
+
     //--------------------------------------------------------------------------
     // Process Console
     //--------------------------------------------------------------------------
@@ -508,6 +566,7 @@ pub unsafe fn main() {
         adc: adc_syscall,
         alarm: alarm,
         app_flash: app_flash,
+        led_bar: led_bar,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 

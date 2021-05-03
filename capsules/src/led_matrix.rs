@@ -179,6 +179,43 @@ impl<'a, L: gpio::Pin, A: Alarm<'a>> LedMatrixDriver<'a, L, A> {
             ActivationMode::ActiveLow => l.set(),
         }
     }
+
+    pub fn on(&self, row: usize, col: usize) {
+        if row < self.rows.len() && col < self.cols.len() {
+            let pos = row * self.rows.len() + col;
+            self.buffer
+                .map(|bits| bits[pos / 8] = bits[pos / 8] | (1 << (pos % 8)));
+        }
+    }
+
+    pub fn off(&self, row: usize, col: usize) {
+        if row < self.rows.len() && col < self.cols.len() {
+            let pos = row * self.rows.len() + col;
+            self.buffer
+                .map(|bits| bits[pos / 8] = bits[pos / 8] & !(1 << pos % 8));
+        }
+    }
+
+    pub fn toggle(&self, row: usize, col: usize) {
+        if row < self.rows.len() && col < self.cols.len() {
+            let pos = row * self.rows.len() + col;
+            self.buffer
+                .map(|bits| bits[pos / 8] = bits[pos % 8] ^ (1 << (pos % 8)));
+        }
+    }
+
+    pub fn read(&self, row: usize, col: usize) -> bool {
+        if row < self.rows.len() && col < self.cols.len() {
+            let pos = row * self.rows.len() + col;
+            self.buffer
+                .map_or(false, |bits| match bits[pos / 8] & (1 << (pos % 8)) {
+                    0 => false,
+                    _ => true,
+                })
+        } else {
+            false
+        }
+    }
 }
 
 impl<'a, L: gpio::Pin, A: Alarm<'a>> AlarmClient for LedMatrixDriver<'a, L, A> {
