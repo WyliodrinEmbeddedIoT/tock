@@ -17,6 +17,7 @@ struct GpioPin {
     status: ReadOnly<u32, GPIOx_STATUS::Register>,
     ctrl: ReadWrite<u32, GPIOx_CTRL::Register>,
 }
+
 #[repr(C)]
 struct GpioProc {
     enable: [ReadWrite<u32, GPIO_INTxx::Register>; 4],
