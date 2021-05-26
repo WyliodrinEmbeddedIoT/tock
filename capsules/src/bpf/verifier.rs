@@ -24,13 +24,6 @@
 use crate::bpf::ebpf;
 use kernel::ReturnCode;
 
-
-fn reject<S: AsRef<str>>(msg: S) -> Result<(), ReturnCode> {
-    // let full_msg = format_args!("[Verifier] Error: {}", msg.as_ref());
-    // Err(Error::new(ErrorKind::Other, full_msg))
-    panic!("[Verifier] Error: {:?}", msg.as_ref());
-}
-
 fn check_prog_len(prog: &[u8]) -> Result<(), ReturnCode> {
     if prog.len() % ebpf::INSN_SIZE != 0 {
         panic!("eBPF program length must be a multiple of {:?} octets",
