@@ -33,7 +33,7 @@ use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::i2c::{Error, I2CClient, I2CDevice};
 use kernel::hil::sensors::{AmbientLight, AmbientLightClient};
 use kernel::hil::time;
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
 pub static mut BUF: [u8; 3] = [0; 3];
 
@@ -82,7 +82,8 @@ impl<'a, A: time::Alarm<'a>> Isl29035<'a, A> {
                 // ADC resolution 8-bit (bits 2,3)
                 // Other bits are reserved
                 buf[2] = 0b00001001;
-                self.i2c.write(buf, 3);
+                // TODO verify errors
+                let _ = self.i2c.write(buf, 3);
                 self.state.set(State::Enabling);
             });
         }
@@ -94,9 +95,9 @@ impl<'a, A: time::Alarm<'a>> AmbientLight<'a> for Isl29035<'a, A> {
         self.client.set(client);
     }
 
-    fn read_light_intensity(&self) -> ReturnCode {
+    fn read_light_intensity(&self) -> Result<(), ErrorCode> {
         self.start_read_lux();
-        ReturnCode::SUCCESS
+        Ok(())
     }
 }
 
@@ -107,14 +108,15 @@ impl<'a, A: time::Alarm<'a>> time::AlarmClient for Isl29035<'a, A> {
             self.i2c.enable();
 
             buffer[0] = 0x02 as u8;
-            self.i2c.write_read(buffer, 1, 2);
+            // TODO verify errors
+            let _ = self.i2c.write_read(buffer, 1, 2);
             self.state.set(State::ReadingLI);
         });
     }
 }
 
 impl<'a, A: time::Alarm<'a>> I2CClient for Isl29035<'a, A> {
-    fn command_complete(&self, buffer: &'static mut [u8], _error: Error) {
+    fn command_complete(&self, buffer: &'static mut [u8], _status: Result<(), Error>) {
         // TODO(alevy): handle I2C errors
         match self.state.get() {
             State::Enabling => {
@@ -140,7 +142,8 @@ impl<'a, A: time::Alarm<'a>> I2CClient for Isl29035<'a, A> {
                 let lux = (data * 4000) >> 8;
 
                 buffer[0] = 0;
-                self.i2c.write(buffer, 2);
+                // TODO verify errors
+                let _ = self.i2c.write(buffer, 2);
                 self.state.set(State::Disabling(lux));
             }
             State::Disabling(lux) => {

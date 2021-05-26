@@ -112,12 +112,12 @@ mod tests;
 
 // State for loading and holding applications.
 // How should the kernel respond when a process faults.
-const FAULT_RESPONSE: kernel::procs::FaultResponse = kernel::procs::FaultResponse::Panic;
+const FAULT_RESPONSE: kernel::procs::PanicFaultPolicy = kernel::procs::PanicFaultPolicy {};
 
 // Number of concurrent processes this platform supports.
 const NUM_PROCS: usize = 4;
 
-static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] = [None; 4];
+static mut PROCESSES: [Option<&'static dyn kernel::procs::Process>; NUM_PROCS] = [None; 4];
 
 // Static reference to chip for panic dumps
 static mut CHIP: Option<&'static nrf52832::chip::NRF52<Nrf52832DefaultPeripherals>> = None;
@@ -179,16 +179,26 @@ impl kernel::Platform for Platform {
     }
 }
 
+/// This is in a separate, inline(never) function so that its stack frame is
+/// removed when this function returns. Otherwise, the stack space used for
+/// these static_inits is wasted.
+#[inline(never)]
+unsafe fn get_peripherals() -> &'static mut Nrf52832DefaultPeripherals<'static> {
+    // Initialize chip peripheral drivers
+    let nrf52832_peripherals = static_init!(
+        Nrf52832DefaultPeripherals,
+        Nrf52832DefaultPeripherals::new()
+    );
+
+    nrf52832_peripherals
+}
+
 /// Main function called after RAM initialized.
 #[no_mangle]
 pub unsafe fn main() {
     nrf52832::init();
-    let ppi = static_init!(nrf52832::ppi::Ppi, nrf52832::ppi::Ppi::new());
-    // Initialize chip peripheral drivers
-    let nrf52832_peripherals = static_init!(
-        Nrf52832DefaultPeripherals,
-        Nrf52832DefaultPeripherals::new(ppi)
-    );
+
+    let nrf52832_peripherals = get_peripherals();
 
     // set up circular peripheral dependencies
     nrf52832_peripherals.init();
@@ -288,7 +298,7 @@ pub unsafe fn main() {
     );
 
     let rtc = &base_peripherals.rtc;
-    rtc.start();
+    let _ = rtc.start();
     let mux_alarm = components::alarm::AlarmMuxComponent::new(rtc)
         .finalize(components::alarm_mux_component_helper!(nrf52832::rtc::Rtc));
     let alarm = components::alarm::AlarmDriverComponent::new(board_kernel, mux_alarm)
@@ -341,6 +351,7 @@ pub unsafe fn main() {
             nrf52832::acomp::Channel,
             &nrf52832::acomp::CHANNEL_AC0
         ),
+        board_kernel,
     )
     .finalize(components::acomp_component_buf!(
         nrf52832::acomp::Comparator
@@ -362,7 +373,7 @@ pub unsafe fn main() {
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
-    platform.pconsole.start();
+    let _ = platform.pconsole.start();
     debug!("Initialization complete. Entering main loop\r");
     debug!("{}", &nrf52832::ficr::FICR_INSTANCE);
 
@@ -390,7 +401,7 @@ pub unsafe fn main() {
             &_eappmem as *const u8 as usize - &_sappmem as *const u8 as usize,
         ),
         &mut PROCESSES,
-        FAULT_RESPONSE,
+        &FAULT_RESPONSE,
         &process_management_capability,
     )
     .unwrap_or_else(|err| {

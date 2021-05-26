@@ -25,9 +25,9 @@ use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::gpio;
-use kernel::hil::i2c::{self, Error};
+use kernel::hil::i2c;
 use kernel::hil::touch::{self, GestureEvent, TouchEvent, TouchStatus};
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
 pub static NO_TOUCH: TouchEvent = TouchEvent {
     id: 0,
@@ -87,7 +87,7 @@ impl<'a> Ft6x06<'a> {
 }
 
 impl<'a> i2c::I2CClient for Ft6x06<'a> {
-    fn command_complete(&self, buffer: &'static mut [u8], _error: Error) {
+    fn command_complete(&self, buffer: &'static mut [u8], _status: Result<(), i2c::Error>) {
         self.state.set(State::Idle);
         self.num_touches.set((buffer[1] & 0x0F) as usize);
         self.touch_client.map(|client| {
@@ -174,18 +174,19 @@ impl<'a> gpio::Client for Ft6x06<'a> {
             self.state.set(State::ReadingTouches);
 
             buffer[0] = Registers::REG_GEST_ID as u8;
-            self.i2c.write_read(buffer, 1, 15);
+            // TODO verify errors
+            let _ = self.i2c.write_read(buffer, 1, 15);
         });
     }
 }
 
 impl<'a> touch::Touch<'a> for Ft6x06<'a> {
-    fn enable(&self) -> ReturnCode {
-        ReturnCode::SUCCESS
+    fn enable(&self) -> Result<(), ErrorCode> {
+        Ok(())
     }
 
-    fn disable(&self) -> ReturnCode {
-        ReturnCode::SUCCESS
+    fn disable(&self) -> Result<(), ErrorCode> {
+        Ok(())
     }
 
     fn set_client(&self, client: &'a dyn touch::TouchClient) {
@@ -200,12 +201,12 @@ impl<'a> touch::Gesture<'a> for Ft6x06<'a> {
 }
 
 impl<'a> touch::MultiTouch<'a> for Ft6x06<'a> {
-    fn enable(&self) -> ReturnCode {
-        ReturnCode::SUCCESS
+    fn enable(&self) -> Result<(), ErrorCode> {
+        Ok(())
     }
 
-    fn disable(&self) -> ReturnCode {
-        ReturnCode::SUCCESS
+    fn disable(&self) -> Result<(), ErrorCode> {
+        Ok(())
     }
 
     fn get_num_touches(&self) -> usize {

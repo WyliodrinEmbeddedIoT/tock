@@ -40,7 +40,7 @@ use core::cell::Cell;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::i2c;
 use kernel::hil::time;
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
 // Buffer to use for I2C messages
 pub static mut BUFFER: [u8; 14] = [0; 14];
@@ -129,7 +129,8 @@ impl<'a, A: time::Alarm<'a>> SI7021<'a, A> {
 
             buffer[0] = Registers::ReadElectronicIdByteOneA as u8;
             buffer[1] = Registers::ReadElectronicIdByteOneB as u8;
-            self.i2c.write(buffer, 2);
+            // TODO verify errors
+            let _ = self.i2c.write(buffer, 2);
             self.state.set(State::SelectElectronicId1);
         });
     }
@@ -151,10 +152,11 @@ impl<'a, A: time::Alarm<'a>> SI7021<'a, A> {
 }
 
 impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
-    fn command_complete(&self, buffer: &'static mut [u8], _error: i2c::Error) {
+    fn command_complete(&self, buffer: &'static mut [u8], _status: Result<(), i2c::Error>) {
         match self.state.get() {
             State::SelectElectronicId1 => {
-                self.i2c.read(buffer, 8);
+                // TODO verify errors
+                let _ = self.i2c.read(buffer, 8);
                 self.state.set(State::ReadElectronicId1);
             }
             State::ReadElectronicId1 => {
@@ -168,11 +170,13 @@ impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
                 buffer[13] = buffer[7];
                 buffer[0] = Registers::ReadElectronicIdByteTwoA as u8;
                 buffer[1] = Registers::ReadElectronicIdByteTwoB as u8;
-                self.i2c.write(buffer, 2);
+                // TODO verify errors
+                let _ = self.i2c.write(buffer, 2);
                 self.state.set(State::SelectElectronicId2);
             }
             State::SelectElectronicId2 => {
-                self.i2c.read(buffer, 6);
+                // TODO verify errors
+                let _ = self.i2c.read(buffer, 6);
                 self.state.set(State::ReadElectronicId2);
             }
             State::ReadElectronicId2 => {
@@ -187,11 +191,13 @@ impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
                 self.state.set(State::WaitRh);
             }
             State::ReadRhMeasurement => {
-                self.i2c.read(buffer, 2);
+                // TODO verify errors
+                let _ = self.i2c.read(buffer, 2);
                 self.state.set(State::GotRhMeasurement);
             }
             State::ReadTempMeasurement => {
-                self.i2c.read(buffer, 2);
+                // TODO verify errors
+                let _ = self.i2c.read(buffer, 2);
                 self.state.set(State::GotTempMeasurement);
             }
             State::GotTempMeasurement => {
@@ -205,7 +211,8 @@ impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
                     OnDeck::Humidity => {
                         self.on_deck.set(OnDeck::Nothing);
                         buffer[0] = Registers::MeasRelativeHumidityNoHoldMode as u8;
-                        self.i2c.write(buffer, 1);
+                        // TODO verify errors
+                        let _ = self.i2c.write(buffer, 1);
                         self.state.set(State::TakeRhMeasurementInit);
                     }
                     _ => {
@@ -224,7 +231,8 @@ impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
                     OnDeck::Temperature => {
                         self.on_deck.set(OnDeck::Nothing);
                         buffer[0] = Registers::MeasTemperatureNoHoldMode as u8;
-                        self.i2c.write(buffer, 1);
+                        // TODO verify errors
+                        let _ = self.i2c.write(buffer, 1);
                         self.state.set(State::TakeTempMeasurementInit);
                     }
                     _ => {
@@ -238,28 +246,29 @@ impl<'a, A: time::Alarm<'a>> i2c::I2CClient for SI7021<'a, A> {
 }
 
 impl<'a, A: time::Alarm<'a>> kernel::hil::sensors::TemperatureDriver<'a> for SI7021<'a, A> {
-    fn read_temperature(&self) -> kernel::ReturnCode {
+    fn read_temperature(&self) -> Result<(), ErrorCode> {
         // This chip handles both humidity and temperature measurements. We can
         // only start a new measurement if the chip is idle. If it isn't then we
         // can put this request "on deck" and it will happen after the
         // temperature measurement has finished.
         if self.state.get() == State::Idle {
-            self.buffer.take().map_or(ReturnCode::EBUSY, |buffer| {
+            self.buffer.take().map_or(Err(ErrorCode::BUSY), |buffer| {
                 // turn on i2c to send commands
                 self.i2c.enable();
 
                 buffer[0] = Registers::MeasTemperatureNoHoldMode as u8;
-                self.i2c.write(buffer, 1);
+                // TODO verify errors
+                let _ = self.i2c.write(buffer, 1);
                 self.state.set(State::TakeTempMeasurementInit);
-                ReturnCode::SUCCESS
+                Ok(())
             })
         } else {
             // Queue this request if nothing else queued.
             if self.on_deck.get() == OnDeck::Nothing {
                 self.on_deck.set(OnDeck::Temperature);
-                ReturnCode::SUCCESS
+                Ok(())
             } else {
-                ReturnCode::EBUSY
+                Err(ErrorCode::BUSY)
             }
         }
     }
@@ -270,29 +279,30 @@ impl<'a, A: time::Alarm<'a>> kernel::hil::sensors::TemperatureDriver<'a> for SI7
 }
 
 impl<'a, A: time::Alarm<'a>> kernel::hil::sensors::HumidityDriver<'a> for SI7021<'a, A> {
-    fn read_humidity(&self) -> kernel::ReturnCode {
+    fn read_humidity(&self) -> Result<(), ErrorCode> {
         // This chip handles both humidity and temperature measurements. We can
         // only start a new measurement if the chip is idle. If it isn't then we
         // can put this request "on deck" and it will happen after the
         // temperature measurement has finished.
         if self.state.get() == State::Idle {
-            self.buffer.take().map_or(ReturnCode::EBUSY, |buffer| {
+            self.buffer.take().map_or(Err(ErrorCode::BUSY), |buffer| {
                 // turn on i2c to send commands
                 self.i2c.enable();
 
                 buffer[0] = Registers::MeasRelativeHumidityNoHoldMode as u8;
-                self.i2c.write(buffer, 1);
+                // TODO verify errors
+                let _ = self.i2c.write(buffer, 1);
                 self.state.set(State::TakeRhMeasurementInit);
-                ReturnCode::SUCCESS
+                Ok(())
             })
         } else {
             // Not idle, so queue this request if nothing else is queued. If we have already
             // queued a request return an error.
             if self.on_deck.get() == OnDeck::Nothing {
                 self.on_deck.set(OnDeck::Humidity);
-                ReturnCode::SUCCESS
+                Ok(())
             } else {
-                ReturnCode::EBUSY
+                Err(ErrorCode::BUSY)
             }
         }
     }
@@ -308,7 +318,8 @@ impl<'a, A: time::Alarm<'a>> time::AlarmClient for SI7021<'a, A> {
             // turn on i2c to send commands
             self.i2c.enable();
 
-            self.i2c.read(buffer, 2);
+            // TODO verify errors
+            let _ = self.i2c.read(buffer, 2);
             match self.state.get() {
                 State::WaitRh => self.state.set(State::ReadRhMeasurement),
                 State::WaitTemp => self.state.set(State::ReadTempMeasurement),

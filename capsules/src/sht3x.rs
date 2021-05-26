@@ -10,7 +10,7 @@ use enum_primitive::enum_from_primitive;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::hil::i2c;
 use kernel::hil::time::{self, Alarm};
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
 pub static BASE_ADDR: u8 = 0x44;
 
@@ -97,35 +97,35 @@ impl<'a, A: Alarm<'a>> SHT3x<'a, A> {
         }
     }
 
-    fn read_humidity(&self) -> ReturnCode {
+    fn read_humidity(&self) -> Result<(), ErrorCode> {
         if self.read_hum.get() == true {
-            ReturnCode::EBUSY
+            Err(ErrorCode::BUSY)
         } else {
             if self.state.get() == State::Idle {
                 self.read_hum.set(true);
                 self.read_temp_hum()
             } else {
                 self.read_hum.set(true);
-                ReturnCode::SUCCESS
+                Ok(())
             }
         }
     }
 
-    fn read_temperature(&self) -> ReturnCode {
+    fn read_temperature(&self) -> Result<(), ErrorCode> {
         if self.read_temp.get() == true {
-            ReturnCode::EBUSY
+            Err(ErrorCode::BUSY)
         } else {
             if self.state.get() == State::Idle {
                 self.read_temp.set(true);
                 self.read_temp_hum()
             } else {
                 self.read_temp.set(true);
-                ReturnCode::SUCCESS
+                Ok(())
             }
         }
     }
 
-    fn read_temp_hum(&self) -> ReturnCode {
+    fn read_temp_hum(&self) -> Result<(), ErrorCode> {
         self.buffer.take().map_or_else(
             || panic!("SHT3x No buffer available!"),
             |buffer| {
@@ -135,9 +135,10 @@ impl<'a, A: Alarm<'a>> SHT3x<'a, A> {
                 buffer[0] = ((Registers::MEASHIGHREP as u16) >> 8) as u8;
                 buffer[1] = ((Registers::MEASHIGHREP as u16) & 0xff) as u8;
 
-                self.i2c.write(buffer, 2);
+                // TODO verify errors
+                let _ = self.i2c.write(buffer, 2);
 
-                ReturnCode::SUCCESS
+                Ok(())
             },
         )
     }
@@ -165,9 +166,9 @@ impl<'a, A: Alarm<'a>> time::AlarmClient for SHT3x<'a, A> {
 }
 
 impl<'a, A: Alarm<'a>> i2c::I2CClient for SHT3x<'a, A> {
-    fn command_complete(&self, buffer: &'static mut [u8], error: i2c::Error) {
-        match error {
-            i2c::Error::CommandComplete => {
+    fn command_complete(&self, buffer: &'static mut [u8], status: Result<(), i2c::Error>) {
+        match status {
+            Ok(()) => {
                 let state = self.state.get();
 
                 match state {
@@ -229,7 +230,7 @@ impl<'a, A: Alarm<'a>> kernel::hil::sensors::HumidityDriver<'a> for SHT3x<'a, A>
         self.humidity_client.set(client);
     }
 
-    fn read_humidity(&self) -> ReturnCode {
+    fn read_humidity(&self) -> Result<(), ErrorCode> {
         self.read_humidity()
     }
 }
@@ -239,7 +240,7 @@ impl<'a, A: Alarm<'a>> kernel::hil::sensors::TemperatureDriver<'a> for SHT3x<'a,
         self.temperature_client.set(client);
     }
 
-    fn read_temperature(&self) -> ReturnCode {
+    fn read_temperature(&self) -> Result<(), ErrorCode> {
         self.read_temperature()
     }
 }

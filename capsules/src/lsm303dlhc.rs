@@ -79,12 +79,13 @@
 #![allow(non_camel_case_types)]
 
 use core::cell::Cell;
+use core::mem;
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
 use kernel::common::cells::{OptionalCell, TakeCell};
-use kernel::hil::i2c::{self, Error};
+use kernel::hil::i2c;
 use kernel::hil::sensors;
-use kernel::{AppId, CommandReturn, Driver, ErrorCode, ReturnCode, Upcall};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 use crate::lsm303xx::{
     AccelerometerRegisters, Lsm303AccelDataRate, Lsm303MagnetoDataRate, Lsm303Range, Lsm303Scale,
@@ -134,7 +135,6 @@ pub struct Lsm303dlhcI2C<'a> {
     config_in_progress: Cell<bool>,
     i2c_accelerometer: &'a dyn i2c::I2CDevice,
     i2c_magnetometer: &'a dyn i2c::I2CDevice,
-    callback: Cell<Upcall>,
     state: Cell<State>,
     accel_scale: Cell<Lsm303Scale>,
     mag_range: Cell<Lsm303Range>,
@@ -146,6 +146,20 @@ pub struct Lsm303dlhcI2C<'a> {
     buffer: TakeCell<'static, [u8]>,
     nine_dof_client: OptionalCell<&'a dyn sensors::NineDofClient>,
     temperature_client: OptionalCell<&'a dyn sensors::TemperatureClient>,
+    current_process: OptionalCell<ProcessId>,
+    apps: Grant<App>,
+}
+
+pub struct App {
+    callback: Upcall,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            callback: Upcall::default(),
+        }
+    }
 }
 
 impl<'a> Lsm303dlhcI2C<'a> {
@@ -153,13 +167,13 @@ impl<'a> Lsm303dlhcI2C<'a> {
         i2c_accelerometer: &'a dyn i2c::I2CDevice,
         i2c_magnetometer: &'a dyn i2c::I2CDevice,
         buffer: &'static mut [u8],
+        grant: Grant<App>,
     ) -> Lsm303dlhcI2C<'a> {
         // setup and return struct
         Lsm303dlhcI2C {
             config_in_progress: Cell::new(false),
             i2c_accelerometer: i2c_accelerometer,
             i2c_magnetometer: i2c_magnetometer,
-            callback: Cell::new(Upcall::default()),
             state: Cell::new(State::Idle),
             accel_scale: Cell::new(Lsm303Scale::Scale2G),
             mag_range: Cell::new(Lsm303Range::Range1G),
@@ -171,6 +185,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
             buffer: TakeCell::new(buffer),
             nine_dof_client: OptionalCell::empty(),
             temperature_client: OptionalCell::empty(),
+            current_process: OptionalCell::empty(),
+            apps: grant,
         }
     }
 
@@ -205,7 +221,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
             // turn on i2c to send commands
             buf[0] = 0x0F;
             self.i2c_magnetometer.enable();
-            self.i2c_magnetometer.write_read(buf, 1, 1);
+            // TODO verify errors
+            let _ = self.i2c_magnetometer.write_read(buf, 1, 1);
         });
     }
 
@@ -221,7 +238,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
                     + CTRL_REG1::XEN::SET)
                     .value;
                 self.i2c_accelerometer.enable();
-                self.i2c_accelerometer.write(buf, 2);
+                // TODO verify errors
+                let _ = self.i2c_accelerometer.write(buf, 2);
             });
         }
     }
@@ -238,7 +256,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
                     + CTRL_REG4::HR.val(high_resolution as u8))
                 .value;
                 self.i2c_accelerometer.enable();
-                self.i2c_accelerometer.write(buf, 2);
+                // TODO verify errors
+                let _ = self.i2c_accelerometer.write(buf, 2);
             });
         }
     }
@@ -249,7 +268,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
             self.buffer.take().map(|buf| {
                 buf[0] = AccelerometerRegisters::OUT_X_L_A as u8 | REGISTER_AUTO_INCREMENT;
                 self.i2c_accelerometer.enable();
-                self.i2c_accelerometer.write_read(buf, 1, 6);
+                // TODO verify errors
+                let _ = self.i2c_accelerometer.write_read(buf, 1, 6);
             });
         }
     }
@@ -265,7 +285,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
                 buf[0] = MagnetometerRegisters::CRA_REG_M as u8;
                 buf[1] = ((data_rate as u8) << 2) | if temperature { 1 << 7 } else { 0 };
                 self.i2c_magnetometer.enable();
-                self.i2c_magnetometer.write(buf, 2);
+                // TODO verify errors
+                let _ = self.i2c_magnetometer.write(buf, 2);
             });
         }
     }
@@ -280,7 +301,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
                 buf[1] = (range as u8) << 5;
                 buf[2] = 0;
                 self.i2c_magnetometer.enable();
-                self.i2c_magnetometer.write(buf, 3);
+                // TODO verify errors
+                let _ = self.i2c_magnetometer.write(buf, 3);
             });
         }
     }
@@ -291,7 +313,8 @@ impl<'a> Lsm303dlhcI2C<'a> {
             self.buffer.take().map(|buf| {
                 buf[0] = MagnetometerRegisters::TEMP_OUT_H_M as u8;
                 self.i2c_magnetometer.enable();
-                self.i2c_magnetometer.write_read(buf, 1, 2);
+                // TODO verify errors
+                let _ = self.i2c_magnetometer.write_read(buf, 1, 2);
             });
         }
     }
@@ -302,35 +325,42 @@ impl<'a> Lsm303dlhcI2C<'a> {
             self.buffer.take().map(|buf| {
                 buf[0] = MagnetometerRegisters::OUT_X_H_M as u8;
                 self.i2c_magnetometer.enable();
-                self.i2c_magnetometer.write_read(buf, 1, 6);
+                // TODO verify errors
+                let _ = self.i2c_magnetometer.write_read(buf, 1, 6);
             });
         }
     }
 }
 
 impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
-    fn command_complete(&self, buffer: &'static mut [u8], error: Error) {
+    fn command_complete(&self, buffer: &'static mut [u8], status: Result<(), i2c::Error>) {
         match self.state.get() {
             State::IsPresent => {
-                let present = if error == Error::CommandComplete && buffer[0] == 60 {
+                let present = if status == Ok(()) && buffer[0] == 60 {
                     true
                 } else {
                     false
                 };
 
-                self.callback
-                    .get()
-                    .schedule(if present { 1 } else { 0 }, 0, 0);
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        grant.callback.schedule(if present { 1 } else { 0 }, 0, 0);
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_magnetometer.disable();
                 self.state.set(State::Idle);
             }
             State::SetPowerMode => {
-                let set_power = error == Error::CommandComplete;
+                let set_power = status == Ok(());
 
-                self.callback
-                    .get()
-                    .schedule(if set_power { 1 } else { 0 }, 0, 0);
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        grant.callback.schedule(if set_power { 1 } else { 0 }, 0, 0);
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_accelerometer.disable();
                 self.state.set(State::Idle);
@@ -342,11 +372,16 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                 }
             }
             State::SetScaleAndResolution => {
-                let set_scale_and_resolution = error == Error::CommandComplete;
+                let set_scale_and_resolution = status == Ok(());
 
-                self.callback
-                    .get()
-                    .schedule(if set_scale_and_resolution { 1 } else { 0 }, 0, 0);
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        grant
+                            .callback
+                            .schedule(if set_scale_and_resolution { 1 } else { 0 }, 0, 0);
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_accelerometer.disable();
                 self.state.set(State::Idle);
@@ -361,7 +396,7 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                 let mut x: usize = 0;
                 let mut y: usize = 0;
                 let mut z: usize = 0;
-                let values = if error == Error::CommandComplete {
+                let values = if status == Ok(()) {
                     self.nine_dof_client.map(|client| {
                         // compute using only integers
                         let scale_factor = self.accel_scale.get() as usize;
@@ -390,27 +425,38 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                     });
                     false
                 };
-                if values {
-                    self.callback.get().schedule(x, y, z);
-                } else {
-                    self.callback.get().schedule(0, 0, 0);
-                }
+
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        if values {
+                            grant.callback.schedule(x, y, z);
+                        } else {
+                            grant.callback.schedule(0, 0, 0);
+                        }
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_accelerometer.disable();
                 self.state.set(State::Idle);
             }
             State::SetTemperatureDataRate => {
-                let set_temperature_and_magneto_data_rate = error == Error::CommandComplete;
+                let set_temperature_and_magneto_data_rate = status == Ok(());
 
-                self.callback.get().schedule(
-                    if set_temperature_and_magneto_data_rate {
-                        1
-                    } else {
-                        0
-                    },
-                    0,
-                    0,
-                );
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        grant.callback.schedule(
+                            if set_temperature_and_magneto_data_rate {
+                                1
+                            } else {
+                                0
+                            },
+                            0,
+                            0,
+                        );
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_magnetometer.disable();
                 self.state.set(State::Idle);
@@ -419,11 +465,14 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                 }
             }
             State::SetRange => {
-                let set_range = error == Error::CommandComplete;
+                let set_range = status == Ok(());
 
-                self.callback
-                    .get()
-                    .schedule(if set_range { 1 } else { 0 }, 0, 0);
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        grant.callback.schedule(if set_range { 1 } else { 0 }, 0, 0);
+                    });
+                });
+
                 if self.config_in_progress.get() {
                     self.config_in_progress.set(false);
                 }
@@ -433,7 +482,7 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
             }
             State::ReadTemperature => {
                 let mut temp: usize = 0;
-                let values = if error == Error::CommandComplete {
+                let values = if status == Ok(()) {
                     temp = ((buffer[1] as i16 | ((buffer[0] as i16) << 8)) >> 4) as usize;
                     self.temperature_client.map(|client| {
                         client.callback((temp as i16 / 8 + TEMP_OFFSET as i16) as usize);
@@ -445,11 +494,17 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                     });
                     false
                 };
-                if values {
-                    self.callback.get().schedule(temp, 0, 0);
-                } else {
-                    self.callback.get().schedule(0, 0, 0);
-                }
+
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        if values {
+                            grant.callback.schedule(temp, 0, 0);
+                        } else {
+                            grant.callback.schedule(0, 0, 0);
+                        }
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_magnetometer.disable();
                 self.state.set(State::Idle);
@@ -458,7 +513,7 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                 let mut x: usize = 0;
                 let mut y: usize = 0;
                 let mut z: usize = 0;
-                let values = if error == Error::CommandComplete {
+                let values = if status == Ok(()) {
                     self.nine_dof_client.map(|client| {
                         // compute using only integers
                         let range = self.mag_range.get() as usize;
@@ -481,11 +536,17 @@ impl i2c::I2CClient for Lsm303dlhcI2C<'_> {
                     });
                     false
                 };
-                if values {
-                    self.callback.get().schedule(x, y, z);
-                } else {
-                    self.callback.get().schedule(0, 0, 0);
-                }
+
+                self.current_process.map(|process_id| {
+                    let _ = self.apps.enter(*process_id, |grant| {
+                        if values {
+                            grant.callback.schedule(x, y, z);
+                        } else {
+                            grant.callback.schedule(0, 0, 0);
+                        }
+                    });
+                });
+
                 self.buffer.replace(buffer);
                 self.i2c_magnetometer.disable();
                 self.state.set(State::Idle);
@@ -505,10 +566,29 @@ impl Driver for Lsm303dlhcI2C<'_> {
         command_num: usize,
         data1: usize,
         data2: usize,
-        _appid: AppId,
+        process_id: ProcessId,
     ) -> CommandReturn {
+        if command_num == 0 {
+            // Handle this first as it should be returned
+            // unconditionally
+            return CommandReturn::success();
+        }
+
+        // Check if this non-virtualized driver is already in use by
+        // some (alive) process
+        let match_or_empty_or_nonexistant = self.current_process.map_or(true, |current_process| {
+            self.apps
+                .enter(*current_process, |_| current_process == &process_id)
+                .unwrap_or(true)
+        });
+
+        if match_or_empty_or_nonexistant {
+            self.current_process.set(process_id);
+        } else {
+            return CommandReturn::failure(ErrorCode::NOMEM);
+        }
+
         match command_num {
-            0 => CommandReturn::success(),
             // Check is sensor is correctly connected
             1 => {
                 if self.state.get() == State::Idle {
@@ -608,12 +688,19 @@ impl Driver for Lsm303dlhcI2C<'_> {
     fn subscribe(
         &self,
         subscribe_num: usize,
-        callback: Upcall,
-        _appid: AppId,
+        mut callback: Upcall,
+        process_id: ProcessId,
     ) -> Result<Upcall, (Upcall, ErrorCode)> {
         match subscribe_num {
             0 /* set the one shot callback */ => {
-                Ok (self.callback.replace (callback))
+                let res = self.apps.enter(process_id, |grant| {
+                    mem::swap(&mut callback, &mut grant.callback);
+                }).map_err(ErrorCode::from);
+
+                match res {
+                    Ok(()) => Ok(callback),
+                    Err(e) => Err((callback, e)),
+                }
             },
             // default
             _ => Err ((callback, ErrorCode::NOSUPPORT)),
@@ -626,21 +713,21 @@ impl<'a> sensors::NineDof<'a> for Lsm303dlhcI2C<'a> {
         self.nine_dof_client.replace(nine_dof_client);
     }
 
-    fn read_accelerometer(&self) -> ReturnCode {
+    fn read_accelerometer(&self) -> Result<(), ErrorCode> {
         if self.state.get() == State::Idle {
             self.read_acceleration_xyz();
-            ReturnCode::SUCCESS
+            Ok(())
         } else {
-            ReturnCode::EBUSY
+            Err(ErrorCode::BUSY)
         }
     }
 
-    fn read_magnetometer(&self) -> ReturnCode {
+    fn read_magnetometer(&self) -> Result<(), ErrorCode> {
         if self.state.get() == State::Idle {
             self.read_magnetometer_xyz();
-            ReturnCode::SUCCESS
+            Ok(())
         } else {
-            ReturnCode::EBUSY
+            Err(ErrorCode::BUSY)
         }
     }
 }
@@ -650,12 +737,12 @@ impl<'a> sensors::TemperatureDriver<'a> for Lsm303dlhcI2C<'a> {
         self.temperature_client.replace(temperature_client);
     }
 
-    fn read_temperature(&self) -> ReturnCode {
+    fn read_temperature(&self) -> Result<(), ErrorCode> {
         if self.state.get() == State::Idle {
             self.read_temperature();
-            ReturnCode::SUCCESS
+            Ok(())
         } else {
-            ReturnCode::EBUSY
+            Err(ErrorCode::BUSY)
         }
     }
 }

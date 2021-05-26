@@ -38,8 +38,7 @@ mod test_take_map_cell;
 const NUM_PROCS: usize = 20;
 
 // Actual memory for holding the active process structures.
-static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
-    [None; NUM_PROCS];
+static mut PROCESSES: [Option<&'static dyn kernel::procs::Process>; NUM_PROCS] = [None; NUM_PROCS];
 
 static mut CHIP: Option<&'static sam4l::chip::Sam4l<Sam4lDefaultPeripherals>> = None;
 
@@ -302,7 +301,7 @@ pub unsafe fn main() {
     let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi)
         .finalize(components::spi_mux_component_helper!(sam4l::spi::SpiHw));
     // Create the SPI system call capsule.
-    let spi_syscalls = components::spi::SpiSyscallComponent::new(mux_spi, 0)
+    let spi_syscalls = components::spi::SpiSyscallComponent::new(board_kernel, mux_spi, 0)
         .finalize(components::spi_syscall_component_helper!(sam4l::spi::SpiHw));
 
     // LEDs
@@ -415,11 +414,10 @@ pub unsafe fn main() {
     // peripherals.pa[16].set_client(debug_process_restart);
 
     // Configure application fault policy
-    let restart_policy = static_init!(
-        kernel::procs::ThresholdRestartThenPanic,
-        kernel::procs::ThresholdRestartThenPanic::new(4)
+    let fault_policy = static_init!(
+        kernel::procs::ThresholdRestartThenPanicFaultPolicy,
+        kernel::procs::ThresholdRestartThenPanicFaultPolicy::new(4)
     );
-    let fault_response = kernel::procs::FaultResponse::Restart(restart_policy);
 
     let hail = Hail {
         console,
@@ -443,7 +441,7 @@ pub unsafe fn main() {
     // Setup the UART bus for nRF51 serialization..
     hail.nrf51822.initialize();
 
-    process_console.start();
+    let _ = process_console.start();
 
     // Uncomment to measure overheads for TakeCell and MapCell:
     // test_take_map_cell::test_take_map_cell();
@@ -474,7 +472,7 @@ pub unsafe fn main() {
             &_eappmem as *const u8 as usize - &_sappmem as *const u8 as usize,
         ),
         &mut PROCESSES,
-        fault_response,
+        fault_policy,
         &process_management_capability,
     )
     .unwrap_or_else(|err| {

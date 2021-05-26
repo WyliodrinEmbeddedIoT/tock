@@ -1,8 +1,10 @@
 //! Platform Level Interrupt Control peripheral driver for SweRV EH1.
 
 use kernel::common::cells::VolatileCell;
-use kernel::common::registers::LocalRegisterCopy;
-use kernel::common::registers::{register_bitfields, register_structs, ReadWrite};
+use kernel::common::registers::interfaces::{Readable, Writeable};
+use kernel::common::registers::{
+    register_bitfields, register_structs, LocalRegisterCopy, ReadWrite,
+};
 use kernel::common::StaticRef;
 use riscv_csr::csr::ReadWriteRiscvCsr;
 
@@ -152,7 +154,7 @@ impl Pic {
         }
     }
 
-    /// Get the index (0-256) of the lowest number pending interrupt, or `None` if
+    /// Get the index (0-96) of the lowest number pending interrupt, or `None` if
     /// none is pending. RISC-V PIC has a "claim" register which makes it easy
     /// to grab the highest priority pending interrupt.
     pub fn next_pending(&self) -> Option<u32> {
@@ -181,8 +183,10 @@ impl Pic {
             0
         } else if index < 64 {
             1
-        } else {
+        } else if index < 96 {
             2
+        } else {
+            panic!("Unsupported index {}", index);
         };
         let irq = index % 32;
 

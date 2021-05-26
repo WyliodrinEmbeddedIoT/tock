@@ -28,8 +28,7 @@ use kernel::hil::entropy::{Entropy32, Entropy8};
 use kernel::hil::rng;
 use kernel::hil::rng::{Client, Continue, Random, Rng};
 use kernel::{
-    AppId, CommandReturn, Driver, ErrorCode, Grant, ReadWrite, ReadWriteAppSlice, ReturnCode,
-    Upcall,
+    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadWrite, ReadWriteAppSlice, Upcall,
 };
 
 /// Syscall driver number.
@@ -64,11 +63,11 @@ impl rng::Client for RngDriver<'_> {
     fn randomness_available(
         &self,
         randomness: &mut dyn Iterator<Item = u32>,
-        _error: ReturnCode,
+        _error: Result<(), ErrorCode>,
     ) -> rng::Continue {
         let mut done = true;
         for cntr in self.apps.iter() {
-            cntr.enter(|app, _| {
+            cntr.enter(|app| {
                 // Check if this app needs random values.
                 if app.remaining > 0 {
                     // Provide the current application values to the closure
@@ -158,7 +157,7 @@ impl rng::Client for RngDriver<'_> {
 impl<'a> Driver for RngDriver<'a> {
     fn allow_readwrite(
         &self,
-        appid: AppId,
+        appid: ProcessId,
         allow_num: usize,
         mut slice: ReadWriteAppSlice,
     ) -> Result<ReadWriteAppSlice, (ReadWriteAppSlice, ErrorCode)> {
@@ -166,7 +165,7 @@ impl<'a> Driver for RngDriver<'a> {
         let res = match allow_num {
             0 => self
                 .apps
-                .enter(appid, |app, _| {
+                .enter(appid, |app| {
                     mem::swap(&mut app.buffer, &mut slice);
                     Ok(())
                 })
@@ -184,12 +183,12 @@ impl<'a> Driver for RngDriver<'a> {
         &self,
         subscribe_num: usize,
         mut callback: Upcall,
-        app_id: AppId,
+        app_id: ProcessId,
     ) -> Result<Upcall, (Upcall, ErrorCode)> {
         let res = match subscribe_num {
             0 => self
                 .apps
-                .enter(app_id, |app, _| {
+                .enter(app_id, |app| {
                     mem::swap(&mut app.callback, &mut callback);
                     Ok(())
                 })
@@ -203,7 +202,13 @@ impl<'a> Driver for RngDriver<'a> {
         }
     }
 
-    fn command(&self, command_num: usize, data: usize, _: usize, appid: AppId) -> CommandReturn {
+    fn command(
+        &self,
+        command_num: usize,
+        data: usize,
+        _: usize,
+        appid: ProcessId,
+    ) -> CommandReturn {
         match command_num {
             0 /* Check if exists */ =>
             {
@@ -212,7 +217,7 @@ impl<'a> Driver for RngDriver<'a> {
 
             1 /* Ask for a given number of random bytes */ => self
                 .apps
-                .enter(appid, |app, _| {
+                .enter(appid, |app| {
                     app.remaining = data;
                     app.idx = 0;
 
@@ -221,7 +226,7 @@ impl<'a> Driver for RngDriver<'a> {
                     // result arrives anyways
                     if !self.getting_randomness.get() {
                         self.getting_randomness.set(true);
-                        self.rng.get();
+                        let _ = self.rng.get();
                     }
 
                     CommandReturn::success()
@@ -247,11 +252,11 @@ impl<'a> Entropy32ToRandom<'a> {
 }
 
 impl<'a> Rng<'a> for Entropy32ToRandom<'a> {
-    fn get(&self) -> ReturnCode {
+    fn get(&self) -> Result<(), ErrorCode> {
         self.egen.get()
     }
 
-    fn cancel(&self) -> ReturnCode {
+    fn cancel(&self) -> Result<(), ErrorCode> {
         self.egen.cancel()
     }
 
@@ -265,18 +270,16 @@ impl entropy::Client32 for Entropy32ToRandom<'_> {
     fn entropy_available(
         &self,
         entropy: &mut dyn Iterator<Item = u32>,
-        error: ReturnCode,
+        error: Result<(), ErrorCode>,
     ) -> entropy::Continue {
         self.client.map_or(entropy::Continue::Done, |client| {
-            if error != ReturnCode::SUCCESS {
+            if error != Ok(()) {
                 match client.randomness_available(&mut Entropy32ToRandomIter(entropy), error) {
                     rng::Continue::More => entropy::Continue::More,
                     rng::Continue::Done => entropy::Continue::Done,
                 }
             } else {
-                match client
-                    .randomness_available(&mut Entropy32ToRandomIter(entropy), ReturnCode::SUCCESS)
-                {
+                match client.randomness_available(&mut Entropy32ToRandomIter(entropy), Ok(())) {
                     rng::Continue::More => entropy::Continue::More,
                     rng::Continue::Done => entropy::Continue::Done,
                 }
@@ -314,19 +317,19 @@ impl<'a> Entropy8To32<'a> {
 }
 
 impl<'a> Entropy32<'a> for Entropy8To32<'a> {
-    fn get(&self) -> ReturnCode {
+    fn get(&self) -> Result<(), ErrorCode> {
         self.egen.get()
     }
 
     /// Cancel acquisition of random numbers.
     ///
     /// There are two valid return values:
-    ///   - SUCCESS: an outstanding request from `get` has been cancelled,
+    ///   - Ok(()): an outstanding request from `get` has been cancelled,
     ///     or there was no outstanding request. No `randomness_available`
     ///     callback will be issued.
     ///   - FAIL: There will be a randomness_available callback, which
     ///     may or may not return an error code.
-    fn cancel(&self) -> ReturnCode {
+    fn cancel(&self) -> Result<(), ErrorCode> {
         self.egen.cancel()
     }
 
@@ -340,10 +343,10 @@ impl entropy::Client8 for Entropy8To32<'_> {
     fn entropy_available(
         &self,
         entropy: &mut dyn Iterator<Item = u8>,
-        error: ReturnCode,
+        error: Result<(), ErrorCode>,
     ) -> entropy::Continue {
         self.client.map_or(entropy::Continue::Done, |client| {
-            if error != ReturnCode::SUCCESS {
+            if error != Ok(()) {
                 client.entropy_available(&mut Entropy8To32Iter(self), error)
             } else {
                 let mut count = self.count.get();
@@ -367,8 +370,7 @@ impl entropy::Client8 for Entropy8To32<'_> {
                         }
                     }
                 }
-                let rval =
-                    client.entropy_available(&mut Entropy8To32Iter(self), ReturnCode::SUCCESS);
+                let rval = client.entropy_available(&mut Entropy8To32Iter(self), Ok(()));
                 self.bytes.set(0);
                 rval
             }
@@ -411,19 +413,19 @@ impl<'a> Entropy32To8<'a> {
 }
 
 impl<'a> Entropy8<'a> for Entropy32To8<'a> {
-    fn get(&self) -> ReturnCode {
+    fn get(&self) -> Result<(), ErrorCode> {
         self.egen.get()
     }
 
     /// Cancel acquisition of random numbers.
     ///
     /// There are two valid return values:
-    ///   - SUCCESS: an outstanding request from `get` has been cancelled,
+    ///   - Ok(()): an outstanding request from `get` has been cancelled,
     ///     or there was no outstanding request. No `randomness_available`
     ///     callback will be issued.
     ///   - FAIL: There will be a randomness_available callback, which
     ///     may or may not return an error code.
-    fn cancel(&self) -> ReturnCode {
+    fn cancel(&self) -> Result<(), ErrorCode> {
         self.egen.cancel()
     }
 
@@ -437,10 +439,10 @@ impl entropy::Client32 for Entropy32To8<'_> {
     fn entropy_available(
         &self,
         entropy: &mut dyn Iterator<Item = u32>,
-        error: ReturnCode,
+        error: Result<(), ErrorCode>,
     ) -> entropy::Continue {
         self.client.map_or(entropy::Continue::Done, |client| {
-            if error != ReturnCode::SUCCESS {
+            if error != Ok(()) {
                 client.entropy_available(&mut Entropy32To8Iter(self), error)
             } else {
                 let r = entropy.next();
@@ -451,7 +453,7 @@ impl entropy::Client32 for Entropy32To8<'_> {
                         self.bytes_consumed.set(0);
                     }
                 }
-                client.entropy_available(&mut Entropy32To8Iter(self), ReturnCode::SUCCESS)
+                client.entropy_available(&mut Entropy32To8Iter(self), Ok(()))
             }
         })
     }
@@ -496,7 +498,7 @@ impl<'a> SynchronousRandom<'a> {
 impl<'a> Random<'a> for SynchronousRandom<'a> {
     fn initialize(&'a self) {
         self.rgen.set_client(self);
-        self.rgen.get();
+        let _ = self.rgen.get();
     }
 
     fn reseed(&self, seed: u32) {
@@ -523,7 +525,7 @@ impl Client for SynchronousRandom<'_> {
     fn randomness_available(
         &self,
         randomness: &mut dyn Iterator<Item = u32>,
-        _error: ReturnCode,
+        _error: Result<(), ErrorCode>,
     ) -> Continue {
         match randomness.next() {
             None => Continue::More,

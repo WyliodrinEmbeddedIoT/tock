@@ -20,9 +20,9 @@ use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
 use kernel::common::cells::{OptionalCell, TakeCell};
 use kernel::common::registers::register_bitfields;
-use kernel::hil::i2c::{self, Error};
+use kernel::hil::i2c;
 use kernel::hil::sensors;
-use kernel::{AppId, CommandReturn, Driver, ErrorCode, ReturnCode, Upcall};
+use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId, Upcall};
 
 /// Syscall driver number.
 pub const DRIVER_NUM: usize = driver::NUM::Mlx90614 as usize;
@@ -56,25 +56,33 @@ enum_from_primitive! {
     }
 }
 
+#[derive(Default)]
+pub struct App {
+    callback: Upcall,
+}
+
 pub struct Mlx90614SMBus<'a> {
     smbus_temp: &'a dyn i2c::SMBusDevice,
-    callback: Cell<Upcall>,
     temperature_client: OptionalCell<&'a dyn sensors::TemperatureClient>,
     buffer: TakeCell<'static, [u8]>,
     state: Cell<State>,
+    apps: Grant<App>,
+    owning_process: OptionalCell<ProcessId>,
 }
 
 impl<'a> Mlx90614SMBus<'_> {
     pub fn new(
         smbus_temp: &'a dyn i2c::SMBusDevice,
         buffer: &'static mut [u8],
+        grant: Grant<App>,
     ) -> Mlx90614SMBus<'a> {
         Mlx90614SMBus {
             smbus_temp,
-            callback: Cell::new(Upcall::default()),
             temperature_client: OptionalCell::empty(),
             buffer: TakeCell::new(buffer),
             state: Cell::new(State::Idle),
+            apps: grant,
+            owning_process: OptionalCell::empty(),
         }
     }
 
@@ -105,28 +113,30 @@ impl<'a> Mlx90614SMBus<'_> {
 }
 
 impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
-    fn command_complete(&self, buffer: &'static mut [u8], error: Error) {
+    fn command_complete(&self, buffer: &'static mut [u8], status: Result<(), i2c::Error>) {
         match self.state.get() {
             State::Idle => {
                 self.buffer.replace(buffer);
             }
             State::IsPresent => {
-                let present = if error == Error::CommandComplete && buffer[0] == 60 {
+                let present = if status == Ok(()) && buffer[0] == 60 {
                     true
                 } else {
                     false
                 };
 
-                self.callback
-                    .get()
-                    .schedule(if present { 1 } else { 0 }, 0, 0);
+                self.owning_process.map(|pid| {
+                    let _ = self.apps.enter(*pid, |app| {
+                        app.callback.schedule(if present { 1 } else { 0 }, 0, 0);
+                    });
+                });
                 self.buffer.replace(buffer);
                 self.state.set(State::Idle);
             }
             State::ReadAmbientTemp | State::ReadObjTemp => {
                 let mut temp: usize = 0;
 
-                let values = if error == Error::CommandComplete {
+                let values = if status == Ok(()) {
                     // Convert to centi celsius
                     temp = ((buffer[0] as usize | (buffer[1] as usize) << 8) * 2) - 27300;
                     self.temperature_client.map(|client| {
@@ -140,9 +150,17 @@ impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
                     false
                 };
                 if values {
-                    self.callback.get().schedule(temp, 0, 0);
+                    self.owning_process.map(|pid| {
+                        let _ = self.apps.enter(*pid, |app| {
+                            app.callback.schedule(temp, 0, 0);
+                        });
+                    });
                 } else {
-                    self.callback.get().schedule(0, 0, 0);
+                    self.owning_process.map(|pid| {
+                        let _ = self.apps.enter(*pid, |app| {
+                            app.callback.schedule(0, 0, 0);
+                        });
+                    });
                 }
                 self.buffer.replace(buffer);
                 self.state.set(State::Idle);
@@ -152,7 +170,31 @@ impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
 }
 
 impl<'a> Driver for Mlx90614SMBus<'a> {
-    fn command(&self, command_num: usize, _data1: usize, _data2: usize, _: AppId) -> CommandReturn {
+    fn command(
+        &self,
+        command_num: usize,
+        _data1: usize,
+        _data2: usize,
+        process_id: ProcessId,
+    ) -> CommandReturn {
+        if command_num == 0 {
+            // Handle this first as it should be returned
+            // unconditionally
+            return CommandReturn::success();
+        }
+        // Check if this non-virtualized driver is already in use by
+        // some (alive) process
+        let match_or_empty_or_nonexistant = self.owning_process.map_or(true, |current_process| {
+            self.apps
+                .enter(*current_process, |_| current_process == &process_id)
+                .unwrap_or(true)
+        });
+        if match_or_empty_or_nonexistant {
+            self.owning_process.set(process_id);
+        } else {
+            return CommandReturn::failure(ErrorCode::NOMEM);
+        }
+
         match command_num {
             0 => CommandReturn::success(),
             // Check is sensor is correctly connected
@@ -190,15 +232,26 @@ impl<'a> Driver for Mlx90614SMBus<'a> {
     fn subscribe(
         &self,
         subscribe_num: usize,
-        callback: Upcall,
-        _app_id: AppId,
+        mut callback: Upcall,
+        appid: ProcessId,
     ) -> Result<Upcall, (Upcall, ErrorCode)> {
-        match subscribe_num {
-            0 /* set the one shot callback */ => {
-                Ok(self.callback.replace(callback))
-            },
-            // default
-            _ => Err((callback, ErrorCode::NOSUPPORT)),
+        let res = self
+            .apps
+            .enter(appid, |app| {
+                match subscribe_num {
+                    0 => {
+                        core::mem::swap(&mut app.callback, &mut callback);
+                        Ok(())
+                    }
+
+                    // default
+                    _ => Err(ErrorCode::NOSUPPORT),
+                }
+            })
+            .unwrap_or_else(|e| Err(e.into()));
+        match res {
+            Ok(()) => Ok(callback),
+            Err(e) => Err((callback, e)),
         }
     }
 }
@@ -208,8 +261,8 @@ impl<'a> sensors::TemperatureDriver<'a> for Mlx90614SMBus<'a> {
         self.temperature_client.replace(temperature_client);
     }
 
-    fn read_temperature(&self) -> ReturnCode {
+    fn read_temperature(&self) -> Result<(), ErrorCode> {
         self.read_object_temperature();
-        ReturnCode::SUCCESS
+        Ok(())
     }
 }

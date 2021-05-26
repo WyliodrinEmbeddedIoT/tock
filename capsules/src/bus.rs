@@ -29,7 +29,7 @@ use kernel::debug;
 use kernel::hil::bus8080::{self, Bus8080};
 use kernel::hil::i2c::{Error, I2CClient, I2CDevice};
 use kernel::hil::spi::{ClockPhase, ClockPolarity, SpiMasterClient, SpiMasterDevice};
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
 /// Bus width used for address width and data width
 pub enum BusWidth {
@@ -58,19 +58,29 @@ pub trait Bus<'a> {
     ///
     /// If the underlaying bus does not support addresses (eg UART)
     /// this function returns ENOSUPPORT
-    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> ReturnCode;
+    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> Result<(), ErrorCode>;
 
     /// Write data items to the previously set address
     ///
     /// data_width specifies the encoding of the data items placed in the buffer
     /// len specifies the number of data items (the number of bytes is len * data_width.width_in_bytes)
-    fn write(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode;
+    fn write(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode>;
 
     /// Read data items from the previously set address
     ///
     /// data_width specifies the encoding of the data items placed in the buffer
     /// len specifies the number of data items (the number of bytes is len * data_width.width_in_bytes)
-    fn read(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode;
+    fn read(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode>;
 
     fn set_client(&self, client: &'a dyn Client);
 }
@@ -125,36 +135,46 @@ impl<'a, S: SpiMasterDevice> SpiMasterBus<'a, S> {
 }
 
 impl<'a, S: SpiMasterDevice> Bus<'a> for SpiMasterBus<'a, S> {
-    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> ReturnCode {
+    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> Result<(), ErrorCode> {
         match addr_width {
             BusWidth::Bits8 => self
                 .addr_buffer
                 .take()
-                .map_or(ReturnCode::ENOMEM, |buffer| {
+                .map_or(Err(ErrorCode::NOMEM), |buffer| {
                     self.status.set(BusStatus::SetAddress);
                     buffer[0] = addr as u8;
-                    self.spi.read_write_bytes(buffer, None, 1);
-                    ReturnCode::SUCCESS
+                    let _ = self.spi.read_write_bytes(buffer, None, 1);
+                    Ok(())
                 }),
 
-            _ => ReturnCode::ENOSUPPORT,
+            _ => Err(ErrorCode::NOSUPPORT),
         }
     }
 
-    fn write(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn write(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         // endianess does not matter as the buffer is sent as is
         let bytes = data_width.width_in_bytes();
         self.bus_width.set(bytes);
         if buffer.len() >= len * bytes {
             self.status.set(BusStatus::Write);
-            self.spi.read_write_bytes(buffer, None, len * bytes);
-            ReturnCode::SUCCESS
+            let _ = self.spi.read_write_bytes(buffer, None, len * bytes);
+            Ok(())
         } else {
-            ReturnCode::ENOMEM
+            Err(ErrorCode::NOMEM)
         }
     }
 
-    fn read(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn read(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         // endianess does not matter as the buffer is read as is
         let bytes = data_width.width_in_bytes();
         self.bus_width.set(bytes);
@@ -166,11 +186,12 @@ impl<'a, S: SpiMasterDevice> Bus<'a> for SpiMasterBus<'a, S> {
                     && buffer.len() > len * bytes
                 {
                     self.status.set(BusStatus::Read);
-                    self.spi
+                    let _ = self
+                        .spi
                         .read_write_bytes(write_buffer, Some(buffer), len * bytes);
-                    ReturnCode::SUCCESS
+                    Ok(())
                 } else {
-                    ReturnCode::ENOMEM
+                    Err(ErrorCode::NOMEM)
                 }
             },
         )
@@ -235,23 +256,29 @@ impl<'a, I: I2CDevice> I2CMasterBus<'a, I> {
 }
 
 impl<'a, I: I2CDevice> Bus<'a> for I2CMasterBus<'a, I> {
-    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> ReturnCode {
+    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> Result<(), ErrorCode> {
         match addr_width {
             BusWidth::Bits8 => self
                 .addr_buffer
                 .take()
-                .map_or(ReturnCode::ENOMEM, |buffer| {
+                .map_or(Err(ErrorCode::NOMEM), |buffer| {
                     buffer[0] = addr as u8;
                     self.status.set(BusStatus::SetAddress);
-                    self.i2c.write(buffer, 1);
-                    ReturnCode::SUCCESS
+                    // TODO verify errors
+                    let _ = self.i2c.write(buffer, 1);
+                    Ok(())
                 }),
 
-            _ => ReturnCode::ENOSUPPORT,
+            _ => Err(ErrorCode::NOSUPPORT),
         }
     }
 
-    fn write(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn write(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         // endianess does not matter as the buffer is sent as is
         let bytes = data_width.width_in_bytes();
         self.len.set(len * bytes);
@@ -259,24 +286,31 @@ impl<'a, I: I2CDevice> Bus<'a> for I2CMasterBus<'a, I> {
             debug!("write len {}", len);
             self.len.set(len);
             self.status.set(BusStatus::Write);
-            self.i2c.write(buffer, (len * bytes) as u8);
-            ReturnCode::SUCCESS
+            // TODO verify errors
+            let _ = self.i2c.write(buffer, (len * bytes) as u8);
+            Ok(())
         } else {
-            ReturnCode::ENOMEM
+            Err(ErrorCode::NOMEM)
         }
     }
 
-    fn read(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn read(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         // endianess does not matter as the buffer is read as is
         let bytes = data_width.width_in_bytes();
         self.len.set(len * bytes);
         if len & bytes < 255 && buffer.len() >= len * bytes {
             self.len.set(len);
             self.status.set(BusStatus::Read);
-            self.i2c.read(buffer, (len * bytes) as u8);
-            ReturnCode::SUCCESS
+            // TODO verify errors
+            let _ = self.i2c.read(buffer, (len * bytes) as u8);
+            Ok(())
         } else {
-            ReturnCode::ENOMEM
+            Err(ErrorCode::NOMEM)
         }
     }
 
@@ -286,9 +320,9 @@ impl<'a, I: I2CDevice> Bus<'a> for I2CMasterBus<'a, I> {
 }
 
 impl<'a, I: I2CDevice> I2CClient for I2CMasterBus<'a, I> {
-    fn command_complete(&self, buffer: &'static mut [u8], error: Error) {
-        let len = match error {
-            Error::CommandComplete => self.len.get(),
+    fn command_complete(&self, buffer: &'static mut [u8], status: Result<(), Error>) {
+        let len = match status {
+            Ok(()) => self.len.get(),
             _ => 0,
         };
         match self.status.get() {
@@ -335,27 +369,37 @@ impl<'a, B: Bus8080<'static>> Bus8080Bus<'a, B> {
 }
 
 impl<'a, B: Bus8080<'static>> Bus<'a> for Bus8080Bus<'a, B> {
-    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> ReturnCode {
+    fn set_addr(&self, addr_width: BusWidth, addr: usize) -> Result<(), ErrorCode> {
         if let Some(bus_width) = Self::to_bus8080_width(addr_width) {
             self.bus.set_addr(bus_width, addr)
         } else {
-            ReturnCode::EINVAL
+            Err(ErrorCode::INVAL)
         }
     }
 
-    fn write(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn write(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         if let Some(bus_width) = Self::to_bus8080_width(data_width) {
             self.bus.write(bus_width, buffer, len)
         } else {
-            ReturnCode::EINVAL
+            Err(ErrorCode::INVAL)
         }
     }
 
-    fn read(&self, data_width: BusWidth, buffer: &'static mut [u8], len: usize) -> ReturnCode {
+    fn read(
+        &self,
+        data_width: BusWidth,
+        buffer: &'static mut [u8],
+        len: usize,
+    ) -> Result<(), ErrorCode> {
         if let Some(bus_width) = Self::to_bus8080_width(data_width) {
             self.bus.read(bus_width, buffer, len)
         } else {
-            ReturnCode::EINVAL
+            Err(ErrorCode::INVAL)
         }
     }
 
