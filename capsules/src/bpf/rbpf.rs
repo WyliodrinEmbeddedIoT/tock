@@ -21,7 +21,7 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names, single_match, cast_lossless, doc_markdown, match_same_arms, unreadable_literal))]
 use kernel::debug;
-use kernel::{ErrorCode, ReturnCode};
+use kernel::{ErrorCode};
 
 use crate::bpf::ebpf;
 use crate::bpf::verifier;
@@ -34,7 +34,7 @@ use crate::bpf::verifier;
 ///   - Unknown instructions.
 ///   - Bad formed instruction.
 ///   - Unknown eBPF helper index.
-pub type Verifier = fn(prog: &[u8]) -> Result<(), ReturnCode>;
+pub type Verifier = fn(prog: &[u8]) -> Result<(), ErrorCode>;
 
 /// A virtual machine to run eBPF program. This kind of VM is used for programs expecting to work
 /// directly on the memory area representing packet data.
@@ -81,7 +81,7 @@ impl<'a> EbpfVmRaw<'a> {
     /// // Instantiate a VM.
     /// let vm = rbpf::EbpfVmRaw::new(Some(prog)).unwrap();
     /// ```
-    pub fn new(prog: Option<&'a [u8]>) -> Result<EbpfVmRaw<'a>, ReturnCode> {
+    pub fn new(prog: Option<&'a [u8]>) -> Result<EbpfVmRaw<'a>, ErrorCode> {
         if let Some(prog) = prog {
             verifier::check(prog)?;
         }
@@ -118,7 +118,7 @@ impl<'a> EbpfVmRaw<'a> {
     /// let res = vm.execute_program(mem).unwrap();
     /// assert_eq!(res, 0x22cc);
     /// ```
-    pub fn set_program(&mut self, prog: &'a [u8]) -> Result<(), ReturnCode> {
+    pub fn set_program(&mut self, prog: &'a [u8]) -> Result<(), ErrorCode> {
         (self.verifier)(prog)?;
         self.prog = Some(prog);
         Ok(())
@@ -154,7 +154,7 @@ impl<'a> EbpfVmRaw<'a> {
     /// // Change the verifier.
     /// vm.set_verifier(verifier).unwrap();
     /// ```
-    pub fn set_verifier(&mut self, verifier: Verifier) -> Result<(), ReturnCode> {
+    pub fn set_verifier(&mut self, verifier: Verifier) -> Result<(), ErrorCode> {
         if let Some(prog) = self.prog {
             verifier(prog)?;
         }
@@ -185,12 +185,12 @@ impl<'a> EbpfVmRaw<'a> {
     /// ```
     #[allow(unknown_lints)]
     #[allow(cyclomatic_complexity)]
-    pub fn execute_program(&self, mem: &mut [u8]) -> Result<u64, ReturnCode> {
+    pub fn execute_program(&self, mem: &mut [u8]) -> Result<u64, ErrorCode> {
         const U32MAX: u64 = u32::MAX as u64;
 
         let prog = match self.prog { 
             Some(prog) => prog,
-            None => Err(ReturnCode::EINVAL)?,
+            None => Err(ErrorCode::INVAL)?,
         };
 
         let mem_ptr = mem.as_ptr();
@@ -557,7 +557,7 @@ impl<'a> EbpfVmRaw<'a> {
     }
 
     fn check_mem(addr: u64, len: usize, access_type: &str, insn_ptr: usize,
-             mem: &[u8], stack: u64) -> Result<(), ReturnCode> {
+             mem: &[u8], stack: u64) -> Result<(), ErrorCode> {
 
         let mem_ptr = mem.as_ptr();
         let mem_len = mem.len();

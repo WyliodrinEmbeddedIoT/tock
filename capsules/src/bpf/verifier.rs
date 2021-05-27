@@ -22,9 +22,9 @@
 //
 // Contrary to the verifier of the Linux kernel, this one does not modify the bytecode at all.
 use crate::bpf::ebpf;
-use kernel::ReturnCode;
+use kernel::ErrorCode;
 
-fn check_prog_len(prog: &[u8]) -> Result<(), ReturnCode> {
+fn check_prog_len(prog: &[u8]) -> Result<(), ErrorCode> {
     if prog.len() % ebpf::INSN_SIZE != 0 {
         panic!("eBPF program length must be a multiple of {:?} octets",
                        ebpf::INSN_SIZE);
@@ -45,7 +45,7 @@ fn check_prog_len(prog: &[u8]) -> Result<(), ReturnCode> {
     Ok(())
 }
 
-fn check_imm_nonzero(insn: &ebpf::Insn, insn_ptr: usize) -> Result<(), ReturnCode> {
+fn check_imm_nonzero(insn: &ebpf::Insn, insn_ptr: usize) -> Result<(), ErrorCode> {
     if insn.imm == 0 {
         panic!("division by 0 (insn #{:?})", insn_ptr);
     }
@@ -53,14 +53,14 @@ fn check_imm_nonzero(insn: &ebpf::Insn, insn_ptr: usize) -> Result<(), ReturnCod
     Ok(())
 }
 
-fn check_imm_endian(insn: &ebpf::Insn, insn_ptr: usize) -> Result<(), ReturnCode> {
+fn check_imm_endian(insn: &ebpf::Insn, insn_ptr: usize) -> Result<(), ErrorCode> {
     match insn.imm {
         16 | 32 | 64 => Ok(()),
         _ => panic!("unsupported argument for LE/BE (insn #{:?})", insn_ptr)
     }
 }
 
-fn check_load_dw(prog: &[u8], insn_ptr: usize) -> Result<(), ReturnCode> {
+fn check_load_dw(prog: &[u8], insn_ptr: usize) -> Result<(), ErrorCode> {
     // We know we can reach next insn since we enforce an EXIT insn at the end of program, while
     // this function should be called only for LD_DW insn, that cannot be last in program.
     let next_insn = ebpf::get_insn(prog, insn_ptr + 1);
@@ -71,7 +71,7 @@ fn check_load_dw(prog: &[u8], insn_ptr: usize) -> Result<(), ReturnCode> {
     Ok(())
 }
 
-fn check_jmp_offset(prog: &[u8], insn_ptr: usize) -> Result<(), ReturnCode> {
+fn check_jmp_offset(prog: &[u8], insn_ptr: usize) -> Result<(), ErrorCode> {
     let insn = ebpf::get_insn(prog, insn_ptr);
     if insn.off == -1 {
         panic!("infinite loop (insn #{:?})", insn_ptr);
@@ -90,7 +90,7 @@ fn check_jmp_offset(prog: &[u8], insn_ptr: usize) -> Result<(), ReturnCode> {
     Ok(())
 }
 
-fn check_registers(insn: &ebpf::Insn, store: bool, insn_ptr: usize) -> Result<(), ReturnCode> {
+fn check_registers(insn: &ebpf::Insn, store: bool, insn_ptr: usize) -> Result<(), ErrorCode> {
     if insn.src > 10 {
         panic!("invalid source register (insn #{:?})", insn_ptr);
     }
@@ -102,7 +102,7 @@ fn check_registers(insn: &ebpf::Insn, store: bool, insn_ptr: usize) -> Result<()
     }
 }
 
-pub fn check(prog: &[u8]) -> Result<(), ReturnCode> {
+pub fn check(prog: &[u8]) -> Result<(), ErrorCode> {
     check_prog_len(prog)?;
 
     let mut insn_ptr:usize = 0;

@@ -1,7 +1,7 @@
 //! Tock syscall driver capsule for running bpf code in the kernel space
 use core::mem;
 use kernel::debug;
-use kernel::{AppId, Upcall, CommandReturn, Driver, ErrorCode, Grant, ReadWriteAppSlice};
+use kernel::{ProcessId, Upcall, CommandReturn, Driver, ErrorCode, Grant, ReadWriteAppSlice};
 use crate::bpf::rbpf;
 
 /// Syscall driver number.
@@ -38,7 +38,7 @@ impl<'a> Driver for BpfDriver {
     // Allow readwrite in the memory grant 
     fn allow_readwrite(
         &self,
-        _appid: AppId,
+        _appid: ProcessId,
         allow_num: usize,
         slice: ReadWriteAppSlice,
     ) -> Result<ReadWriteAppSlice, (ReadWriteAppSlice, ErrorCode)> {
@@ -72,14 +72,14 @@ impl<'a> Driver for BpfDriver {
         &self,
         subscribe_num: usize,
         mut callback: Upcall,
-        app_id: AppId,
+        app_id: ProcessId,
     ) -> Result<Upcall, (Upcall, ErrorCode)> {
         match subscribe_num {
             0 => {
                 let res = self
                     .app
-                    .enter(app_id, |td, _allocator| {
-                        mem::swap(&mut td.callback, &mut callback);
+                    .enter(app_id, |app| {
+                        mem::swap(&mut app.callback, &mut callback);
                     })
                     .map_err(ErrorCode::from);
                 
@@ -93,19 +93,28 @@ impl<'a> Driver for BpfDriver {
         }
     }
 
-    fn command(&self, cmd_num: usize, _arg1: usize, _: usize, _appid: AppId) -> CommandReturn {
+    fn command(&self, cmd_num: usize, _arg1: usize, _: usize, _appid: ProcessId) -> CommandReturn {
         match cmd_num {
             0 => {
                 let prog = &[
-                    97, 18, 0, 0, 0, 0, 0, 0,
-                    7,   2, 0, 0, 1, 0, 0, 0,
-                    99, 33, 0, 0, 0, 0, 0, 0,
-                    97, 16, 4, 0, 0, 0, 0, 0, 
-                    39,  0, 0, 0,10, 0, 0, 0,
-                    7,   0, 0, 0,20, 0, 0, 0,
-                    99,  1, 4, 0, 0, 0, 0, 0,
-                    149, 0, 0, 0, 0, 0, 0, 0
+                    0x71, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x67, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+                    0x07, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+                    0x73, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x67, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00,
+                    0xc7, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00,
+                    0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
                 ];
+
+                // 97, 18, 0, 0, 0, 0, 0, 0,
+                // 7,   2, 0, 0, 1, 0, 0, 0,
+                // 99, 33, 0, 0, 0, 0, 0, 0,
+                // 97, 16, 4, 0, 0, 0, 0, 0, 
+                // 39,  0, 0, 0,10, 0, 0, 0,
+                // 7,   0, 0, 0,20, 0, 0, 0,
+                // 99,  1, 4, 0, 0, 0, 0, 0,
+                // 149, 0, 0, 0, 0, 0, 0, 0
+
                 let packet1 = &mut [ // start data
                     0x01, 0x01, 0x08, 0x0a, 0x89, 0x00, 0x00, 0x00,
                     0x00, 0x23, 0x63, 0x2d, 0x71, 0x64, 0x66, 0x73,
@@ -143,29 +152,30 @@ impl<'a> Driver for BpfDriver {
                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00u8
                 ];
-                for i in 0..20 {
-                    debug!("{:#04x} ", packet1[i]);
-                }
-                
+                // for i in 0..20 {
+                //     debug!("{:#04x} ", packet1[i]);
+                // }
+                debug!("{:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x} ", packet1[0], packet1[1], packet1[2], packet1[3], packet1[4], packet1[5], packet1[6], packet1[7], packet1[8], packet1[9], packet1[10], packet1[11], packet1[12], packet1[13], packet1[14], packet1[15], packet1[16], packet1[17], packet1[18], packet1[19]);
+
                 let vm = rbpf::EbpfVmRaw::new(Some(prog)).unwrap();
                 let res = vm.execute_program(packet1).unwrap();
                 debug!("Program returned: {:?} ({:#x})", res, res);
 
-                for i in 0..20 {
-                    debug!("{:#04x} ", packet1[i]);
-                }
+                // for i in 0..20 {
+                debug!("{:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x}, {:#04x} ", packet1[0], packet1[1], packet1[2], packet1[3], packet1[4], packet1[5], packet1[6], packet1[7], packet1[8], packet1[9], packet1[10], packet1[11], packet1[12], packet1[13], packet1[14], packet1[15], packet1[16], packet1[17], packet1[18], packet1[19]);
+                // }
                 CommandReturn::success()
             },
             1 => {
                 // Run bpf code
                 let res = self
                     .app
-                    .enter(_appid, |td, _allocator| {
+                    .enter(_appid, |app| {
                         // let last_value: Ticks16 = Ticks16::from(td.last_value.get());
                         debug!("Am primit ");
                         // debug!("Command 2 dupa last_value");
                         
-                        td.callback.schedule(0, 0, 0);
+                        app.callback.schedule(0, 0, 0);
                     })
                     .map_err(ErrorCode::from);
 

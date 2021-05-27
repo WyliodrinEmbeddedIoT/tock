@@ -81,6 +81,7 @@ pub struct Platform {
         nrf52::ble_radio::Radio<'static>,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
     >,
+    bpf: &'static capsules::bpf_exec::BpfDriver,
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
     led: &'static capsules::led_matrix::LedMatrixDriver<
@@ -116,6 +117,7 @@ impl kernel::Platform for Platform {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules::bpf_exec::DRIVER_NUM => f(Some(self.bpf)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::led_matrix::DRIVER_NUM => f(Some(self.led)),
             capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
@@ -203,6 +205,14 @@ pub unsafe fn main() {
         ),
     )
     .finalize(components::gpio_component_buf!(nrf52833::gpio::GPIOPin));
+
+    // BPF 
+    let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
+    let grant_bpf = board_kernel.create_grant(&grant_capt);
+    let bpf = static_init!(
+            capsules::bpf_exec::BpfDriver, 
+            capsules::bpf_exec::BpfDriver::new(grant_bpf)
+        );
 
     //--------------------------------------------------------------------------
     // Buttons
@@ -495,6 +505,7 @@ pub unsafe fn main() {
 
     let platform = Platform {
         ble_radio: ble_radio,
+        bpf: bpf,
         console: console,
         gpio: gpio,
         button: button,
