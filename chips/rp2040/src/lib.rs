@@ -9,6 +9,7 @@ pub mod interrupts;
 pub mod resets;
 pub mod timer;
 pub mod uart;
+pub mod usb;
 pub mod watchdog;
 pub mod xosc;
 

@@ -12,6 +12,7 @@ use crate::interrupts;
 use crate::resets::Resets;
 use crate::timer::RPTimer;
 use crate::uart::Uart;
+use crate::usb;
 use crate::watchdog::Watchdog;
 use crate::xosc::Xosc;
 use cortexm0p::interrupt_mask;
@@ -131,6 +132,7 @@ pub struct Rp2040DefaultPeripherals<'a> {
     pub pins: RPPins<'a>,
     pub uart0: Uart<'a>,
     pub adc: adc::Adc,
+    pub usb: usb::UsbCtrl<'a>,
 }
 
 impl Rp2040DefaultPeripherals<'_> {
@@ -145,6 +147,7 @@ impl Rp2040DefaultPeripherals<'_> {
             pins: RPPins::new(),
             uart0: Uart::new_uart0(),
             adc: adc::Adc::new(),
+            usb: usb::UsbCtrl::new(),
         }
     }
 }
@@ -170,6 +173,10 @@ impl InterruptService<()> for Rp2040DefaultPeripherals<'_> {
             }
             interrupts::ADC_IRQ_FIFO => {
                 self.adc.handle_interrupt();
+                true
+            }
+            interrupts::USBCTRL_IRQ => {
+                self.usb.handle_interrupt();
                 true
             }
             interrupts::IO_IRQ_BANK0 => {

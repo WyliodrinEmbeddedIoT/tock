@@ -328,7 +328,7 @@ pub unsafe fn main() {
     ));
 
     peripherals.adc.init();
-
+    peripherals.usb.enable();
     let adc_mux = components::adc::AdcMuxComponent::new(&peripherals.adc)
         .finalize(components::adc_mux_component_helper!(Adc));
 
