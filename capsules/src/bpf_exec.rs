@@ -2,6 +2,7 @@
 use core::mem;
 use kernel::debug;
 use kernel::{ProcessId, Upcall, CommandReturn, Driver, ErrorCode, Grant, ReadWriteAppSlice};
+use kernel::hil::gpio;
 use crate::bpf::rbpf;
 
 /// Syscall driver number.
@@ -22,19 +23,24 @@ impl Default for BpfData {
     }
 }
 
-pub struct BpfDriver {
-    app: Grant<BpfData>
+pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
+    app: Grant<BpfData>,
+    pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>]
 }
 
-impl BpfDriver {
-    pub const fn new(app: Grant<BpfData>) -> BpfDriver {
-        BpfDriver {
-             app: app
+impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
+    pub const fn new(
+        app: Grant<BpfData>,
+        pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>]
+    ) -> Self {
+        Self {
+             app: app,
+             pins: pins
         }
     }
 }
 
-impl<'a> Driver for BpfDriver {
+impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
     // Allow readwrite in the memory grant 
     fn allow_readwrite(
         &self,

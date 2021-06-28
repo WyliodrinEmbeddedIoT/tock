@@ -12,6 +12,7 @@ use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::time::Counter;
+use kernel::hil::gpio;
 
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
@@ -81,7 +82,7 @@ pub struct Platform {
         nrf52::ble_radio::Radio<'static>,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
     >,
-    bpf: &'static capsules::bpf_exec::BpfDriver,
+    bpf: &'static capsules::bpf_exec::BpfDriver<'static, nrf52::gpio::GPIOPin<'static>>,
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
     led: &'static capsules::led_matrix::LedMatrixDriver<
@@ -210,8 +211,20 @@ pub unsafe fn main() {
     let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
     let grant_bpf = board_kernel.create_grant(&grant_capt);
     let bpf = static_init!(
-            capsules::bpf_exec::BpfDriver, 
-            capsules::bpf_exec::BpfDriver::new(grant_bpf)
+            capsules::bpf_exec::BpfDriver<dyn 'static + gpio::InterruptPin<'static>>, 
+            capsules::bpf_exec::BpfDriver::new(
+                grant_bpf,
+                components::gpio_component_helper!(
+                    nrf52833::gpio::GPIOPin,
+                    // Used as ADC, comment them out in the ADC section to use them as GPIO
+                    // 0 => &nrf52833_peripherals.gpio_port[GPIO_P0],
+                    // 1 => &nrf52833_peripherals.gpio_port[_GPIO_P1],
+                    // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
+                    8 => &nrf52833_peripherals.gpio_port[GPIO_P8],
+                    9 => &nrf52833_peripherals.gpio_port[GPIO_P9],
+                    16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
+                )
+            )
         );
 
     //--------------------------------------------------------------------------
