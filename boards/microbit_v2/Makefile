@@ -36,7 +36,7 @@ flash-app: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).bin
 	$(error Use tockloader to load applications)
 
 .PHONY: flash-bootloader
-flash-bootloader: 
+flash-bootloader:
 	curl -L --output /tmp/tock-bootloader.microbit_v2.vv1.1.1.bin https://github.com/tock/tock-bootloader/releases/download/microbit_v2-vv1.1.1/tock-bootloader.microbit_v2.vv1.1.1.bin
 	$(OPENOCD) $(OPENOCD_OPTIONS) -c "program /tmp/tock-bootloader.microbit_v2.vv1.1.1.bin; verify_image /tmp/tock-bootloader.microbit_v2.vv1.1.1.bin; reset; shutdown;"
 	rm /tmp/tock-bootloader.microbit_v2.vv1.1.1.bin
