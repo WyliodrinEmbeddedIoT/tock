@@ -57,6 +57,7 @@
 //! | P0.19 | P24 9  | SPI CLK  |
 //! | P0.20 | P24 10 | SPI MOSI |
 //! | P0.21 | P24 11 | SPI MISO |
+//! | P0.22 | P24 12 | SPI CS   |
 //! | P0.24 | P24 14 | Button 3 |
 //! | P0.25 | P24 15 | Button 4 |
 //! | P0.26 | P24 16 | I2C SDA  |
@@ -68,13 +69,14 @@
 #![cfg_attr(not(doc), no_main)]
 #![deny(missing_docs)]
 
+use capsules::i2c_master_slave_driver::I2CMasterSlaveDriver;
 use capsules::net::ieee802154::MacAddress;
 use capsules::net::ipv6::ip_utils::IPAddr;
 use capsules::virtual_aes_ccm::MuxAES128CCM;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
-use kernel::hil::i2c::I2CMaster;
+use kernel::hil::i2c::{I2CMaster, I2CSlave};
 use kernel::hil::led::LedLow;
 use kernel::hil::symmetric_encryption::AES128;
 use kernel::hil::time::Counter;
@@ -107,6 +109,7 @@ const UART_RXD: Pin = Pin::P0_08;
 const SPI_MOSI: Pin = Pin::P0_20;
 const SPI_MISO: Pin = Pin::P0_21;
 const SPI_CLK: Pin = Pin::P0_19;
+const SPI_CS: Pin = Pin::P0_22;
 
 const SPI_MX25R6435F_CHIP_SELECT: Pin = Pin::P0_17;
 const SPI_MX25R6435F_WRITE_PROTECT_PIN: Pin = Pin::P0_22;
@@ -179,7 +182,11 @@ pub struct Platform {
     >,
     nonvolatile_storage: &'static capsules::nonvolatile_storage_driver::NonvolatileStorage<'static>,
     udp_driver: &'static capsules::net::udp::UDPDriver<'static>,
-    i2c_master: &'static capsules::i2c_master::I2CMasterDriver<'static, nrf52840::i2c::TWIM>,
+    i2c_master_slave: &'static capsules::i2c_master_slave_driver::I2CMasterSlaveDriver<'static>,
+    spi_controller: &'static capsules::spi_controller::Spi<
+        'static,
+        capsules::virtual_spi::VirtualSpiMasterDevice<'static, nrf52840::spi::SPIM>,
+    >,
 }
 
 impl kernel::Platform for Platform {
@@ -201,7 +208,8 @@ impl kernel::Platform for Platform {
             capsules::nonvolatile_storage_driver::DRIVER_NUM => f(Some(self.nonvolatile_storage)),
             capsules::net::udp::DRIVER_NUM => f(Some(self.udp_driver)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
-            capsules::i2c_master::DRIVER_NUM => f(Some(self.i2c_master)),
+            capsules::i2c_master_slave_driver::DRIVER_NUM => f(Some(self.i2c_master_slave)),
+            capsules::spi_controller::DRIVER_NUM => f(Some(self.spi_controller)),
             _ => f(None),
         }
     }
@@ -452,6 +460,12 @@ pub unsafe fn main() {
     // SPI
     let mux_spi = components::spi::SpiMuxComponent::new(&base_peripherals.spim0)
         .finalize(components::spi_mux_component_helper!(nrf52840::spi::SPIM));
+    // Create the SPI system call capsule.
+    let spi_controller =
+        components::spi::SpiSyscallComponent::new(board_kernel, mux_spi, &gpio_port[SPI_CS])
+            .finalize(components::spi_syscall_component_helper!(
+                nrf52840::spi::SPIM
+            ));
 
     base_peripherals.spim0.configure(
         nrf52840::pinmux::Pinmux::new(SPI_MOSI as u32),
@@ -489,21 +503,27 @@ pub unsafe fn main() {
         >
     ));
 
-    let i2c_master = static_init!(
-        capsules::i2c_master::I2CMasterDriver<'static, nrf52840::i2c::TWIM>,
-        capsules::i2c_master::I2CMasterDriver::new(
-            &base_peripherals.twim1,
-            &mut capsules::i2c_master::BUF,
-            board_kernel.create_grant(&memory_allocation_capability)
+    let i2c_master_buffer = static_init!([u8; 32], [0; 32]);
+    let i2c_slave_buffer1 = static_init!([u8; 32], [0; 32]);
+    let i2c_slave_buffer2 = static_init!([u8; 32], [0; 32]);
+
+    let i2c_master_slave = static_init!(
+        I2CMasterSlaveDriver,
+        I2CMasterSlaveDriver::new(
+            &base_peripherals.twi1,
+            i2c_master_buffer,
+            i2c_slave_buffer1,
+            i2c_slave_buffer2,
+            board_kernel.create_grant(&memory_allocation_capability),
         )
     );
-    base_peripherals.twim1.configure(
+    base_peripherals.twi1.configure(
         nrf52840::pinmux::Pinmux::new(I2C_SCL_PIN as u32),
         nrf52840::pinmux::Pinmux::new(I2C_SDA_PIN as u32),
     );
-    base_peripherals.twim1.set_master_client(i2c_master);
-    base_peripherals.twim1.set_speed(nrf52840::i2c::Speed::K400);
-    base_peripherals.twim1.enable();
+    base_peripherals.twi1.set_master_client(i2c_master_slave);
+    base_peripherals.twi1.set_slave_client(i2c_master_slave);
+    base_peripherals.twi1.set_speed(nrf52840::i2c::Speed::K400);
 
     // Initialize AC using AIN5 (P0.29) as VIN+ and VIN- as AIN0 (P0.02)
     // These are hardcoded pin assignments specified in the driver
@@ -573,7 +593,8 @@ pub unsafe fn main() {
         nonvolatile_storage,
         udp_driver,
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
-        i2c_master,
+        i2c_master_slave,
+        spi_controller,
     };
 
     let _ = platform.pconsole.start();

@@ -6,6 +6,9 @@
 // Disable this attribute when documenting, as a workaround for
 // https://github.com/rust-lang/rust/issues/62184.
 #![cfg_attr(not(doc), no_main)]
+#![feature(custom_test_frameworks)]
+#![test_runner(test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use capsules::virtual_hmac::VirtualMuxHmac;
@@ -24,10 +27,14 @@ use kernel::{create_capability, debug, static_init};
 use kernel::{mpu, Chip};
 use rv32i::csr;
 
+#[cfg(test)]
+mod tests;
+
 #[allow(dead_code)]
 mod aes_test;
 #[allow(dead_code)]
 mod multi_alarm_test;
+mod otbn;
 #[allow(dead_code)]
 mod tickv_test;
 
@@ -40,6 +47,22 @@ const NUM_PROCS: usize = 4;
 // Actual memory for holding the active process structures. Need an empty list
 // at least.
 static mut PROCESSES: [Option<&'static dyn kernel::procs::Process>; 4] = [None; NUM_PROCS];
+
+// Test access to the peripherals
+#[cfg(test)]
+static mut PERIPHERALS: Option<&'static EarlGreyDefaultPeripherals> = None;
+// Test access to scheduler
+#[cfg(test)]
+static mut SCHEDULER: Option<&kernel::PrioritySched> = None;
+// Test access to board
+#[cfg(test)]
+static mut BOARD: Option<&'static kernel::Kernel> = None;
+// Test access to platform
+#[cfg(test)]
+static mut PLATFORM: Option<&'static EarlGreyNexysVideo> = None;
+// Test access to main loop capability
+#[cfg(test)]
+static mut MAIN_CAP: Option<&dyn kernel::capabilities::MainLoopCapability> = None;
 
 static mut CHIP: Option<
     &'static earlgrey::chip::EarlGrey<
@@ -100,35 +123,37 @@ impl Platform for EarlGreyNexysVideo {
     }
 }
 
-/// Main function.
-///
-/// This function is called from the arch crate after some very basic RISC-V
-/// setup and RAM initialization.
-#[no_mangle]
-pub unsafe fn main() {
+unsafe fn setup() -> (
+    &'static kernel::Kernel,
+    &'static EarlGreyNexysVideo,
+    &'static earlgrey::chip::EarlGrey<
+        'static,
+        VirtualMuxAlarm<'static, earlgrey::timer::RvTimer<'static>>,
+        EarlGreyDefaultPeripherals<'static>,
+    >,
+    &'static EarlGreyDefaultPeripherals<'static>,
+) {
     // Ibex-specific handler
     earlgrey::chip::configure_trap_handler();
-
-    let peripherals = static_init!(
-        EarlGreyDefaultPeripherals,
-        EarlGreyDefaultPeripherals::new()
-    );
 
     // initialize capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);
     let memory_allocation_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
-    let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
-
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(&PROCESSES));
 
     let dynamic_deferred_call_clients =
-        static_init!([DynamicDeferredCallClientState; 1], Default::default());
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
     let dynamic_deferred_caller = static_init!(
         DynamicDeferredCall,
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
     );
     DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
+
+    let peripherals = static_init!(
+        EarlGreyDefaultPeripherals,
+        EarlGreyDefaultPeripherals::new(dynamic_deferred_caller)
+    );
 
     // Configure kernel debug gpios as early as possible
     kernel::debug::assign_gpios(
@@ -297,6 +322,15 @@ pub unsafe fn main() {
     ));
     hil::flash::HasClient::set_client(&peripherals.flash_ctrl, mux_flash);
 
+    let _mux_otbn = crate::otbn::AccelMuxComponent::new(&peripherals.otbn)
+        .finalize(otbn_mux_component_helper!(1024));
+
+    peripherals.otbn.initialise(
+        dynamic_deferred_caller
+            .register(&peripherals.otbn)
+            .expect("dynamic deferred caller out of slots"),
+    );
+
     /// These symbols are defined in the linker script.
     extern "C" {
         /// Beginning of the ROM region containing app images.
@@ -327,15 +361,18 @@ pub unsafe fn main() {
         static _ezero: u8;
     }
 
-    let earlgrey_nexysvideo = EarlGreyNexysVideo {
-        gpio: gpio,
-        led: led,
-        console: console,
-        alarm: alarm,
-        hmac,
-        lldb: lldb,
-        i2c_master,
-    };
+    let earlgrey_nexysvideo = static_init!(
+        EarlGreyNexysVideo,
+        EarlGreyNexysVideo {
+            gpio: gpio,
+            led: led,
+            console: console,
+            alarm: alarm,
+            hmac,
+            lldb: lldb,
+            i2c_master,
+        }
+    );
 
     let mut mpu_config = rv32i::epmp::PMPConfig::default();
     // The kernel stack
@@ -404,12 +441,58 @@ pub unsafe fn main() {
     });
     debug!("OpenTitan initialisation complete. Entering main loop");
 
-    let scheduler = components::sched::priority::PriorityComponent::new(board_kernel).finalize(());
-    board_kernel.kernel_loop(
-        &earlgrey_nexysvideo,
-        chip,
-        None::<&kernel::ipc::IPC<NUM_PROCS>>,
-        scheduler,
-        &main_loop_cap,
-    );
+    (board_kernel, earlgrey_nexysvideo, chip, peripherals)
+}
+
+/// Main function.
+///
+/// This function is called from the arch crate after some very basic RISC-V
+/// setup and RAM initialization.
+#[no_mangle]
+pub unsafe fn main() {
+    #[cfg(test)]
+    test_main();
+
+    #[cfg(not(test))]
+    {
+        let (board_kernel, earlgrey_nexysvideo, chip, _peripherals) = setup();
+
+        let scheduler =
+            components::sched::priority::PriorityComponent::new(board_kernel).finalize(());
+        let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
+
+        board_kernel.kernel_loop(
+            earlgrey_nexysvideo,
+            chip,
+            None::<&kernel::ipc::IPC<NUM_PROCS>>,
+            scheduler,
+            &main_loop_cap,
+        );
+    }
+}
+
+#[cfg(test)]
+use kernel::watchdog::WatchDog;
+
+#[cfg(test)]
+fn test_runner(tests: &[&dyn Fn()]) {
+    unsafe {
+        let (board_kernel, earlgrey_nexysvideo, chip, peripherals) = setup();
+
+        BOARD = Some(board_kernel);
+        PLATFORM = Some(&earlgrey_nexysvideo);
+        PERIPHERALS = Some(peripherals);
+        SCHEDULER =
+            Some(components::sched::priority::PriorityComponent::new(board_kernel).finalize(()));
+        MAIN_CAP = Some(&create_capability!(capabilities::MainLoopCapability));
+
+        chip.watchdog().setup();
+
+        for test in tests {
+            test();
+        }
+    }
+
+    // Exit QEMU with a return code of 0
+    crate::tests::semihost_command_exit_success()
 }
