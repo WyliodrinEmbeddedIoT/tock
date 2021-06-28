@@ -467,7 +467,7 @@ impl<'a> SpiMaster for Spi<'a> {
     }
 
     fn init(&self) {
-        self.set_rate(0);
+        self.set_rate(4800);
         // set format: 8 bit mode, SSPCLKOUT polarity and phase on 0
         self.set_format();
 
@@ -522,11 +522,10 @@ impl<'a> SpiMaster for Spi<'a> {
         self.set_active_slave(cs);
     }
 
-    // BAUD RATE!!!!!
     fn set_rate(&self, baudrate: u32) -> u32 {
         let freq_in = self.clock.get_frequency(self.clocks);
-        let mut prescale = 0;
-        let mut postdiv = 0;
+        let prescale = 0;
+        let postdiv = 0;
         //a se sterge
 
         for prescale in (2..254).step_by(2) {
@@ -550,7 +549,7 @@ impl<'a> SpiMaster for Spi<'a> {
     }
 
     fn get_rate(&self) -> u32 {
-        0
+        4800
     }
 
     fn set_clock(&self, polarity: ClockPolarity) {
