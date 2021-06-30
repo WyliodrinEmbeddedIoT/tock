@@ -12,7 +12,7 @@ use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::time::Counter;
-use kernel::hil::gpio;
+// use kernel::hil::gpio;
 use kernel::Platform;
 
 #[allow(unused_imports)]
@@ -44,11 +44,10 @@ const UART_TX_PIN: Pin = Pin::P0_06;
 const UART_RX_PIN: Pin = Pin::P1_08;
 
 /// LED matrix
-const LED_MATRIX_COLS: [Pin; 5] = [Pin::P0_28, Pin::P0_11, Pin::P0_31, Pin::P1_05, Pin::P0_30];
-const LED_MATRIX_ROWS: [Pin; 5] = [Pin::P0_21, Pin::P0_22, Pin::P0_15, Pin::P0_24, Pin::P0_19];
+// const LED_MATRIX_COLS: [Pin; 5] = [Pin::P0_28, Pin::P0_11, Pin::P0_31, Pin::P1_05, Pin::P0_30];
+// const LED_MATRIX_ROWS: [Pin; 5] = [Pin::P0_21, Pin::P0_22, Pin::P0_15, Pin::P0_24, Pin::P0_19];
 
 // Speaker
-
 const SPEAKER_PIN: Pin = Pin::P0_00;
 
 /// I2C pins for all of the sensors.
@@ -86,12 +85,12 @@ pub struct MicroBit {
     bpf: &'static capsules::bpf_exec::BpfDriver<'static, nrf52::gpio::GPIOPin<'static>>,
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
-    led: &'static capsules::led_matrix::LedMatrixDriver<
-        'static,
-        nrf52::gpio::GPIOPin<'static>,
-        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
-    >,
-    button: &'static capsules::button::Button<'static, nrf52::gpio::GPIOPin<'static>>,
+    // led: &'static capsules::led_matrix::LedMatrixDriver<
+    //     'static,
+    //     nrf52::gpio::GPIOPin<'static>,
+    //     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+    // >,
+    // button: &'static capsules::button::Button<'static, nrf52::gpio::GPIOPin<'static>>,
     rng: &'static capsules::rng::RngDriver<'static>,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
     lsm303agr: &'static capsules::lsm303agr::Lsm303agrI2C<'static>,
@@ -120,8 +119,8 @@ impl Platform for MicroBit {
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules::bpf_exec::DRIVER_NUM => f(Some(self.bpf)),
-            capsules::button::DRIVER_NUM => f(Some(self.button)),
-            capsules::led_matrix::DRIVER_NUM => f(Some(self.led)),
+            // capsules::button::DRIVER_NUM => f(Some(self.button)),
+            // capsules::led_matrix::DRIVER_NUM => f(Some(self.led)),
             capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
@@ -203,56 +202,85 @@ pub unsafe fn main() {
             // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
             8 => &nrf52833_peripherals.gpio_port[GPIO_P8],
             9 => &nrf52833_peripherals.gpio_port[GPIO_P9],
+            // 15 => &nrf52833_peripherals.gpio_port[GPIO_P15],
             16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
         ),
     )
     .finalize(components::gpio_component_buf!(nrf52833::gpio::GPIOPin));
 
     // BPF 
+    // use kernel::static_init_half;
+    // use capsules::bpf_exec::BpfDriver;
     let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
     let grant_bpf = board_kernel.create_grant(&grant_capt);
+    let buttons = components::button_component_helper!(
+                nrf52833::gpio::GPIOPin,
+                (
+                    &nrf52833_peripherals.gpio_port[BUTTON_A],
+                    kernel::hil::gpio::ActivationMode::ActiveLow,
+                    kernel::hil::gpio::FloatingState::PullNone
+                ), // A
+                (
+                    &nrf52833_peripherals.gpio_port[BUTTON_B],
+                    kernel::hil::gpio::ActivationMode::ActiveLow,
+                    kernel::hil::gpio::FloatingState::PullNone
+                ), // B
+                (
+                    &nrf52833_peripherals.gpio_port[TOUCH_LOGO],
+                    kernel::hil::gpio::ActivationMode::ActiveLow,
+                    kernel::hil::gpio::FloatingState::PullNone
+                ), // Touch Logo
+            );
+    // use core::mem::MaybeUninit;
     let bpf = static_init!(
-            capsules::bpf_exec::BpfDriver<dyn 'static + gpio::InterruptPin<'static>>, 
-            capsules::bpf_exec::BpfDriver::new(
-                grant_bpf,
-                components::gpio_component_helper!(
-                    nrf52833::gpio::GPIOPin,
-                    // Used as ADC, comment them out in the ADC section to use them as GPIO
-                    // 0 => &nrf52833_peripherals.gpio_port[GPIO_P0],
-                    // 1 => &nrf52833_peripherals.gpio_port[_GPIO_P1],
-                    // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
-                    8 => &nrf52833_peripherals.gpio_port[GPIO_P8],
-                    9 => &nrf52833_peripherals.gpio_port[GPIO_P9],
-                    16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
-                )
-            )
-        );
+        capsules::bpf_exec::BpfDriver<'static, nrf52::gpio::GPIOPin<'static>>, 
+        capsules::bpf_exec::BpfDriver::new(
+            grant_bpf,
+            components::gpio_component_helper!(
+                nrf52833::gpio::GPIOPin,
+                // Used as ADC, comment them out in the ADC section to use them as GPIO
+                // 0 => &nrf52833_peripherals.gpio_port[GPIO_P0],
+                // 1 => &nrf52833_peripherals.gpio_port[_GPIO_P1],
+                // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
+                20 => &nrf52833_peripherals.gpio_port[Pin::P0_20],
+                // 1 => &nrf52833_peripherals.gpio_port[Pin::P0_28],
+                // 15 => &nrf52833_peripherals.gpio_port[GPIO_P15],
+                // 16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
+            ),
+            buttons
+        )
+    );
+    
+    use kernel::hil::gpio::InterruptWithValue;
+    for (pin, _, _) in buttons.iter() {
+        pin.set_client(bpf);
+    }
 
     //--------------------------------------------------------------------------
     // Buttons
     //--------------------------------------------------------------------------
-    let button = components::button::ButtonComponent::new(
-        board_kernel,
-        components::button_component_helper!(
-            nrf52833::gpio::GPIOPin,
-            (
-                &nrf52833_peripherals.gpio_port[BUTTON_A],
-                kernel::hil::gpio::ActivationMode::ActiveLow,
-                kernel::hil::gpio::FloatingState::PullNone
-            ), // A
-            (
-                &nrf52833_peripherals.gpio_port[BUTTON_B],
-                kernel::hil::gpio::ActivationMode::ActiveLow,
-                kernel::hil::gpio::FloatingState::PullNone
-            ), // B
-            (
-                &nrf52833_peripherals.gpio_port[TOUCH_LOGO],
-                kernel::hil::gpio::ActivationMode::ActiveLow,
-                kernel::hil::gpio::FloatingState::PullNone
-            ), // Touch Logo
-        ),
-    )
-    .finalize(components::button_component_buf!(nrf52833::gpio::GPIOPin));
+    // let button = components::button::ButtonComponent::new(
+    //     board_kernel,
+    //     components::button_component_helper!(
+    //         nrf52833::gpio::GPIOPin,
+    //         (
+    //             &nrf52833_peripherals.gpio_port[BUTTON_A],
+    //             kernel::hil::gpio::ActivationMode::ActiveLow,
+    //             kernel::hil::gpio::FloatingState::PullNone
+    //         ), // A
+    //         (
+    //             &nrf52833_peripherals.gpio_port[BUTTON_B],
+    //             kernel::hil::gpio::ActivationMode::ActiveLow,
+    //             kernel::hil::gpio::FloatingState::PullNone
+    //         ), // B
+    //         (
+    //             &nrf52833_peripherals.gpio_port[TOUCH_LOGO],
+    //             kernel::hil::gpio::ActivationMode::ActiveLow,
+    //             kernel::hil::gpio::FloatingState::PullNone
+    //         ), // Touch Logo
+    //     ),
+    // )
+    // .finalize(components::button_component_buf!(nrf52833::gpio::GPIOPin));
 
     //--------------------------------------------------------------------------
     // Deferred Call (Dynamic) Setup
@@ -473,29 +501,29 @@ pub unsafe fn main() {
     // LED Matrix
     //--------------------------------------------------------------------------
 
-    let led = components::led_matrix_component_helper!(
-        nrf52833::gpio::GPIOPin,
-        nrf52::rtc::Rtc<'static>,
-        mux_alarm,
-        @fps => 60,
-        @cols => kernel::hil::gpio::ActivationMode::ActiveLow,
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[0]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[1]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[2]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[3]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[4]],
-        @rows => kernel::hil::gpio::ActivationMode::ActiveHigh,
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[0]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[1]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[2]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[3]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[4]]
+    // let led = components::led_matrix_component_helper!(
+    //     nrf52833::gpio::GPIOPin,
+    //     nrf52::rtc::Rtc<'static>,
+    //     mux_alarm,
+    //     @fps => 60,
+    //     @cols => kernel::hil::gpio::ActivationMode::ActiveLow,
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[0]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[1]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[2]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[3]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[4]],
+    //     @rows => kernel::hil::gpio::ActivationMode::ActiveHigh,
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[0]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[1]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[2]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[3]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[4]]
 
-    )
-    .finalize(components::led_matrix_component_buf!(
-        nrf52833::gpio::GPIOPin,
-        nrf52::rtc::Rtc<'static>
-    ));
+    // )
+    // .finalize(components::led_matrix_component_buf!(
+    //     nrf52833::gpio::GPIOPin,
+    //     nrf52::rtc::Rtc<'static>
+    // ));
 
     //--------------------------------------------------------------------------
     // Process Console
@@ -522,8 +550,8 @@ pub unsafe fn main() {
         bpf: bpf,
         console: console,
         gpio: gpio,
-        button: button,
-        led: led,
+        // button: button,
+        // led: led,
         rng: rng,
         temperature: temperature,
         lsm303agr: lsm303agr,

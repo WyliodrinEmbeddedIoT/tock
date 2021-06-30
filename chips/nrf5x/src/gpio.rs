@@ -409,6 +409,7 @@ impl hil::gpio::Configure for GPIOPin<'_> {
     }
 
     fn make_output(&self) -> hil::gpio::Configuration {
+        // debug!("Sunt in make output! {:?}", self.pin);
         self.gpio_registers.pin_cnf[self.pin as usize].modify(PinConfig::DIR::Output);
         hil::gpio::Configuration::Output
     }
@@ -461,6 +462,7 @@ impl hil::gpio::Input for GPIOPin<'_> {
 
 impl hil::gpio::Output for GPIOPin<'_> {
     fn set(&self) {
+        // debug!("Sunt in set! {:?}", self.pin);
         self.gpio_registers.outset.set(1 << self.pin);
     }
 

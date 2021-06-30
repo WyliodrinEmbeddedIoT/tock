@@ -10,8 +10,8 @@
 
 
 //! Virtual machine and JIT compiler for eBPF programs.
-#![doc(html_logo_url = "https://raw.githubusercontent.com/qmonnet/rbpf/master/misc/rbpf.png",
-       html_favicon_url = "https://raw.githubusercontent.com/qmonnet/rbpf/master/misc/rbpf.ico")]
+// #![doc(html_logo_url = "https://raw.githubusercontent.com/qmonnet/rbpf/master/misc/rbpf.png",
+//        html_favicon_url = "https://raw.githubusercontent.com/qmonnet/rbpf/master/misc/rbpf.ico")]
 
 #![warn(missing_docs)]
 // There are unused mut warnings due to unsafe code.
