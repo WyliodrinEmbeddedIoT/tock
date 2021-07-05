@@ -1,12 +1,46 @@
 use core::cell::Cell;
+use core::iter::empty;
 use kernel::common::cells::{OptionalCell, VolatileCell};
 use kernel::common::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::common::registers::{
     self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
 use kernel::common::StaticRef;
+use kernel::debug;
 use kernel::hil;
 use kernel::hil::usb::TransferType;
+
+register_structs! {
+    Ep_ctrl {
+        (0x00 => ep_in_ctrl: ReadWrite<u32, EP_CONTROL::Register>),
+        (0x04 => ep_out_ctrl: ReadWrite<u32, EP_CONTROL::Register>),
+        (0x08 => @END),
+    }
+}
+
+register_structs! {
+    Ep_buf_ctrl {
+        (0x00 => ep_in_buf_ctrl: ReadWrite<u32, EP_BUFFER_CONTROL::Register>),
+        (0x04 => ep_out_buf_ctrl: ReadWrite<u32, EP_BUFFER_CONTROL::Register>),
+        (0x08 => @END),
+    }
+}
+
+register_structs! {
+    /// USB FS/LS controller device registers
+    Usbctrl_DPSRAM {
+        /// Device address and endpoint control
+        (0x00 => setup_h: ReadWrite<u32, SETUP_H::Register>),
+        (0x04 => setup_l: ReadWrite<u32, SETUP_L::Register>),
+        (0x08 => ep_ctrl: [Ep_ctrl; 15]),
+        (0x80 => ep_buf_ctrl: [Ep_buf_ctrl; 16]),
+        (0x100 => ep0_buffer0: [ReadWrite<u32, EP0_BUFFER::Register>; 16]),
+        (0x140 => optional_ep0_buffer0: [ReadWrite<u32, OPTIONAL_EP0_BUFFER::Register>; 16]),
+        // (0x180 => @END),
+        (0x180 => buffers: [u64; 58]),
+        (0x1000 => @END),
+    }
+}
 
 register_structs! {
     /// USB FS/LS controller device registers
@@ -993,6 +1027,109 @@ INTS [
 ]
 ];
 
+register_bitfields![u32,
+SETUP_H [
+    // SETUP OFFSET(0) NUMBITS(8) [
+    BM_REQUEST_TYPE OFFSET(0) NUMBITS(8) [
+        IN = 0x0,
+        OUT = 0x80,
+    ],
+    B_REQUEST OFFSET(8) NUMBITS(8) [
+        SET_ADDRESS = 0x05,
+        SET_DESCRIPTOR = 0x07,
+        SET_CONFIGURATION = 0x09,
+    ],
+    W_VALUE OFFSET(16) NUMBITS(16) [],
+],
+SETUP_L [
+    W_INDEX OFFSET(0) NUMBITS(16) [],
+    W_LENGTH OFFSET(16) NUMBITS(16) [],
+],
+EP_CONTROL [
+    ENDPOINT_ENABLE OFFSET(31) NUMBITS(1) [],
+    DOUBLE_BUFFERED OFFSET(30) NUMBITS(1) [],
+    INTERRUPT_SINGLE_BIT OFFSET(29) NUMBITS(1) [],
+    INTERRUPT_DOUBLE_BIT OFFSET(28) NUMBITS(1) [],
+    ENDPOINT_TYPE OFFSET(26) NUMBITS(2) [
+        CONTROL = 0,
+        ISO = 1,
+        BULK = 2,
+        INT = 3
+    ],
+    INT_STALL OFFSET(17) NUMBITS(1) [],
+    INT_NAK OFFSET(16) NUMBITS(1) [],
+    ADDR_BASE OFFSET(0) NUMBITS(16) [],
+],
+EP_BUFFER_CONTROL [
+    BUFFER1_FULL OFFSET(31) NUMBITS(1) [],
+    LAST_BUFFER1 OFFSET(30) NUMBITS(1) [],
+    DATA_PID1 OFFSET(29) NUMBITS(1) [],
+    DOUBLE_BUFFERED_OFFSET_ISO OFFSET(27) NUMBITS(2) [
+        OFFSET_128 = 0,
+        OFFSET_256 = 1,
+        OFFSET_512 = 2,
+        OFFSET_1024 = 3,
+    ],
+    AVAILABLE1 OFFSET(26) NUMBITS(1) [],
+    TRANSFER_LENGTH1 OFFSET(16) NUMBITS(10) [],
+    BUFFER0_FULL OFFSET(15) NUMBITS(1) [],
+    LAST_BUFFER0 OFFSET(14) NUMBITS(1) [],
+    DATA_PID0 OFFSET(13) NUMBITS(1) [],
+    RESET_BUFFER OFFSET(12) NUMBITS(1) [],
+    STALL OFFSET(11) NUMBITS(1) [],
+    AVAILABLE0 OFFSET(10) NUMBITS(1) [],
+    TRANSFER_LENGTH0 OFFSET(0) NUMBITS(10) [],
+],
+EP0_BUFFER [
+    BUFF OFFSET(0) NUMBITS(32) []
+],
+OPTIONAL_EP0_BUFFER [
+    BUFF OFFSET(0) NUMBITS(32) []
+],
+];
+
+#[allow(dead_code)]
+#[repr(u32)]
+enum UsbDirection {
+    IN = 0x0,
+    OUT = 0x80,
+}
+
+#[allow(dead_code)]
+#[repr(u32)]
+enum UsbTransfer {
+    CONTROL = 0x0,
+    ISOCHRONOUS = 0x1,
+    BULK = 0x2,
+    INTERRUPT_BITS = 0x3,
+}
+
+#[allow(dead_code)]
+#[repr(u32)]
+enum UsbDt {
+    DEVICE = 0x01,
+    CONFIG = 0x02,
+    STRING = 0x03,
+    INTERFACE = 0x04,
+    ENDPOINT = 0x05,
+}
+
+#[allow(dead_code)]
+#[repr(u32)]
+enum UsbRequest {
+    GET_STATUS = 0x0,
+    CLEAR_FEATURE = 0x01,
+    SET_FEATURE = 0x03,
+    SET_ADDRESS = 0x05,
+    GET_DESCRIPTOR = 0x06,
+    SET_DESCRIPTOR = 0x07,
+    GET_CONFIGURATION = 0x08,
+    SET_CONFIGURATION = 0x09,
+    GET_INTERFACE = 0x0a,
+    SET_INTERFACE = 0x0b,
+    SYNC_FRAME = 0x0c,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum UsbState {
     Disabled,
@@ -1066,12 +1203,18 @@ pub enum BulkOutState {
     OutDma { size: u32 },
 }
 
-static mut DPSRAM: [u8; 4096] = [0; 4096];
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum EndpointType {
+    NONE,
+    IN,
+    OUT,
+}
 
 pub struct Endpoint<'a> {
     slice_in: OptionalCell<&'a [VolatileCell<u8>]>,
     slice_out: OptionalCell<&'a [VolatileCell<u8>]>,
     state: Cell<EndpointState>,
+    ep_type: Cell<EndpointType>,
     // The USB controller can only process one DMA transfer at a time (over all endpoints). The
     // request_transmit_* bits allow to queue transfers until the DMA becomes available again.
     // Whether a DMA transfer is requested on this IN endpoint.
@@ -1086,11 +1229,15 @@ impl Endpoint<'_> {
             slice_in: OptionalCell::empty(),
             slice_out: OptionalCell::empty(),
             state: Cell::new(EndpointState::Disabled),
+            ep_type: Cell::new(EndpointType::NONE),
             request_transmit_in: Cell::new(false),
             request_transmit_out: Cell::new(false),
         }
     }
 }
+
+const USBCTRL_DPSRAM: StaticRef<Usbctrl_DPSRAM> =
+    unsafe { StaticRef::new(0x50100000 as *const Usbctrl_DPSRAM) };
 
 const USBCTRL_REGS_BASE: StaticRef<Usbctrl_RegsRegisters> =
     unsafe { StaticRef::new(0x50110000 as *const Usbctrl_RegsRegisters) };
@@ -1098,15 +1245,18 @@ const USBCTRL_REGS_BASE: StaticRef<Usbctrl_RegsRegisters> =
 pub const N_ENDPOINTS: usize = 16;
 
 pub struct UsbCtrl<'a> {
+    dpsram: StaticRef<Usbctrl_DPSRAM>,
     registers: StaticRef<Usbctrl_RegsRegisters>,
     state: OptionalCell<UsbState>,
     client: OptionalCell<&'a dyn hil::usb::Client<'a>>,
     descriptors: [Endpoint<'a>; N_ENDPOINTS],
+    should_set_address: OptionalCell<bool>,
 }
 
 impl<'a> UsbCtrl<'a> {
     pub const fn new() -> Self {
         Self {
+            dpsram: USBCTRL_DPSRAM,
             registers: USBCTRL_REGS_BASE,
             client: OptionalCell::empty(),
             state: OptionalCell::new(UsbState::Disabled),
@@ -1128,6 +1278,7 @@ impl<'a> UsbCtrl<'a> {
                 Endpoint::new(),
                 Endpoint::new(),
             ],
+            should_set_address: OptionalCell::new(false),
         }
     }
 
@@ -1169,13 +1320,17 @@ impl<'a> UsbCtrl<'a> {
             ),
             _ => unreachable!("unexisting endpoint"),
         });
-        unsafe {
-            self.registers.addr_endp1.modify(
-                ADDR_ENDP1::INTEP_DIR::CLEAR
-                    + ADDR_ENDP1::ENDPOINT.val(endpoint as u32)
-                    + ADDR_ENDP1::ADDRESS.val((&DPSRAM[endpoint * 64] as *const u8) as u32),
-            );
-        }
+
+        self.registers
+            .addr_endp1
+            .modify(ADDR_ENDP1::INTEP_DIR::CLEAR + ADDR_ENDP1::ENDPOINT.val(endpoint as u32));
+        // unsafe {
+        //     // + ADDR_ENDP1::ADDRESS.val((&DPSRAM[endpoint * 64] as *const u8) as u32),
+        //     match endpoint {
+        //         0 => self.registers.addr_endp.modify(ADDR_ENDP::ADDRESS.val(&self.dpsram.))
+        //     }
+        // };
+
         self.enable_interrupts(endpoint);
     }
 
@@ -1208,16 +1363,138 @@ impl<'a> UsbCtrl<'a> {
     }
 
     pub fn handle_interrupt(&self) {
-        let status = self.registers.ints.get();
-        panic!("{}", status);
-        let mut handled = 0;
-        if (status & self.registers.ints.read(INTS::SETUP_REQ)) != 0 {
-            handled |= self.registers.ints.get();
+        if self.registers.ints.is_set(INTS::SETUP_REQ) {
             self.registers
                 .sie_status
                 .modify(SIE_STATUS::SETUP_REC::CLEAR);
-            panic!("all good till now {}", self.registers.buff_status.get());
+            // panic!("all good till now {}", self.registers.buff_status.get());
+            self.usb_handle_setup_packet();
         }
+
+        if self.registers.ints.is_set(INTS::BUFF_STATUS) {
+            // printf("BUS RESET\n");
+            panic!("BUF_STATUS");
+            // usb_hw_clear->sie_status = USB_SIE_STATUS_BUS_RESET_BITS;
+            // usb_handle_buff_status();
+        }
+        // debug!("{}", self.registers.ints.read(INTS::BUS_RESET));
+        if self.registers.ints.is_set(INTS::BUS_RESET) {
+            debug!("BUS_RESET");
+            self.registers
+                .sie_status
+                .modify(SIE_STATUS::BUS_RESET::CLEAR);
+            // panic!("all good till now {}", self.registers.buff_status.get());
+            // usb_bus_reset
+        }
+        debug!(
+            "{} {} {}",
+            self.registers.ints.read(INTS::SETUP_REQ),
+            self.registers.ints.read(INTS::BUFF_STATUS),
+            self.registers.ints.read(INTS::BUS_RESET),
+        );
+        if self.registers.ints.get() != 0 {
+            panic!(
+                "{} {} {}",
+                self.registers.ints.read(INTS::SETUP_REQ),
+                self.registers.ints.read(INTS::BUFF_STATUS),
+                self.registers.ints.read(INTS::BUS_RESET),
+            );
+        }
+    }
+
+    fn usb_handle_setup_packet(&self) {
+        match self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) {
+            0 => match self.dpsram.setup_h.read(SETUP_H::B_REQUEST) {
+                0x05 => {
+                    // panic!("usb_set_device_address(pkt)");
+                    self.dpsram.setup_h.modify(
+                        SETUP_H::W_VALUE.val(self.dpsram.setup_h.read(SETUP_H::W_VALUE) & 0xFF),
+                    );
+                    self.should_set_address.set(true);
+                    self.usb_start_transfer(0, 0);
+                }
+                0x09 => {
+                    panic!("usb_set_device_configuration(pkt)");
+                }
+                _ => {
+                    panic!("usb_acknowledge_out_request()");
+                }
+            },
+            0x80 => {
+                panic!("OUT");
+            }
+            _ => {
+                panic!("UNDEFINED");
+            }
+        }
+        // if self.dpsram.setup_h.get() read(SETUP_H::BM_REQUEST_TYPE) {
+        //     if self.dpsram.setup.read(SETUP::B_REQUEST) == UsbRequest::SET_ADDRESS as u32 {
+        //         panic!("usb_set_device_address(pkt)");
+        //     } else if self.dpsram.setup.read(SETUP::B_REQUEST)
+        //         == UsbRequest::SET_CONFIGURATION as u32
+        //     {
+        //         panic!("usb_set_device_configuration(pkt)");
+        //     } else {
+        //         panic!("usb_acknowledge_out_request()");
+        //     }
+        // } else if self.dpsram.setup.read(SETUP::BM_REQUEST_TYPE) == UsbDirection::OUT as u32 {
+        //     if self.dpsram.setup.read(SETUP::B_REQUEST) == UsbRequest::GET_DESCRIPTOR as u32 {
+        //         let descriptor_type = self.dpsram.setup.read(SETUP::W_VALUE) >> 8;
+        //         match descriptor_type {
+        //             UsbDt::DEVICE as u32 => panic!("usb_handle_device_descriptor() GET DEVICE DESCRIPTOR"),
+        //             UsbDt::CONFIG as u32 => panic!("usb_handle_config_descriptor(pkt) GET CONFIG DESCRIPTOR"),
+        //             UsbDt::STRING as u32 => panic!("usb_handle_string_descriptor(pkt) GET STRING DESCRIPTOR"),
+        //             _ => panic!("should not reach this state"),
+        //         }
+        //     }
+        // }
+        // panic!(
+        //     "{} {}",
+        //     self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+        //     self.dpsram.setup_h.read(SETUP_H::B_REQUEST)
+        // );
+    }
+
+    fn ep_is_tx(&self, endpoint: usize) -> bool {
+        self.descriptors[endpoint].ep_type.get() == EndpointType::OUT
+    }
+
+    fn usb_start_transfer(&self, len: u16, endpoint: usize) {
+        // let mut val = len | self.dpsram.setup_h.read(SETUP_H::);
+        if self.ep_is_tx(endpoint) {
+            // 10th bit
+            self.dpsram.ep_buf_ctrl[endpoint]
+                .ep_out_buf_ctrl
+                .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+        }
+        if endpoint < 9 {
+            if self.dpsram.ep_buf_ctrl[endpoint]
+                .ep_in_buf_ctrl
+                .is_set(EP_BUFFER_CONTROL::DATA_PID0)
+            {
+                self.dpsram.ep_buf_ctrl[endpoint].ep_in_buf_ctrl.modify(
+                    EP_BUFFER_CONTROL::DATA_PID0::CLEAR + EP_BUFFER_CONTROL::DATA_PID1::SET,
+                );
+            } else {
+                self.dpsram.ep_buf_ctrl[endpoint].ep_in_buf_ctrl.modify(
+                    EP_BUFFER_CONTROL::DATA_PID1::CLEAR + EP_BUFFER_CONTROL::DATA_PID0::SET,
+                );
+            }
+        } else {
+            if self.dpsram.ep_buf_ctrl[endpoint]
+                .ep_out_buf_ctrl
+                .is_set(EP_BUFFER_CONTROL::DATA_PID0)
+            {
+                self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
+                    EP_BUFFER_CONTROL::DATA_PID0::CLEAR + EP_BUFFER_CONTROL::DATA_PID1::SET,
+                );
+            } else {
+                self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
+                    EP_BUFFER_CONTROL::DATA_PID1::CLEAR + EP_BUFFER_CONTROL::DATA_PID0::SET,
+                );
+            }
+        }
+        panic!("handled function");
     }
 }
 
