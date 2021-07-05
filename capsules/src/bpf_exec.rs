@@ -1,11 +1,12 @@
 //! Tock syscall driver capsule for running bpf code in the kernel space
+use kernel::common::cells::TakeCell;
 use kernel::common::cells::OptionalCell;
-use core::cell::Cell;
+
 use core::mem;
 use kernel::debug;
 use kernel::{Read, ProcessId, Upcall, CommandReturn, Driver, ErrorCode, Grant, ReadOnlyAppSlice};
 use kernel::hil::gpio;
-use kernel::hil::gpio::{Configure, Output, InterruptWithValue};
+use kernel::hil::gpio::{Configure, Input, Output, InterruptWithValue};
 
 use crate::bpf::rbpf;
 
@@ -19,15 +20,6 @@ pub struct BpfData {
     buffer: ReadOnlyAppSlice
 }
 
-// impl Default for BpfData {
-//     fn default() -> BpfData {
-//         BpfData {
-//             callback: Upcall::default(),
-//             buffer: TakeCell::new(buffer),
-//         }
-//     }
-// }
-
 pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
     app: Grant<BpfData>,
     pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>],
@@ -36,7 +28,8 @@ pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
             gpio::ActivationMode,
             gpio::FloatingState,
         )],
-    process_id: OptionalCell<ProcessId>
+    process_id: OptionalCell<ProcessId>,
+    packet: TakeCell<'static, [u8]>
 }
 
 impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
@@ -48,6 +41,7 @@ impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
             gpio::ActivationMode,
             gpio::FloatingState,
         )],
+        packet: &'static mut [u8],
     ) -> Self {
         for (i, &(pin, _, floating_state)) in buttons.iter().enumerate() {
             pin.make_input();
@@ -58,14 +52,10 @@ impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
              app: app,
              pins: pins,
              buttons: buttons,
-             process_id: OptionalCell::empty()
+             process_id: OptionalCell::empty(),
+             packet: TakeCell::new(packet)
         }
     }
-
-    // fn get_button_state(&self, pin_num: u32) -> gpio::ActivationState {
-    //     let pin = &self.buttons[pin_num as usize];
-    //     pin.0.read_activation(kernel::hil::gpio::ActivationMode::ActiveLow)
-    // }
 }
 
 impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
@@ -129,11 +119,9 @@ impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
             },
             1 => {
                 // Run bpf code
-                // debug!("Command received! {}", arg1);
                 if arg1 < self.buttons.len() {
                     self.app
                         .enter(appid, |_app| {
-                            // debug!("{:?}", self.buttons);
                             let _ = self.buttons[arg1]
                                 .0
                                 .enable_interrupts(gpio::InterruptEdge::EitherEdge);
@@ -153,94 +141,61 @@ impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
 
 impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP> {
     fn fired(&self, pin_num: u32) {
-        // Read the value of the pin and get the button state.
-        // debug!("Client fired!");
-        // let _button_state = self.get_button_state(pin_num);
-        let interrupt_count = Cell::new(0);
-        let packet1 = &mut [ 
-            // start data structure passed to eBPF prpgram
-            self.pins.len() as u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            // beginning of stack
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00u8
-        ];
+        let pins = self.pins.as_ref();
+        if let Some(pin) = pins[12] {
+            pin.make_output();
+            pin.clear();
 
-        self.process_id.map_or_else(
-           || {
-               debug!("Process id not set!");
-           },
-           |process_id| {
-                self.app
-                    .enter(*process_id, |app| {
-                        let program_len = app.buffer.len();
-                        // debug!("In self.app");
-                        if program_len != 0 {
-                            let response = app.buffer.map_or(0, |buf| {
-                                let vm = rbpf::EbpfVmRaw::new(Some(buf)).unwrap();
-                                let _res = vm.execute_program(packet1).unwrap();
-
-                                1
-                            });
-
-                            if response != 0 {
-                                let pins = self.pins.as_ref();
-
-                                for i in 1..22 {
-                                    if packet1[i] != 0xff {
-                                        if let Some(pin) = pins[i] {
-                                            pin.make_output();
-                                            if packet1[i] == 0 {
-                                                pin.clear();
-                                            } else {
-                                                pin.set();
+            let (pin, _, _) = self.buttons[pin_num as usize];
+            let value = pin.read();
+            
+            self.process_id.map_or_else(
+               || {
+                   debug!("Process id not set!");
+               },
+               |process_id| {
+                    self.app
+                        .enter(*process_id, |app| {
+                            let program_len = app.buffer.len();
+                            if program_len != 0 {
+                                app.buffer.map_or(0, |buf| {
+                                    let vm = rbpf::EbpfVmRaw::new(Some(buf)).unwrap();
+                                    self.packet.map(|packet| {
+                                        packet[0] = value as u8;
+                                        let res = vm.execute_program(packet).unwrap();
+                                        if res == 0 {
+                                            for i in 1..22 {
+                                                if packet[i] != 0xff {
+                                                    if let Some(pin) = pins[i] {
+                                                        pin.make_output();
+                                                        if packet[i] == 0 {
+                                                            pin.clear();
+                                                        } else {
+                                                            pin.set();
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-                                }
-                            }
-                        }
-                    }).unwrap_or_else(|_err| {
-                        debug!("Failed in app.enter");
-                    });
-            }
-        );
+                                    });
 
+                                    1
+                                });
+                            }
+                        }).unwrap_or_else(|_err| {
+                            debug!("Failed in app.enter");
+                        });
+                }
+            );
+            pin.set();
+        }
+
+        // let _interrupt_count = Cell::new(0);
         // It's possible we got an interrupt for a process that has since died
         // (and didn't unregister the interrupt). Lazily disable interrupts for
         // this button if so.
-        if interrupt_count.get() == 0 {
-            self.buttons[pin_num as usize].0.disable_interrupts();
-        }
+        // if interrupt_count.get() == 0 {
+        //     self.buttons[pin_num as usize].0.disable_interrupts();
+        // }
     }
 }
