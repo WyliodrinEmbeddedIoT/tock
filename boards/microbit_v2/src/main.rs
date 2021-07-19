@@ -257,12 +257,12 @@ pub unsafe fn main() {
     ];
 
     let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
-    let grant_bpf = board_kernel.create_grant(&grant_capt);
+    let grant_bpf = board_kernel.create_grant(capsules::bpf_exec::DRIVER_NUM, &grant_capt);
     let buttons = components::button_component_helper!(
                 nrf52833::gpio::GPIOPin,
                 (
-                    // &nrf52833_peripherals.gpio_port[Pin::P1_02],
-                    &nrf52833_peripherals.gpio_port[BUTTON_A],
+                    &nrf52833_peripherals.gpio_port[Pin::P1_02],
+                    // &nrf52833_peripherals.gpio_port[BUTTON_A],
                     kernel::hil::gpio::ActivationMode::ActiveLow,
                     kernel::hil::gpio::FloatingState::PullNone
                 // ), // A
@@ -288,9 +288,7 @@ pub unsafe fn main() {
                 // 0 => &nrf52833_peripherals.gpio_port[GPIO_P0],
                 // 1 => &nrf52833_peripherals.gpio_port[_GPIO_P1],
                 // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
-                
                 12 => &nrf52833_peripherals.gpio_port[GPIO_P12],
-                
                 // 1 => &nrf52833_peripherals.gpio_port[Pin::P0_28],
                 // 15 => &nrf52833_peripherals.gpio_port[GPIO_P15],
                 // 16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
