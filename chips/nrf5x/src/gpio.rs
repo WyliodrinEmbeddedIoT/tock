@@ -477,8 +477,6 @@ impl hil::gpio::Output for GPIOPin<'_> {
     }
 }
 
-impl hil::gpio::Pin for GPIOPin<'_> {}
-
 impl<'a> hil::gpio::Interrupt<'a> for GPIOPin<'a> {
     fn set_client(&self, client: &'a dyn hil::gpio::Client) {
         self.client.set(client);
@@ -517,8 +515,6 @@ impl<'a> hil::gpio::Interrupt<'a> for GPIOPin<'a> {
         }
     }
 }
-
-impl<'a> hil::gpio::InterruptPin<'a> for GPIOPin<'a> {}
 
 impl GPIOPin<'_> {
     /// Allocate a GPIOTE channel
