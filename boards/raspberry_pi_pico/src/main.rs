@@ -35,6 +35,8 @@ mod io;
 
 use rp2040::sysinfo;
 
+use rp2040::spi::Spi;
+
 mod flash_bootloader;
 
 /// Allocate memory for the stack
@@ -71,6 +73,8 @@ pub struct RaspberryPiPico {
     led: &'static capsules::led::LedDriver<'static, LedHigh<'static, RPGpioPin<'static>>>,
     adc: &'static capsules::adc::AdcVirtualized<'static>,
     temperature: &'static capsules::temperature::TemperatureSensor<'static>,
+
+    screen: &'static capsules::screen::Screen<'static>,
 }
 
 impl Platform for RaspberryPiPico {
@@ -86,6 +90,9 @@ impl Platform for RaspberryPiPico {
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
+
+            capsules::screen::DRIVER_NUM => f(Some(self.screen)),
+
             _ => f(None),
         }
     }
@@ -193,6 +200,7 @@ pub unsafe fn main() {
     rp2040::init();
 
     let peripherals = static_init!(Rp2040DefaultPeripherals, Rp2040DefaultPeripherals::new());
+    peripherals.set_clocks();
 
     // Set the UART used for panic
     io::WRITER.set_uart(&peripherals.uart0);
@@ -311,10 +319,10 @@ pub unsafe fn main() {
             13 => &peripherals.pins.get_pin(RPGpio::GPIO13),
             14 => &peripherals.pins.get_pin(RPGpio::GPIO14),
             15 => &peripherals.pins.get_pin(RPGpio::GPIO15),
-            16 => &peripherals.pins.get_pin(RPGpio::GPIO16),
-            17 => &peripherals.pins.get_pin(RPGpio::GPIO17),
-            18 => &peripherals.pins.get_pin(RPGpio::GPIO18),
-            19 => &peripherals.pins.get_pin(RPGpio::GPIO19),
+            // 16 => &peripherals.pins.get_pin(RPGpio::GPIO16),
+            // 17 => &peripherals.pins.get_pin(RPGpio::GPIO17),
+            // 18 => &peripherals.pins.get_pin(RPGpio::GPIO18),
+            // 19 => &peripherals.pins.get_pin(RPGpio::GPIO19),
             20 => &peripherals.pins.get_pin(RPGpio::GPIO20),
             21 => &peripherals.pins.get_pin(RPGpio::GPIO21),
             22 => &peripherals.pins.get_pin(RPGpio::GPIO22),
@@ -362,6 +370,56 @@ pub unsafe fn main() {
     );
     kernel::hil::sensors::TemperatureDriver::set_client(temp_sensor, temp);
 
+    //set RX and TX pins in UART mode
+    let spi_clk = peripherals.pins.get_pin(RPGpio::GPIO18);
+    let spi_csn = peripherals.pins.get_pin(RPGpio::GPIO17);
+    let spi_mosi = peripherals.pins.get_pin(RPGpio::GPIO19);
+    spi_clk.set_function(GpioFunction::SPI);
+    spi_csn.set_function(GpioFunction::SPI);
+    spi_mosi.set_function(GpioFunction::SPI);
+    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi0)
+        .finalize(components::spi_mux_component_helper!(Spi));
+
+    let bus = components::bus::SpiMasterBusComponent::new().finalize(
+        components::spi_bus_component_helper!(
+            // spi type
+            Spi,
+            // chip select
+            &peripherals.pins.get_pin(RPGpio::GPIO17),
+            // spi mux
+            mux_spi
+        ),
+    );
+
+    let tft = components::st77xx::ST77XXComponent::new(mux_alarm).finalize(
+        components::st77xx_component_helper!(
+            // screen
+            &capsules::st77xx::ST7789H2,
+            // bus type
+            capsules::bus::SpiMasterBus<'static, VirtualSpiMasterDevice<'static, Spi>>,
+            // bus
+            &bus,
+            // timer type
+            RPTimer,
+            // pin type
+            RPGpioPin,
+            // dc pin (optional)
+            Some(peripherals.pins.get_pin(RPGpio::GPIO16)),
+            // reset pin
+            peripherals.pins.get_pin(RPGpio::GPIO21),
+        ),
+    );
+
+    let _ = tft.init();
+
+    let screen = components::screen::ScreenComponent::new(
+        board_kernel,
+        capsules::screen::DRIVER_NUM,
+        tft,
+        Some(tft),
+    )
+    .finalize(components::screen_buffer_size!(57600));
+
     let adc_channel_0 = components::adc::AdcComponent::new(&adc_mux, Channel::Channel0)
         .finalize(components::adc_component_helper!(Adc));
 
@@ -400,6 +458,9 @@ pub unsafe fn main() {
         console: console,
         adc: adc_syscall,
         temperature: temp,
+
+        screen,
+        // monitor arm semihosting enable
     };
 
     let platform_type = match peripherals.sysinfo.get_platform() {
