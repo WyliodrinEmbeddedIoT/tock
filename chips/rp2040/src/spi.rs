@@ -12,6 +12,8 @@ use kernel::utilities::registers::{register_bitfields, register_structs, ReadOnl
 use kernel::utilities::StaticRef;
 use kernel::ErrorCode;
 
+use kernel::debug;
+
 const SPI_READ_IN_PROGRESS: u8 = 0b001;
 const SPI_WRITE_IN_PROGRESS: u8 = 0b010;
 const SPI_IN_PROGRESS: u8 = 0b100;
@@ -304,7 +306,7 @@ impl<'a> Spi<'a> {
         if self.registers.sspsr.is_set(SSPSR::TFE) {
             // if transmit fifo empty is set
             if self.tx_buffer.is_some() {
-                while self.registers.sspsr.is_set(SSPSR::TNF)
+                if self.registers.sspsr.is_set(SSPSR::TNF)
                     && self.tx_position.get() < self.len.get()
                 {
                     self.tx_buffer.map(|buf| {
@@ -324,8 +326,9 @@ impl<'a> Spi<'a> {
             }
         }
 
-        while self.registers.sspsr.is_set(SSPSR::RNE) {
+        if self.transfers.get() & SPI_READ_IN_PROGRESS != 0 && self.registers.sspsr.is_set(SSPSR::RNE) {
             let byte = self.registers.sspdr.read(SSPDR::DATA) as u8;
+            // debug! ("spi data {}", byte);
             if self.rx_buffer.is_some() {
                 if self.rx_position.get() < self.len.get() {
                     self.rx_buffer.map(|buf| {
@@ -336,6 +339,12 @@ impl<'a> Spi<'a> {
                     self.transfers
                         .set(self.transfers.get() & !SPI_READ_IN_PROGRESS);
                 }
+            }
+            else
+            {
+                self.transfers
+                        .set(self.transfers.get() & !SPI_READ_IN_PROGRESS);
+                panic! ("no buffer");
             }
         }
 
@@ -403,6 +412,7 @@ impl<'a> Spi<'a> {
             }
 
             read_buffer.map(|buf| {
+                debug! ("receive buffer");
                 self.rx_buffer.replace(buf);
                 self.len.set(count);
                 self.rx_position.set(0);

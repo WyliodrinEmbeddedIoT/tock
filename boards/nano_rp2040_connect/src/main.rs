@@ -33,6 +33,7 @@ use rp2040::clocks::{
 use rp2040::gpio::{GpioFunction, RPGpio, RPGpioPin};
 use rp2040::resets::Peripheral;
 use rp2040::timer::RPTimer;
+use rp2040::spi::Spi;
 mod io;
 
 use rp2040::sysinfo;
@@ -42,7 +43,7 @@ mod flash_bootloader;
 /// Allocate memory for the stack
 #[no_mangle]
 #[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
 
 // Manually setting the boot header section that contains the FCB header
 #[used]
@@ -333,46 +334,71 @@ pub unsafe fn main() {
         components::gpio_component_helper!(
             RPGpioPin,
             // Used for serial communication. Comment them in if you don't use serial.
-            // 0 => &peripherals.pins.get_pin(RPGpio::GPIO0),
-            // 1 => &peripherals.pins.get_pin(RPGpio::GPIO1),
-            2 => &peripherals.pins.get_pin(RPGpio::GPIO2),
-            3 => &peripherals.pins.get_pin(RPGpio::GPIO3),
-            // 4 => &peripherals.pins.get_pin(RPGpio::GPIO4),
-            5 => &peripherals.pins.get_pin(RPGpio::GPIO5),
-            // 6 => &peripherals.pins.get_pin(RPGpio::GPIO6),
-            // 7 => &peripherals.pins.get_pin(RPGpio::GPIO7),
-            8 => &peripherals.pins.get_pin(RPGpio::GPIO8),
-            9 => &peripherals.pins.get_pin(RPGpio::GPIO9),
-            10 => &peripherals.pins.get_pin(RPGpio::GPIO10),
-            11 => &peripherals.pins.get_pin(RPGpio::GPIO11),
-            // 12 => &peripherals.pins.get_pin(RPGpio::GPIO12),
-            // 13 => &peripherals.pins.get_pin(RPGpio::GPIO13),
-            14 => &peripherals.pins.get_pin(RPGpio::GPIO14),
-            15 => &peripherals.pins.get_pin(RPGpio::GPIO15),
-            16 => &peripherals.pins.get_pin(RPGpio::GPIO16),
-            17 => &peripherals.pins.get_pin(RPGpio::GPIO17),
-            18 => &peripherals.pins.get_pin(RPGpio::GPIO18),
-            19 => &peripherals.pins.get_pin(RPGpio::GPIO19),
-            20 => &peripherals.pins.get_pin(RPGpio::GPIO20),
-            21 => &peripherals.pins.get_pin(RPGpio::GPIO21),
-            22 => &peripherals.pins.get_pin(RPGpio::GPIO22),
-            23 => &peripherals.pins.get_pin(RPGpio::GPIO23),
-            24 => &peripherals.pins.get_pin(RPGpio::GPIO24),
+            // 0 => peripherals.pins.get_pin(RPGpio::GPIO0),
+            // 1 => peripherals.pins.get_pin(RPGpio::GPIO1),
+            2 => peripherals.pins.get_pin(RPGpio::GPIO2),
+            3 => peripherals.pins.get_pin(RPGpio::GPIO3),
+            // 4 => peripherals.pins.get_pin(RPGpio::GPIO4),
+            // 5 => peripherals.pins.get_pin(RPGpio::GPIO5),
+            // 6 => peripherals.pins.get_pin(RPGpio::GPIO6),
+            // 7 => peripherals.pins.get_pin(RPGpio::GPIO7),
+            // 8 => peripherals.pins.get_pin(RPGpio::GPIO8),
+            9 => peripherals.pins.get_pin(RPGpio::GPIO9),
+            // 10 => peripherals.pins.get_pin(RPGpio::GPIO10),
+            // 11 => peripherals.pins.get_pin(RPGpio::GPIO11),
+            // 12 => peripherals.pins.get_pin(RPGpio::GPIO12),
+            // 13 => peripherals.pins.get_pin(RPGpio::GPIO13),
+            // 14 => peripherals.pins.get_pin(RPGpio::GPIO14),
+            15 => peripherals.pins.get_pin(RPGpio::GPIO15),
+            16 => peripherals.pins.get_pin(RPGpio::GPIO16),
+            17 => peripherals.pins.get_pin(RPGpio::GPIO17),
+            18 => peripherals.pins.get_pin(RPGpio::GPIO18),
+            19 => peripherals.pins.get_pin(RPGpio::GPIO19),
+            20 => peripherals.pins.get_pin(RPGpio::GPIO20),
+            21 => peripherals.pins.get_pin(RPGpio::GPIO21),
+            22 => peripherals.pins.get_pin(RPGpio::GPIO22),
+            23 => peripherals.pins.get_pin(RPGpio::GPIO23),
+            24 => peripherals.pins.get_pin(RPGpio::GPIO24),
             // LED pin
-            // 25 => &peripherals.pins.get_pin(RPGpio::GPIO25),
+            // 25 => peripherals.pins.get_pin(RPGpio::GPIO25),
 
             // Uncomment to use these as GPIO pins instead of ADC pins
-            // 26 => &peripherals.pins.get_pin(RPGpio::GPIO26),
-            // 27 => &peripherals.pins.get_pin(RPGpio::GPIO27),
-            // 28 => &peripherals.pins.get_pin(RPGpio::GPIO28),
-            // 29 => &peripherals.pins.get_pin(RPGpio::GPIO29)
+            // 26 => peripherals.pins.get_pin(RPGpio::GPIO26),
+            // 27 => peripherals.pins.get_pin(RPGpio::GPIO27),
+            // 28 => peripherals.pins.get_pin(RPGpio::GPIO28),
+            // 29 => peripherals.pins.get_pin(RPGpio::GPIO29)
         ),
     )
     .finalize(components::gpio_component_buf!(RPGpioPin<'static>));
 
+    //set CLK, MOSI and CS pins in SPI mode
+    let spi_clk = peripherals.pins.get_pin(RPGpio::GPIO14);
+    let spi_csn = peripherals.pins.get_pin(RPGpio::GPIO10);
+    let spi_mosi = peripherals.pins.get_pin(RPGpio::GPIO11);
+    let spi_miso = peripherals.pins.get_pin(RPGpio::GPIO8);
+    spi_clk.set_function(GpioFunction::SPI);
+    spi_csn.set_function(GpioFunction::SPI);
+    spi_mosi.set_function(GpioFunction::SPI);
+    spi_miso.set_function(GpioFunction::SPI);
+    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi1)
+        .finalize(components::spi_mux_component_helper!(Spi));
+
+    let nina_spi = components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO10)).finalize(
+            components::spi_component_helper!(Spi));
+
+    let write_buffer = static_init! ([u8; 100], [0; 100]);
+    let read_buffer = static_init! ([u8; 100], [0; 100]);
+
+    use capsules::virtual_spi::VirtualSpiMasterDevice;
+
+    let nina = static_init! (capsules::nina_w102::NinaW102<'static, VirtualSpiMasterDevice<'static, rp2040::spi::Spi<'static>>, RPGpioPin<'static>>, capsules::nina_w102::NinaW102::new (nina_spi, write_buffer, read_buffer, peripherals.pins.get_pin(RPGpio::GPIO7), peripherals.pins.get_pin(RPGpio::GPIO5)));
+    nina_spi.configure ();
+    nina_spi.set_client(nina);
+    nina.get_firmware_version ();
+
     let led = LedsComponent::new(components::led_component_helper!(
         LedHigh<'static, RPGpioPin<'static>>,
-        LedHigh::new(&peripherals.pins.get_pin(RPGpio::GPIO6))
+        LedHigh::new(peripherals.pins.get_pin(RPGpio::GPIO6))
     ))
     .finalize(components::led_component_buf!(
         LedHigh<'static, RPGpioPin<'static>>
