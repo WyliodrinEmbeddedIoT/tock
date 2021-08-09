@@ -4,7 +4,7 @@ use kernel::common::cells::OptionalCell;
 
 use core::mem;
 use kernel::debug;
-use kernel::{Read, ProcessId, CommandReturn, Driver, ErrorCode, Grant, ReadOnlyAppSlice};
+use kernel::{ProcessId, CommandReturn, Driver, ErrorCode, Grant, ReadOnlyProcessBuffer, ReadableProcessBuffer};
 use kernel::hil::gpio;
 use kernel::hil::gpio::{Configure, Input, Output, InterruptWithValue};
 
@@ -13,47 +13,52 @@ use crate::bpf::rbpf;
 /// Syscall driver number.
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Bpf as usize;
+pub const MAX_BPF_PROG_SIZE: usize = 1024;
 
 #[derive(Default)]
 pub struct BpfData {
     // callback: Upcall,
-    buffer: ReadOnlyAppSlice
+    program_buffer: ReadOnlyProcessBuffer,
+    program_len: usize
 }
 
 pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
     app: Grant<BpfData, 0>,
     pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>],
-    buttons: &'a [(
-            &'a gpio::InterruptValueWrapper<'a, IP>,
-            gpio::ActivationMode,
-            gpio::FloatingState,
-        )],
+    // buttons: &'a [(
+    //         &'a gpio::InterruptValueWrapper<'a, IP>,
+    //         gpio::ActivationMode,
+    //         gpio::FloatingState,
+    //     )],
     process_id: OptionalCell<ProcessId>,
-    packet: TakeCell<'static, [u8]>
+    packet: TakeCell<'static, [u8]>,
+    program: TakeCell<'static, [u8]>
 }
 
 impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
     pub fn new(
         app: Grant<BpfData, 0>,
         pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>],
-        buttons: &'a [(
-            &'a gpio::InterruptValueWrapper<'a, IP>,
-            gpio::ActivationMode,
-            gpio::FloatingState,
-        )],
+        // buttons: &'a [(
+        //     &'a gpio::InterruptValueWrapper<'a, IP>,
+        //     gpio::ActivationMode,
+        //     gpio::FloatingState,
+        // )],
         packet: &'static mut [u8],
+        program: &'static mut [u8],
     ) -> Self {
-        for (i, &(pin, _, floating_state)) in buttons.iter().enumerate() {
-            pin.make_input();
-            pin.set_value(i as u32);
-            pin.set_floating_state(floating_state);
-        }
+        // for (i, &(pin, _, floating_state)) in buttons.iter().enumerate() {
+        //     pin.make_input();
+        //     pin.set_value(i as u32);
+        //     pin.set_floating_state(floating_state);
+        // }
         Self {
              app: app,
              pins: pins,
-             buttons: buttons,
+             // buttons: buttons,
              process_id: OptionalCell::empty(),
-             packet: TakeCell::new(packet)
+             packet: TakeCell::new(packet),
+             program: TakeCell::new(program)
         }
     }
 }
@@ -63,15 +68,43 @@ impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
         &self,
         _appid: ProcessId,
         allow_num: usize,
-        mut slice: ReadOnlyAppSlice,
-    ) -> Result<ReadOnlyAppSlice, (ReadOnlyAppSlice, ErrorCode)> {
+        mut slice: ReadOnlyProcessBuffer,
+    ) -> Result<ReadOnlyProcessBuffer, (ReadOnlyProcessBuffer, ErrorCode)> {
         match allow_num {
             1 => {
                     let res = self.app
-                                .enter(_appid, |app, _| {
-                                    mem::swap(&mut app.buffer, &mut slice);
-                                })
-                                .map_err(ErrorCode::from);
+                            .enter(_appid, |app, _| {
+                                mem::swap(&mut app.program_buffer, &mut slice);
+
+                                let buffer_len = app.program_buffer.len();
+                                let res = app.program_buffer.enter(|source_buffer| {
+                                    self.program.take().map_or(Err(ErrorCode::BUSY), |buffer| {
+                                        if buffer_len > MAX_BPF_PROG_SIZE {
+                                            return Err(ErrorCode::SIZE);
+                                        }
+                                        for n in 0..buffer_len {
+                                            buffer[n] = source_buffer[n].get();
+                                        }
+
+                                        self.program.replace(buffer);
+                                        Ok(())
+                                    })
+                                });
+                                app.program_len = buffer_len;
+
+                                match res {
+                                    Ok(Ok(())) => Ok(()),
+                                    Ok(Err(err)) => Err(err),
+                                    Err(err) => err.into(),
+                                }
+                            })
+                            .map_err(ErrorCode::from);
+
+                    // match res {
+                    //     Ok(Ok(())) => return CommandReturn::success(),
+                    //     Ok(Err(err)) => return CommandReturn::failure(err.into()),
+                    //     Err(err) => return CommandReturn::failure(err.into()),
+                    // };
                     if let Err(e) = res {
                         Err((slice, e))
                     } else {
@@ -82,57 +115,70 @@ impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
         }
     }
 
-    /// Subscribe to timer expiration
-    ///
-    /// ### `_subscribe_num`
-    ///
-    /// - `0`: Subscribe to bpf_exec
-    // fn subscribe(
-    //     &self,
-    //     subscribe_num: usize,
-    //     mut callback: Upcall,
-    //     app_id: ProcessId,
-    // ) -> Result<Upcall, (Upcall, ErrorCode)> {
-    //     match subscribe_num {
-    //         0 => {
-    //             let res = self
-    //                 .app
-    //                 .enter(app_id, |app| {
-    //                     mem::swap(&mut app.callback, &mut callback);
-    //                 })
-    //                 .map_err(ErrorCode::from);
-                
-    //             if let Err(e) = res {
-    //                 Err((callback, e))
-    //             } else {
-    //                 Ok(callback)
-    //             }
-    //         }
-    //         _ => Err((callback, ErrorCode::NOSUPPORT)),
-    //     }
-    // }
-
-    fn command(&self, cmd_num: usize, arg1: usize, _: usize, appid: ProcessId) -> CommandReturn {
+    fn command(&self, cmd_num: usize, arg1: usize, arg2: usize, appid: ProcessId) -> CommandReturn {
+        let pins = self.pins.as_ref();
         match cmd_num {
-            0 => {
-                CommandReturn::success()
+            0 => { 
+                // Return maximum bpf program size
+                CommandReturn::success_u32(MAX_BPF_PROG_SIZE as u32)
             },
             1 => {
-                // Run bpf code
-                if arg1 < self.buttons.len() {
-                    self.app
-                        .enter(appid, |_app, _| {
-                            let _ = self.buttons[arg1]
-                                .0
-                                .enable_interrupts(gpio::InterruptEdge::EitherEdge);
+                // Configure pin as input
+                let pin_index = arg1;
+                if pin_index >= pins.len() {
+                    /* impossible pin */
+                    CommandReturn::failure(ErrorCode::INVAL)
+                } else {
+                    // debug!("Set input for {:?}", pin_index);
+                    let maybe_pin = self.pins[pin_index as usize];
+                    if let Some(pin) = maybe_pin {
+                        pin.make_input();
+                        match arg2 {
+                            0 => {
+                                pin.set_floating_state(gpio::FloatingState::PullNone);
+                                CommandReturn::success()
+                            }
+                            1 => {
+                                pin.set_floating_state(gpio::FloatingState::PullUp);
+                                CommandReturn::success()
+                            }
+                            2 => {
+                                pin.set_floating_state(gpio::FloatingState::PullDown);
+                                CommandReturn::success()
+                            }
+                            _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
+                        }
+                    } else {
+                        CommandReturn::failure(ErrorCode::NODEVICE)
+                    }
+                }
+            },
+            2 => {
+                // Enable interrupt and copy bpf buffer
+                // if arg1 < self.buttons.len() {
+                let pin_index = arg1;
+                self.app
+                    .enter(appid, |_app, _| {
+                        let maybe_pin = self.pins[pin_index as usize];
+                        // debug!("Set interrupt for {:?}", pin_index);
+                        if let Some(pin) = maybe_pin {
+                            let _ = pin.enable_interrupts(gpio::InterruptEdge::EitherEdge);
+                        // let _ = self.buttons[arg1]
+                        //     .0
+                        //     .enable_interrupts(gpio::InterruptEdge::EitherEdge);
 
                             self.process_id.replace(appid);
                             CommandReturn::success()
-                        })
-                        .unwrap_or_else(|err| CommandReturn::failure(err.into()))
-                } else {
-                    CommandReturn::failure(ErrorCode::INVAL) /* impossible button */
-                }
+                        } else {
+                            CommandReturn::failure(ErrorCode::NODEVICE)
+                        }
+
+                    })
+                    .unwrap_or_else(|err| CommandReturn::failure(err.into()))
+
+                // } else {
+                //     CommandReturn::failure(ErrorCode::INVAL) /* impossible button */
+                // }
             },
             _ => CommandReturn::failure(ErrorCode::NOSUPPORT)
         }
@@ -144,11 +190,10 @@ impl<'a, IP: gpio::InterruptPin<'a>> Driver for BpfDriver<'a, IP> {
 }
 
 impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP> {
-    fn fired(&self, pin_num: u32) {
+    fn fired(&self, _pin_num: u32) {
         let pins = self.pins.as_ref();
-        let (pin, _, _) = self.buttons[pin_num as usize];
-        let value = pin.read();
-            
+        // let (pin, _, _) = self.buttons[pin_num as usize];
+        // let value = pin.read();
         self.process_id.map_or_else(
            || {
                debug!("Process id not set!");
@@ -156,31 +201,69 @@ impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP>
            |process_id| {
                 self.app
                     .enter(*process_id, |app, _| {
-                        let program_len = app.buffer.len();
-                        if program_len != 0 {
-                            app.buffer.map_or(0, |buf| {
-                                let vm = rbpf::EbpfVmRaw::new(Some(buf)).unwrap();
+                        self.program.map(|program| {
+                            let program_len = app.program_len;
+                            if program_len != 0 {
+                                let vm = rbpf::EbpfVmRaw::new(Some(&program[0..program_len])).unwrap();
                                 self.packet.map(|packet| {
-                                    packet[0] = value as u8;
+                                    for (i, maybe_pin) in self.pins.iter().enumerate() {
+                                        if let Some(pin) = maybe_pin {
+                                            if pin.is_input() {
+                                                // debug!("{:?} e input", i);
+                                                packet[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
+                                                let val = pin.read();
+                                                // if i == 12 {
+                                                //     debug!("i=12, value {:?} ", val);
+                                                // }
+                                                if val {
+                                                    packet[i/4] |= 1 << (2 * (3 - (i % 4)));
+                                                } else {
+                                                    packet[i/4] &= !(1 << (2 * (3 - (i % 4))));
+                                                }
+                                            } else {
+                                                // if i == 12 {
+                                                //     debug!("{:?} e output", i);
+                                                // }
+                                                packet[i/4] |= 1 << (2 * (3 - (i % 4)) + 1);
+                                            }
+                                        }
+                                        debug!("i: {:?}", i);
+                                    }
+
+                                    debug!("inainte");
+                                    for i in 0..15 {
+                                        debug!("{:?} ", packet[i]);
+                                    }
                                     let res = vm.execute_program(packet).unwrap();
+                                    debug!("dupa");
+                                    for i in 0..15 {
+                                        debug!("{:?} ", packet[i]);
+                                    }
+
                                     if res == 0 {
-                                        for i in 1..22 {
-                                            if packet[i] != 0xff {
-                                                if let Some(pin) = pins[i] {
+                                        for i in 0..self.pins.len() {
+                                            let value = (packet[i/4] & (1 << (i % 4))) >> (i % 4);
+                                            let mode = (packet[i/4] & (1 << (i % 4 + 1))) >> (i % 4 + 1);
+                                            // if i == 34 {
+                                            //     debug!("i=34, value {:?} mode {:?}", value, mode);
+                                            // }
+                                            if let Some(pin) = pins[i] {
+                                                if mode == 0 {
                                                     pin.make_output();
-                                                    if !value {
+                                                    if value == 0{
                                                         pin.clear();
                                                     } else {
                                                         pin.set();
                                                     }
+                                                } else {
+                                                    pin.make_input();
                                                 }
                                             }
                                         }
                                     }
                                 });
-                                1
-                            });
-                        }
+                            }
+                        });
                     }).unwrap_or_else(|_err| {
                         debug!("Failed in app.enter");
                     });

@@ -214,7 +214,6 @@ impl<'a> EbpfVmRaw<'a> {
             EbpfVmRaw::check_mem(addr, len, "store", insn_ptr, mem, stack)
         };
 
-        // let mut iterations = 0;
         // Loop on instructions
         let mut insn_ptr:usize = 0;
         while insn_ptr * ebpf::INSN_SIZE < prog.len() {
@@ -223,7 +222,6 @@ impl<'a> EbpfVmRaw<'a> {
             let _dst = insn.dst as usize;
             let _src = insn.src as usize;
 
-            // iterations += 1;
             match insn.opc {
                 // BPF_LD class
                 // LD_ABS_* and LD_IND_* are supposed to load pointer to data from buffer.
