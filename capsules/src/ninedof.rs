@@ -18,9 +18,11 @@
 //! hil::sensors::NineDof::set_client(fxos8700, ninedof);
 //! ```
 
-use kernel::common::cells::OptionalCell;
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::OptionalCell;
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -152,7 +154,7 @@ impl hil::sensors::NineDofClient for NineDof<'_> {
                 app.pending_command = false;
                 finished_command = app.command;
                 finished_command_arg = app.arg1;
-                upcalls.schedule_upcall(0, arg1, arg2, arg3).ok();
+                upcalls.schedule_upcall(0, (arg1, arg2, arg3)).ok();
             });
         });
 
@@ -167,7 +169,7 @@ impl hil::sensors::NineDofClient for NineDof<'_> {
                     // Don't bother re-issuing this command, just use
                     // the existing result.
                     app.pending_command = false;
-                    upcalls.schedule_upcall(0, arg1, arg2, arg3).ok();
+                    upcalls.schedule_upcall(0, (arg1, arg2, arg3)).ok();
                     false
                 } else if app.pending_command {
                     app.pending_command = false;
@@ -184,7 +186,7 @@ impl hil::sensors::NineDofClient for NineDof<'_> {
     }
 }
 
-impl Driver for NineDof<'_> {
+impl SyscallDriver for NineDof<'_> {
     fn command(
         &self,
         command_num: usize,
@@ -207,7 +209,7 @@ impl Driver for NineDof<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

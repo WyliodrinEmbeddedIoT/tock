@@ -57,13 +57,14 @@
 use core::cell::Cell;
 use core::cmp;
 use core::mem;
-use kernel::common::cells::{OptionalCell, TakeCell};
+
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::ErrorCode;
-use kernel::{
-    CommandReturn, Driver, Grant, ProcessId, ReadOnlyProcessBuffer, ReadWriteProcessBuffer,
-    ReadableProcessBuffer, WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadableProcessBuffer};
+use kernel::processbuffer::{ReadWriteProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -419,7 +420,7 @@ impl hil::nonvolatile_storage::NonvolatileStorageClient<'static> for Nonvolatile
                         self.buffer.replace(buffer);
 
                         // And then signal the app.
-                        upcalls.schedule_upcall(0, length, 0, 0).ok();
+                        upcalls.schedule_upcall(0, (length, 0, 0)).ok();
                     });
                 }
             }
@@ -443,7 +444,7 @@ impl hil::nonvolatile_storage::NonvolatileStorageClient<'static> for Nonvolatile
                         self.buffer.replace(buffer);
 
                         // And then signal the app.
-                        upcalls.schedule_upcall(1, length, 0, 0).ok();
+                        upcalls.schedule_upcall(1, (length, 0, 0)).ok();
                     });
                 }
             }
@@ -481,7 +482,7 @@ impl hil::nonvolatile_storage::NonvolatileStorage<'static> for NonvolatileStorag
 }
 
 /// Provide an interface for userland.
-impl Driver for NonvolatileStorage<'_> {
+impl SyscallDriver for NonvolatileStorage<'_> {
     /// Setup shared kernel-writable buffers.
     ///
     /// ### `allow_num`
@@ -607,7 +608,7 @@ impl Driver for NonvolatileStorage<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

@@ -13,13 +13,15 @@
 
 use core::cell::Cell;
 use core::cmp;
-use kernel::common::cells::{OptionalCell, TakeCell};
+
 use kernel::hil;
-use kernel::{CommandReturn, ProcessId};
-use kernel::{
-    Driver, ErrorCode, Grant, ReadOnlyProcessBuffer, ReadWriteProcessBuffer, ReadableProcessBuffer,
-    WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadableProcessBuffer};
+use kernel::processbuffer::{ReadWriteProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
+
+use kernel::grant::Grant;
 
 pub static mut BUFFER1: [u8; 256] = [0; 256];
 pub static mut BUFFER2: [u8; 256] = [0; 256];
@@ -79,7 +81,7 @@ impl<'a> I2CMasterSlaveDriver<'a> {
 impl hil::i2c::I2CHwMasterClient for I2CMasterSlaveDriver<'_> {
     fn command_complete(&self, buffer: &'static mut [u8], status: Result<(), hil::i2c::Error>) {
         // Map I2C error to a number we can pass back to the application
-        let status = kernel::into_statuscode(match status {
+        let status = kernel::errorcode::into_statuscode(match status {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         });
@@ -92,7 +94,7 @@ impl hil::i2c::I2CHwMasterClient for I2CMasterSlaveDriver<'_> {
 
                 self.app.map(|app| {
                     let _ = self.apps.enter(*app, |_app, upcalls| {
-                        upcalls.schedule_upcall(0, 0, status, 0).ok();
+                        upcalls.schedule_upcall(0, (0, status, 0)).ok();
                     });
                 });
             }
@@ -119,7 +121,7 @@ impl hil::i2c::I2CHwMasterClient for I2CMasterSlaveDriver<'_> {
                                 0
                             })
                             .unwrap_or(0);
-                        upcalls.schedule_upcall(0, 1, status, 0).ok();
+                        upcalls.schedule_upcall(0, (1, status, 0)).ok();
                     });
                 });
             }
@@ -142,7 +144,7 @@ impl hil::i2c::I2CHwMasterClient for I2CMasterSlaveDriver<'_> {
                                 0
                             })
                             .unwrap_or(0);
-                        upcalls.schedule_upcall(0, 7, status, 0).ok();
+                        upcalls.schedule_upcall(0, (7, status, 0)).ok();
                     });
                 });
             }
@@ -195,7 +197,7 @@ impl hil::i2c::I2CHwSlaveClient for I2CMasterSlaveDriver<'_> {
                             })
                             .unwrap_or(0);
 
-                        upcalls.schedule_upcall(0, 3, length as usize, 0).ok();
+                        upcalls.schedule_upcall(0, (3, length as usize, 0)).ok();
                     });
                 });
             }
@@ -206,7 +208,7 @@ impl hil::i2c::I2CHwSlaveClient for I2CMasterSlaveDriver<'_> {
                 // Notify the app that the read finished
                 self.app.map(|app| {
                     let _ = self.apps.enter(*app, |_app, upcalls| {
-                        upcalls.schedule_upcall(0, 4, length as usize, 0).ok();
+                        upcalls.schedule_upcall(0, (4, length as usize, 0)).ok();
                     });
                 });
             }
@@ -221,7 +223,7 @@ impl hil::i2c::I2CHwSlaveClient for I2CMasterSlaveDriver<'_> {
                 // Ask the app to setup a read buffer. The app must call
                 // command 3 after it has setup the shared read buffer with
                 // the correct bytes.
-                upcalls.schedule_upcall(0, 2, 0, 0).ok();
+                upcalls.schedule_upcall(0, (2, 0, 0)).ok();
             });
         });
     }
@@ -238,7 +240,7 @@ impl hil::i2c::I2CHwSlaveClient for I2CMasterSlaveDriver<'_> {
     }
 }
 
-impl Driver for I2CMasterSlaveDriver<'_> {
+impl SyscallDriver for I2CMasterSlaveDriver<'_> {
     fn allow_readonly(
         &self,
         app: ProcessId,
@@ -535,7 +537,7 @@ impl Driver for I2CMasterSlaveDriver<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

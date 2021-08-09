@@ -40,13 +40,13 @@
 use core::convert::TryFrom;
 use core::{cmp, mem};
 
-use kernel::common::cells::{OptionalCell, TakeCell};
+use kernel::grant::Grant;
 use kernel::hil::uart;
-use kernel::{CommandReturn, Driver};
-use kernel::{ErrorCode, Grant, ProcessId};
-use kernel::{
-    ReadOnlyProcessBuffer, ReadWriteProcessBuffer, ReadableProcessBuffer, WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadWriteProcessBuffer};
+use kernel::processbuffer::{ReadableProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -175,7 +175,7 @@ impl<'a> Console<'a> {
     }
 }
 
-impl Driver for Console<'_> {
+impl SyscallDriver for Console<'_> {
     /// Setup shared buffers.
     ///
     /// ### `allow_num`
@@ -286,7 +286,7 @@ impl Driver for Console<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }
@@ -309,7 +309,7 @@ impl uart::TransmitClient for Console<'_> {
                             // Go ahead and signal the application
                             let written = app.write_len;
                             app.write_len = 0;
-                            upcalls.schedule_upcall(1, written, 0, 0).ok();
+                            upcalls.schedule_upcall(1, (written, 0, 0)).ok();
                         }
                     }
                     Err(return_code) => {
@@ -318,7 +318,10 @@ impl uart::TransmitClient for Console<'_> {
                         app.write_remaining = 0;
                         app.pending_write = false;
                         upcalls
-                            .schedule_upcall(1, kernel::into_statuscode(return_code), 0, 0)
+                            .schedule_upcall(
+                                1,
+                                (kernel::errorcode::into_statuscode(return_code), 0, 0),
+                            )
                             .ok();
                     }
                 }
@@ -341,7 +344,10 @@ impl uart::TransmitClient for Console<'_> {
                                 app.write_remaining = 0;
                                 app.pending_write = false;
                                 upcalls
-                                    .schedule_upcall(1, kernel::into_statuscode(return_code), 0, 0)
+                                    .schedule_upcall(
+                                        1,
+                                        (kernel::errorcode::into_statuscode(return_code), 0, 0),
+                                    )
                                     .ok();
                                 false
                             }
@@ -425,9 +431,11 @@ impl uart::ReceiveClient for Console<'_> {
                                 upcalls
                                     .schedule_upcall(
                                         2,
-                                        kernel::into_statuscode(ret),
-                                        received_length,
-                                        0,
+                                        (
+                                            kernel::errorcode::into_statuscode(ret),
+                                            received_length,
+                                            0,
+                                        ),
                                     )
                                     .ok();
                             }
@@ -436,9 +444,13 @@ impl uart::ReceiveClient for Console<'_> {
                                 upcalls
                                     .schedule_upcall(
                                         2,
-                                        kernel::into_statuscode(Err(ErrorCode::FAIL)),
-                                        0,
-                                        0,
+                                        (
+                                            kernel::errorcode::into_statuscode(Err(
+                                                ErrorCode::FAIL,
+                                            )),
+                                            0,
+                                            0,
+                                        ),
                                     )
                                     .ok();
                             }

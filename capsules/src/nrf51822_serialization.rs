@@ -22,13 +22,14 @@
 
 use core::cmp;
 
-use kernel::common::cells::{OptionalCell, TakeCell};
+use kernel::grant::Grant;
 use kernel::hil;
 use kernel::hil::uart;
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadOnlyProcessBuffer,
-    ReadWriteProcessBuffer, ReadableProcessBuffer, WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadableProcessBuffer};
+use kernel::processbuffer::{ReadWriteProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -95,7 +96,7 @@ impl<'a> Nrf51822Serialization<'a> {
     }
 }
 
-impl Driver for Nrf51822Serialization<'_> {
+impl SyscallDriver for Nrf51822Serialization<'_> {
     /// Pass application space memory to this driver.
     ///
     /// This also sets which app is currently using this driver. Only one app
@@ -231,7 +232,7 @@ impl Driver for Nrf51822Serialization<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }
@@ -250,7 +251,7 @@ impl uart::TransmitClient for Nrf51822Serialization<'_> {
         self.active_app.map(|appid| {
             let _ = self.apps.enter(*appid, |_app, upcalls| {
                 // Call the callback after TX has finished
-                upcalls.schedule_upcall(0, 1, 0, 0).ok();
+                upcalls.schedule_upcall(0, (1, 0, 0)).ok();
             });
         });
     }
@@ -293,7 +294,7 @@ impl uart::ReceiveClient for Nrf51822Serialization<'_> {
                 // Note: This indicates how many bytes were received by
                 // hardware, regardless of how much space (if any) was
                 // available in the buffer provided by the app.
-                upcalls.schedule_upcall(0, 4, rx_len, len).ok();
+                upcalls.schedule_upcall(0, (4, rx_len, len)).ok();
             });
         });
 

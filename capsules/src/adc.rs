@@ -51,12 +51,14 @@
 use core::cell::Cell;
 use core::convert::TryFrom;
 use core::{cmp, mem};
-use kernel::common::cells::{OptionalCell, TakeCell};
+
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadWriteProcessBuffer,
-    ReadableProcessBuffer, WriteableProcessBuffer,
-};
+use kernel::processbuffer::ReadableProcessBuffer;
+use kernel::processbuffer::{ReadWriteProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -342,8 +344,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                     app_buf_length > 0
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                     }
@@ -402,8 +404,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                     res
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                     }
@@ -421,8 +423,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                         app.samples_outstanding.set(0);
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                         }
@@ -463,8 +465,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                     state.app_buf1.len() > 0 && state.app_buf2.len() > 0
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                     }
@@ -537,8 +539,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                     })
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                     }
@@ -556,8 +558,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                         app.samples_outstanding.set(0);
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                         }
@@ -606,8 +608,8 @@ impl<'a, A: hil::adc::Adc + hil::adc::AdcHighSpeed> AdcDedicated<'a, A> {
                     }
                 })
                 .map_err(|err| {
-                    if err == kernel::procs::Error::NoSuchApp
-                        || err == kernel::procs::Error::InactiveApp
+                    if err == kernel::process::Error::NoSuchApp
+                        || err == kernel::process::Error::InactiveApp
                     {
                         self.appid.clear();
                     }
@@ -706,15 +708,17 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::Client for AdcDedicate
                         upcalls
                             .schedule_upcall(
                                 0,
-                                AdcMode::SingleSample as usize,
-                                self.channel.get(),
-                                sample as usize,
+                                (
+                                    AdcMode::SingleSample as usize,
+                                    self.channel.get(),
+                                    sample as usize,
+                                ),
                             )
                             .ok();
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                         }
@@ -731,15 +735,17 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::Client for AdcDedicate
                         upcalls
                             .schedule_upcall(
                                 0,
-                                AdcMode::ContinuousSample as usize,
-                                self.channel.get(),
-                                sample as usize,
+                                (
+                                    AdcMode::ContinuousSample as usize,
+                                    self.channel.get(),
+                                    sample as usize,
+                                ),
                             )
                             .ok();
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                         }
@@ -1002,9 +1008,7 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::HighSpeedClient for Ad
                             upcalls
                                 .schedule_upcall(
                                     0,
-                                    self.mode.get() as usize,
-                                    len_chan,
-                                    buf_ptr as usize,
+                                    (self.mode.get() as usize, len_chan, buf_ptr as usize),
                                 )
                                 .ok();
 
@@ -1035,8 +1039,8 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::HighSpeedClient for Ad
                         }
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                             unexpected_state = true;
@@ -1058,8 +1062,8 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::HighSpeedClient for Ad
                         app.app_buf_offset.set(0);
                     })
                     .map_err(|err| {
-                        if err == kernel::procs::Error::NoSuchApp
-                            || err == kernel::procs::Error::InactiveApp
+                        if err == kernel::process::Error::NoSuchApp
+                            || err == kernel::process::Error::InactiveApp
                         {
                             self.appid.clear();
                         }
@@ -1084,7 +1088,7 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> hil::adc::HighSpeedClient for Ad
 }
 
 /// Implementations of application syscalls
-impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> Driver for AdcDedicated<'_, A> {
+impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> SyscallDriver for AdcDedicated<'_, A> {
     /// Provides access to a buffer from the application to store data in or
     /// read data from.
     ///
@@ -1124,8 +1128,8 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> Driver for AdcDedicated<'_, A> {
                             mem::swap(&mut app.app_buf1, &mut slice);
                         })
                         .map_err(|err| {
-                            if err == kernel::procs::Error::NoSuchApp
-                                || err == kernel::procs::Error::InactiveApp
+                            if err == kernel::process::Error::NoSuchApp
+                                || err == kernel::process::Error::InactiveApp
                             {
                                 self.appid.clear();
                             }
@@ -1148,8 +1152,8 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> Driver for AdcDedicated<'_, A> {
                             mem::swap(&mut app.app_buf2, &mut slice);
                         })
                         .map_err(|err| {
-                            if err == kernel::procs::Error::NoSuchApp
-                                || err == kernel::procs::Error::InactiveApp
+                            if err == kernel::process::Error::NoSuchApp
+                                || err == kernel::process::Error::InactiveApp
                             {
                                 self.appid.clear();
                             }
@@ -1281,13 +1285,13 @@ impl<A: hil::adc::Adc + hil::adc::AdcHighSpeed> Driver for AdcDedicated<'_, A> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }
 
 /// Implementation of the syscalls for the virtualized ADC.
-impl Driver for AdcVirtualized<'_> {
+impl SyscallDriver for AdcVirtualized<'_> {
     /// Method for the application to command or query this driver.
     ///
     /// - `command_num` - which command call this is
@@ -1344,7 +1348,7 @@ impl Driver for AdcVirtualized<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }
@@ -1356,7 +1360,10 @@ impl<'a> hil::adc::Client for AdcVirtualized<'a> {
                 app.pending_command = false;
                 let channel = app.channel;
                 upcalls
-                    .schedule_upcall(0, AdcMode::SingleSample as usize, channel, sample as usize)
+                    .schedule_upcall(
+                        0,
+                        (AdcMode::SingleSample as usize, channel, sample as usize),
+                    )
                     .ok();
             });
         });

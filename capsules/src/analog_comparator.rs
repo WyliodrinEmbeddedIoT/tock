@@ -37,9 +37,11 @@
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::AnalogComparator as usize;
 
-use kernel::common::cells::OptionalCell;
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::OptionalCell;
+use kernel::{ErrorCode, ProcessId};
 
 pub struct AnalogComparator<'a, A: hil::analog_comparator::AnalogComparator<'a> + 'a> {
     // Analog Comparator driver
@@ -105,7 +107,9 @@ impl<'a, A: hil::analog_comparator::AnalogComparator<'a>> AnalogComparator<'a, A
     }
 }
 
-impl<'a, A: hil::analog_comparator::AnalogComparator<'a>> Driver for AnalogComparator<'a, A> {
+impl<'a, A: hil::analog_comparator::AnalogComparator<'a>> SyscallDriver
+    for AnalogComparator<'a, A>
+{
     /// Control the analog comparator.
     ///
     /// ### `command_num`
@@ -160,7 +164,7 @@ impl<'a, A: hil::analog_comparator::AnalogComparator<'a>> Driver for AnalogCompa
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.grants.enter(processid, |_, _| {})
     }
 }
@@ -172,7 +176,7 @@ impl<'a, A: hil::analog_comparator::AnalogComparator<'a>> hil::analog_comparator
     fn fired(&self, channel: usize) {
         self.current_process.map(|appid| {
             let _ = self.grants.enter(*appid, |_app, upcalls| {
-                upcalls.schedule_upcall(0, channel, 0, 0).ok();
+                upcalls.schedule_upcall(0, (channel, 0, 0)).ok();
             });
         });
     }

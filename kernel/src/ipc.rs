@@ -5,13 +5,12 @@
 
 use crate::capabilities::MemoryAllocationCapability;
 use crate::grant::Grant;
+use crate::kernel::Kernel;
 use crate::process;
 use crate::process::ProcessId;
-use crate::sched::Kernel;
-use crate::{
-    CommandReturn, Driver, ErrorCode, ReadOnlyProcessBuffer, ReadWriteProcessBuffer,
-    ReadableProcessBuffer,
-};
+use crate::processbuffer::{ReadOnlyProcessBuffer, ReadWriteProcessBuffer, ReadableProcessBuffer};
+use crate::syscall_driver::{CommandReturn, SyscallDriver};
+use crate::ErrorCode;
 
 /// Syscall number
 pub const DRIVER_NUM: usize = 0x10000;
@@ -129,10 +128,11 @@ impl<const NUM_PROCS: usize, const NUM_UPCALLS: usize> IPC<NUM_PROCS, NUM_UPCALL
                                         my_upcalls
                                             .schedule_upcall(
                                                 to_schedule,
-                                                called_from.id() + 1,
-                                                crate::mem::ReadableProcessBuffer::len(slice),
-                                                crate::mem::ReadableProcessBuffer::ptr(slice)
-                                                    as usize,
+                                                (
+                                                    called_from.id() + 1,
+                                                    ReadableProcessBuffer::len(slice),
+                                                    ReadableProcessBuffer::ptr(slice) as usize,
+                                                ),
                                             )
                                             .ok();
                                     }
@@ -140,9 +140,7 @@ impl<const NUM_PROCS: usize, const NUM_UPCALLS: usize> IPC<NUM_PROCS, NUM_UPCALL
                                         my_upcalls
                                             .schedule_upcall(
                                                 to_schedule,
-                                                called_from.id() + 1,
-                                                0,
-                                                0,
+                                                (called_from.id() + 1, 0, 0),
                                             )
                                             .ok();
                                     }
@@ -156,7 +154,9 @@ impl<const NUM_PROCS: usize, const NUM_UPCALLS: usize> IPC<NUM_PROCS, NUM_UPCALL
     }
 }
 
-impl<const NUM_PROCS: usize, const NUM_UPCALLS: usize> Driver for IPC<NUM_PROCS, NUM_UPCALLS> {
+impl<const NUM_PROCS: usize, const NUM_UPCALLS: usize> SyscallDriver
+    for IPC<NUM_PROCS, NUM_UPCALLS>
+{
     /// command is how notify() is implemented.
     /// Notifying an IPC service is done by setting client_or_svc to 0,
     /// and notifying an IPC client is done by setting client_or_svc to 1.

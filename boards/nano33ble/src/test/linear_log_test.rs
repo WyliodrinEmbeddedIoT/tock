@@ -22,14 +22,14 @@
 use capsules::log;
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use core::cell::Cell;
-use kernel::common::cells::{NumericCellExt, TakeCell};
-use kernel::common::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::debug_verbose;
+use kernel::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::hil::flash;
 use kernel::hil::log::{LogRead, LogReadClient, LogWrite, LogWriteClient};
-use kernel::hil::time::{Alarm, AlarmClient};
+use kernel::hil::time::{Alarm, AlarmClient, ConvertTicks};
 use kernel::static_init;
 use kernel::storage_volume;
+use kernel::utilities::cells::{NumericCellExt, TakeCell};
 use kernel::ErrorCode;
 use nrf52840::{
     nvmc::{NrfPage, Nvmc},
@@ -254,7 +254,7 @@ impl<A: Alarm<'static>> LogTest<A> {
     }
 
     fn wait(&self) {
-        let delay = A::ticks_from_ms(WAIT_MS);
+        let delay = self.alarm.ticks_from_ms(WAIT_MS);
         let now = self.alarm.now();
         self.alarm.set_alarm(now, delay);
     }

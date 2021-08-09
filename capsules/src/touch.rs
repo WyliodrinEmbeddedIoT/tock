@@ -13,13 +13,14 @@
 
 use core::cell::Cell;
 use core::mem;
+
+use kernel::grant::Grant;
 use kernel::hil;
 use kernel::hil::screen::ScreenRotation;
 use kernel::hil::touch::{GestureEvent, TouchEvent, TouchStatus};
-use kernel::{
-    CommandReturn, Driver, ErrorCode, Grant, ProcessId, ReadWriteProcessBuffer,
-    WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadWriteProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -182,9 +183,11 @@ impl<'a> hil::touch::TouchClient for Touch<'a> {
                     upcalls
                         .schedule_upcall(
                             0,
-                            event_status,
-                            (event.x as usize) << 16 | event.y as usize,
-                            pressure_size,
+                            (
+                                event_status,
+                                (event.x as usize) << 16 | event.y as usize,
+                                pressure_size,
+                            ),
                         )
                         .ok();
                 }
@@ -257,9 +260,7 @@ impl<'a> hil::touch::MultiTouchClient for Touch<'a> {
                         upcalls
                             .schedule_upcall(
                                 2,
-                                num,
-                                dropped_events,
-                                if num < len { len - num } else { 0 },
+                                (num, dropped_events, if num < len { len - num } else { 0 }),
                             )
                             .ok();
                     }
@@ -286,13 +287,13 @@ impl<'a> hil::touch::GestureClient for Touch<'a> {
                     GestureEvent::ZoomIn => 5,
                     GestureEvent::ZoomOut => 6,
                 };
-                upcalls.schedule_upcall(1, gesture_id, 0, 0).ok();
+                upcalls.schedule_upcall(1, (gesture_id, 0, 0)).ok();
             });
         }
     }
 }
 
-impl<'a> Driver for Touch<'a> {
+impl<'a> SyscallDriver for Touch<'a> {
     fn allow_readwrite(
         &self,
         appid: ProcessId,
@@ -413,7 +414,7 @@ impl<'a> Driver for Touch<'a> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

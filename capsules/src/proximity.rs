@@ -50,8 +50,10 @@
 
 use core::cell::Cell;
 
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -267,13 +269,13 @@ impl hil::sensors::ProximityClient for ProximitySensor<'_> {
                         if ((temp_val as u8) > app.upper_proximity)
                             || ((temp_val as u8) < app.lower_proximity)
                         {
-                            upcalls.schedule_upcall(0, temp_val as usize, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (temp_val as usize, 0, 0)).ok();
                             app.subscribed = false; // dequeue
                         }
                     } else {
                         // Case: ReadProximity
                         // Upcall to all apps waiting on read_proximity.
-                        upcalls.schedule_upcall(0, temp_val as usize, 0, 0).ok();
+                        upcalls.schedule_upcall(0, (temp_val as usize, 0, 0)).ok();
                         app.subscribed = false; // dequeue
                     }
                 }
@@ -288,7 +290,7 @@ impl hil::sensors::ProximityClient for ProximitySensor<'_> {
     }
 }
 
-impl Driver for ProximitySensor<'_> {
+impl SyscallDriver for ProximitySensor<'_> {
     fn command(
         &self,
         command_num: usize,
@@ -315,7 +317,7 @@ impl Driver for ProximitySensor<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

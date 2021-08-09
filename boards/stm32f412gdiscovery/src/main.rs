@@ -11,12 +11,13 @@ use capsules::virtual_alarm::VirtualMuxAlarm;
 use components::gpio::GpioComponent;
 use components::rng::RngComponent;
 use kernel::capabilities;
-use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
+use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::hil::gpio;
 use kernel::hil::led::LedLow;
 use kernel::hil::screen::ScreenRotation;
-use kernel::Platform;
+use kernel::platform::{KernelResources, SyscallDriverLookup};
+use kernel::scheduler::round_robin::RoundRobinSched;
 use kernel::{create_capability, debug, static_init};
 use stm32f412g::interrupt_service::Stm32f412gDefaultPeripherals;
 
@@ -31,13 +32,13 @@ const NUM_PROCS: usize = 4;
 const NUM_UPCALLS_IPC: usize = NUM_PROCS + 1;
 
 // Actual memory for holding the active process structures.
-static mut PROCESSES: [Option<&'static dyn kernel::procs::Process>; NUM_PROCS] =
+static mut PROCESSES: [Option<&'static dyn kernel::process::Process>; NUM_PROCS] =
     [None, None, None, None];
 
 static mut CHIP: Option<&'static stm32f412g::chip::Stm32f4xx<Stm32f412gDefaultPeripherals>> = None;
 
 // How should the kernel respond when a process faults.
-const FAULT_RESPONSE: kernel::procs::PanicFaultPolicy = kernel::procs::PanicFaultPolicy {};
+const FAULT_RESPONSE: kernel::process::PanicFaultPolicy = kernel::process::PanicFaultPolicy {};
 
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
@@ -51,7 +52,7 @@ struct STM32F412GDiscovery {
     ipc: kernel::ipc::IPC<NUM_PROCS, NUM_UPCALLS_IPC>,
     led:
         &'static capsules::led::LedDriver<'static, LedLow<'static, stm32f412g::gpio::Pin<'static>>>,
-    bpf: &'static capsules::bpf_exec::BpfDriver,
+    // bpf: &'static capsules::bpf_exec::BpfDriver,
     button: &'static capsules::button::Button<'static, stm32f412g::gpio::Pin<'static>>,
     alarm: &'static capsules::alarm::AlarmDriver<
         'static,
@@ -63,18 +64,21 @@ struct STM32F412GDiscovery {
     screen: &'static capsules::screen::Screen<'static>,
     temperature: &'static capsules::temperature::TemperatureSensor<'static>,
     rng: &'static capsules::rng::RngDriver<'static>,
+
+    scheduler: &'static RoundRobinSched<'static>,
+    systick: cortexm4::systick::SysTick,
 }
 
 /// Mapping of integer syscalls to objects that implement syscalls.
-impl Platform for STM32F412GDiscovery {
+impl SyscallDriverLookup for STM32F412GDiscovery {
     fn with_driver<F, R>(&self, driver_num: usize, f: F) -> R
     where
-        F: FnOnce(Option<&dyn kernel::Driver>) -> R,
+        F: FnOnce(Option<&dyn kernel::syscall::SyscallDriver>) -> R,
     {
         match driver_num {
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::led::DRIVER_NUM => f(Some(self.led)),
-            capsules::bpf_exec::DRIVER_NUM => f(Some(self.bpf)),
+            // capsules::bpf_exec::DRIVER_NUM => f(Some(self.bpf)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
@@ -86,6 +90,41 @@ impl Platform for STM32F412GDiscovery {
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             _ => f(None),
         }
+    }
+}
+
+impl
+    KernelResources<
+        stm32f412g::chip::Stm32f4xx<
+            'static,
+            stm32f412g::interrupt_service::Stm32f412gDefaultPeripherals<'static>,
+        >,
+    > for STM32F412GDiscovery
+{
+    type SyscallDriverLookup = Self;
+    type SyscallFilter = ();
+    type ProcessFault = ();
+    type Scheduler = RoundRobinSched<'static>;
+    type SchedulerTimer = cortexm4::systick::SysTick;
+    type WatchDog = ();
+
+    fn syscall_driver_lookup(&self) -> &Self::SyscallDriverLookup {
+        &self
+    }
+    fn syscall_filter(&self) -> &Self::SyscallFilter {
+        &()
+    }
+    fn process_fault(&self) -> &Self::ProcessFault {
+        &()
+    }
+    fn scheduler(&self) -> &Self::Scheduler {
+        self.scheduler
+    }
+    fn scheduler_timer(&self) -> &Self::SchedulerTimer {
+        &self.systick
+    }
+    fn watchdog(&self) -> &Self::WatchDog {
+        &()
     }
 }
 
@@ -518,12 +557,12 @@ pub unsafe fn main() {
     ));
 
     // BPF 
-    let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
-    let grant_bpf = board_kernel.create_grant(&grant_capt);
-    let bpf = static_init!(
-            capsules::bpf_exec::BpfDriver, 
-            capsules::bpf_exec::BpfDriver::new(grant_bpf)
-        );
+    // let grant_capt = create_capability!(capabilities::MemoryAllocationCapability);
+    // let grant_bpf = board_kernel.create_grant(&grant_capt);
+    // let bpf = static_init!(
+    //         capsules::bpf_exec::BpfDriver, 
+    //         capsules::bpf_exec::BpfDriver::new(grant_bpf)
+    //     );
 
     // BUTTONs
     let button = components::button::ButtonComponent::new(
@@ -677,7 +716,6 @@ pub unsafe fn main() {
             base_peripherals
                 .gpio_ports
                 .get_pin(stm32f412g::gpio::PinId::PD11)
-                .unwrap()
         ),
     );
 
@@ -765,23 +803,29 @@ pub unsafe fn main() {
                 adc_channel_5
             ));
 
+    let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
+        .finalize(components::rr_component_helper!(NUM_PROCS));
+
     let stm32f412g = STM32F412GDiscovery {
-        console: console,
+        console,
         ipc: kernel::ipc::IPC::new(
             board_kernel,
             kernel::ipc::DRIVER_NUM,
             &memory_allocation_capability,
         ),
-        led: led,
+        led,
         bpf: bpf,
-        button: button,
-        alarm: alarm,
-        gpio: gpio,
+        button,
+        alarm,
+        gpio,
         adc: adc_syscall,
-        touch: touch,
-        screen: screen,
+        touch,
+        screen,
         temperature: temp,
-        rng: rng,
+        rng,
+
+        scheduler,
+        systick: cortexm4::systick::SysTick::new(),
     };
 
     // // Optional kernel tests
@@ -815,7 +859,7 @@ pub unsafe fn main() {
         static _eappmem: u8;
     }
 
-    kernel::procs::load_processes(
+    kernel::process::load_processes(
         board_kernel,
         chip,
         core::slice::from_raw_parts(
@@ -835,9 +879,6 @@ pub unsafe fn main() {
         debug!("{:?}", err);
     });
 
-    let scheduler = components::sched::round_robin::RoundRobinComponent::new(&PROCESSES)
-        .finalize(components::rr_component_helper!(NUM_PROCS));
-
     //Uncomment to run multi alarm test
     //multi_alarm_test::run_multi_alarm(mux_alarm);
 
@@ -845,7 +886,6 @@ pub unsafe fn main() {
         &stm32f412g,
         chip,
         Some(&stm32f412g.ipc),
-        scheduler,
         &main_loop_capability,
     );
 }

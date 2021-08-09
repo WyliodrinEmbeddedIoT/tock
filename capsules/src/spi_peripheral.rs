@@ -5,14 +5,15 @@ use core::cell::Cell;
 use core::cmp;
 use core::mem;
 
-use kernel::common::cells::{OptionalCell, TakeCell};
+use kernel::grant::Grant;
 use kernel::hil::spi::ClockPhase;
 use kernel::hil::spi::ClockPolarity;
 use kernel::hil::spi::{SpiSlaveClient, SpiSlaveDevice};
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
-use kernel::{
-    ReadOnlyProcessBuffer, ReadWriteProcessBuffer, ReadableProcessBuffer, WriteableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadWriteProcessBuffer};
+use kernel::processbuffer::{ReadableProcessBuffer, WriteableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -84,6 +85,7 @@ impl<'a, S: SpiSlaveDevice> SpiPeripheral<'a, S> {
             app.index = start + tmp_len;
             tmp_len
         });
+        // TODO verify SPI return value
         let _ = self.spi_slave.read_write_bytes(
             self.kernel_write.take(),
             self.kernel_read.take(),
@@ -92,7 +94,7 @@ impl<'a, S: SpiSlaveDevice> SpiPeripheral<'a, S> {
     }
 }
 
-impl<S: SpiSlaveDevice> Driver for SpiPeripheral<'_, S> {
+impl<S: SpiSlaveDevice> SyscallDriver for SpiPeripheral<'_, S> {
     /// Provide read/write buffers to SpiPeripheral
     ///
     /// - allow_num 0: Provides a buffer to receive transfers into.
@@ -226,21 +228,26 @@ impl<S: SpiSlaveDevice> Driver for SpiPeripheral<'_, S> {
                 CommandReturn::success_u32(0)
             }
             3 /* set phase */ => {
-                match arg1 {
+                match match arg1 {
                     0 => self.spi_slave.set_phase(ClockPhase::SampleLeading),
                     _ => self.spi_slave.set_phase(ClockPhase::SampleTrailing),
-                };
-                CommandReturn::success()
+                } {
+                    Ok(()) => CommandReturn::success(),
+                    Err(error) => CommandReturn::failure(error.into())
+                }
             }
             4 /* get phase */ => {
                 CommandReturn::success_u32(self.spi_slave.get_phase() as u32)
             }
             5 /* set polarity */ => {
-                match arg1 {
+                match match arg1 {
                     0 => self.spi_slave.set_polarity(ClockPolarity::IdleLow),
                     _ => self.spi_slave.set_polarity(ClockPolarity::IdleHigh),
-                };
-                CommandReturn::success()
+                } {
+                    Ok(()) => CommandReturn::success(),
+                    Err(error) => CommandReturn::failure(error.into())
+                }
+
             }
             6 /* get polarity */ => {
                 CommandReturn::success_u32(self.spi_slave.get_polarity() as u32)
@@ -249,7 +256,7 @@ impl<S: SpiSlaveDevice> Driver for SpiPeripheral<'_, S> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.grants.enter(processid, |_, _| {})
     }
 }
@@ -260,6 +267,7 @@ impl<S: SpiSlaveDevice> SpiSlaveClient for SpiPeripheral<'_, S> {
         writebuf: Option<&'static mut [u8]>,
         readbuf: Option<&'static mut [u8]>,
         length: usize,
+        _status: Result<(), ErrorCode>,
     ) {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(*process_id, move |app, upcalls| {
@@ -300,7 +308,7 @@ impl<S: SpiSlaveDevice> SpiSlaveClient for SpiPeripheral<'_, S> {
                     let len = app.len;
                     app.len = 0;
                     app.index = 0;
-                    upcalls.schedule_upcall(0, len, 0, 0).ok();
+                    upcalls.schedule_upcall(0, (len, 0, 0)).ok();
                 } else {
                     self.do_next_read_write(app);
                 }
@@ -313,7 +321,7 @@ impl<S: SpiSlaveDevice> SpiSlaveClient for SpiPeripheral<'_, S> {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(*process_id, move |app, upcalls| {
                 let len = app.len;
-                upcalls.schedule_upcall(1, len, 0, 0).ok();
+                upcalls.schedule_upcall(1, (len, 0, 0)).ok();
             });
         });
     }

@@ -1,15 +1,15 @@
 //! SHA256 HMAC (Hash-based Message Authentication Code).
 
 use core::cell::Cell;
-use kernel::common::cells::OptionalCell;
-use kernel::common::leasable_buffer::LeasableBuffer;
-use kernel::common::registers::interfaces::{ReadWriteable, Readable, Writeable};
-use kernel::common::registers::{
-    register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
-};
-use kernel::common::StaticRef;
 use kernel::hil;
 use kernel::hil::digest;
+use kernel::utilities::cells::OptionalCell;
+use kernel::utilities::leasable_buffer::LeasableBuffer;
+use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
+use kernel::utilities::registers::{
+    register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+};
+use kernel::utilities::StaticRef;
 use kernel::ErrorCode;
 
 register_structs! {
@@ -17,16 +17,17 @@ register_structs! {
         (0x00 => intr_state: ReadWrite<u32, INTR_STATE::Register>),
         (0x04 => intr_enable: ReadWrite<u32, INTR_ENABLE::Register>),
         (0x08 => intr_test: ReadWrite<u32, INTR_TEST::Register>),
-        (0x0C => cfg: ReadWrite<u32, CFG::Register>),
-        (0x10 => cmd: ReadWrite<u32, CMD::Register>),
-        (0x14 => status: ReadOnly<u32, STATUS::Register>),
-        (0x18 => err_code: ReadOnly<u32>),
-        (0x1C => wipe_secret: WriteOnly<u32>),
-        (0x20 => key: [WriteOnly<u32>; 8]),
-        (0x40 => digest: [ReadOnly<u32>; 8]),
-        (0x60 => msg_length_lower: ReadOnly<u32>),
-        (0x64 => msg_length_upper: ReadOnly<u32>),
-        (0x68 => _reserved0),
+        (0x0C => alert_test: ReadWrite<u32>),
+        (0x10 => cfg: ReadWrite<u32, CFG::Register>),
+        (0x14 => cmd: ReadWrite<u32, CMD::Register>),
+        (0x18 => status: ReadOnly<u32, STATUS::Register>),
+        (0x1C => err_code: ReadOnly<u32>),
+        (0x20 => wipe_secret: WriteOnly<u32>),
+        (0x24 => key: [WriteOnly<u32>; 8]),
+        (0x44 => digest: [ReadOnly<u32>; 8]),
+        (0x64 => msg_length_lower: ReadOnly<u32>),
+        (0x68 => msg_length_upper: ReadOnly<u32>),
+        (0x6C => _reserved0),
         (0x800 => msg_fifo: WriteOnly<u32>),
         (0x804 => msg_fifo_8: WriteOnly<u8>),
         (0x805 => _reserved1),

@@ -1,4 +1,4 @@
-//! Driver for the MEMS L3gd20Spi motion sensor, 3 axys digital output gyroscope
+//! SyscallDriver for the MEMS L3gd20Spi motion sensor, 3 axys digital output gyroscope
 //! and temperature sensor.
 //!
 //! May be used with NineDof and Temperature
@@ -103,10 +103,13 @@
 //!
 
 use core::cell::Cell;
-use kernel::common::cells::{OptionalCell, TakeCell};
+
+use kernel::grant::Grant;
 use kernel::hil::sensors;
 use kernel::hil::spi;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::L3gd20 as usize;
@@ -221,6 +224,7 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_WHO_AM_I | 0x80;
             buf[1] = 0x00;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, self.rxbuffer.take(), 2);
         });
         false
@@ -231,6 +235,7 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_CTRL_REG1;
             buf[1] = 0x0F;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, None, 2);
         });
     }
@@ -241,6 +246,7 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_CTRL_REG5;
             buf[1] = if enabled { 1 } else { 0 } << 4;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, None, 2);
         });
     }
@@ -252,6 +258,7 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_CTRL_REG2;
             buf[1] = (mode & 0x03) << 4 | (divider & 0x0F);
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, None, 2);
         });
     }
@@ -262,6 +269,7 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_CTRL_REG4;
             buf[1] = (scale & 0x03) << 4;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, None, 2);
         });
     }
@@ -276,6 +284,7 @@ impl<'a> L3gd20Spi<'a> {
             buf[4] = 0x00;
             buf[5] = 0x00;
             buf[6] = 0x00;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, self.rxbuffer.take(), 7);
         });
     }
@@ -285,20 +294,21 @@ impl<'a> L3gd20Spi<'a> {
         self.txbuffer.take().map(|buf| {
             buf[0] = L3GD20_REG_OUT_TEMP | 0x80;
             buf[1] = 0x00;
+            // TODO verify SPI return value
             let _ = self.spi.read_write_bytes(buf, self.rxbuffer.take(), 2);
         });
     }
 
-    pub fn configure(&self) {
+    pub fn configure(&self) -> Result<(), ErrorCode> {
         self.spi.configure(
             spi::ClockPolarity::IdleHigh,
             spi::ClockPhase::SampleTrailing,
             1_000_000,
-        );
+        )
     }
 }
 
-impl Driver for L3gd20Spi<'_> {
+impl SyscallDriver for L3gd20Spi<'_> {
     fn command(
         &self,
         command_num: usize,
@@ -395,7 +405,7 @@ impl Driver for L3gd20Spi<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.grants.enter(processid, |_, _| {})
     }
 }
@@ -406,6 +416,7 @@ impl spi::SpiMasterClient for L3gd20Spi<'_> {
         write_buffer: &'static mut [u8],
         read_buffer: Option<&'static mut [u8]>,
         len: usize,
+        _status: Result<(), ErrorCode>,
     ) {
         self.current_process.map(|proc_id| {
             let _result = self.grants.enter(*proc_id, |_app, upcalls| {
@@ -421,7 +432,7 @@ impl spi::SpiMasterClient for L3gd20Spi<'_> {
                             false
                         };
                         upcalls
-                            .schedule_upcall(0, 1, if present { 1 } else { 0 }, 0)
+                            .schedule_upcall(0, (1, if present { 1 } else { 0 }, 0))
                             .ok();
                         L3gd20Status::Idle
                     }
@@ -469,9 +480,9 @@ impl spi::SpiMasterClient for L3gd20Spi<'_> {
                             false
                         };
                         if values {
-                            upcalls.schedule_upcall(0, x, y, z).ok();
+                            upcalls.schedule_upcall(0, (x, y, z)).ok();
                         } else {
-                            upcalls.schedule_upcall(0, 0, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         }
                         L3gd20Status::Idle
                     }
@@ -495,15 +506,15 @@ impl spi::SpiMasterClient for L3gd20Spi<'_> {
                             false
                         };
                         if value {
-                            upcalls.schedule_upcall(0, temperature, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (temperature, 0, 0)).ok();
                         } else {
-                            upcalls.schedule_upcall(0, 0, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         }
                         L3gd20Status::Idle
                     }
 
                     _ => {
-                        upcalls.schedule_upcall(0, 0, 0, 0).ok();
+                        upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         L3gd20Status::Idle
                     }
                 });

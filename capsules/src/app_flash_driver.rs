@@ -24,12 +24,13 @@
 
 use core::cmp;
 use core::mem;
-use kernel::common::cells::{OptionalCell, TakeCell};
+
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::ErrorCode;
-use kernel::{
-    CommandReturn, Driver, Grant, ProcessId, ReadOnlyProcessBuffer, ReadableProcessBuffer,
-};
+use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadableProcessBuffer};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -124,7 +125,7 @@ impl hil::nonvolatile_storage::NonvolatileStorageClient<'static> for AppFlash<'_
         // Notify the current application that the command finished.
         self.current_app.take().map(|appid| {
             let _ = self.apps.enter(appid, |_app, upcalls| {
-                upcalls.schedule_upcall(0, 0, 0, 0).ok();
+                upcalls.schedule_upcall(0, (0, 0, 0)).ok();
             });
         });
 
@@ -172,7 +173,7 @@ impl hil::nonvolatile_storage::NonvolatileStorageClient<'static> for AppFlash<'_
     }
 }
 
-impl Driver for AppFlash<'_> {
+impl SyscallDriver for AppFlash<'_> {
     /// Setup buffer to write from.
     ///
     /// ### `allow_num`
@@ -240,7 +241,7 @@ impl Driver for AppFlash<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

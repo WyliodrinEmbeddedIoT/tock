@@ -1,4 +1,4 @@
-//! Driver for the MLX90614 Infrared Thermometer.
+//! SyscallDriver for the MLX90614 Infrared Thermometer.
 //!
 //! SMBus Interface
 //!
@@ -14,15 +14,20 @@
 //! ```
 //!
 
-use crate::driver;
 use core::cell::Cell;
+
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
-use kernel::common::cells::{OptionalCell, TakeCell};
-use kernel::common::registers::register_bitfields;
+
+use kernel::grant::Grant;
 use kernel::hil::i2c;
 use kernel::hil::sensors;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::utilities::registers::register_bitfields;
+use kernel::{ErrorCode, ProcessId};
+
+use crate::driver;
 
 /// Syscall driver number.
 pub const DRIVER_NUM: usize = driver::NUM::Mlx90614 as usize;
@@ -126,7 +131,7 @@ impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
                 self.owning_process.map(|pid| {
                     let _ = self.apps.enter(*pid, |_app, upcalls| {
                         upcalls
-                            .schedule_upcall(0, if present { 1 } else { 0 }, 0, 0)
+                            .schedule_upcall(0, (if present { 1 } else { 0 }, 0, 0))
                             .ok();
                     });
                 });
@@ -152,13 +157,13 @@ impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
                 if values {
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(*pid, |_app, upcalls| {
-                            upcalls.schedule_upcall(0, temp, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (temp, 0, 0)).ok();
                         });
                     });
                 } else {
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(*pid, |_app, upcalls| {
-                            upcalls.schedule_upcall(0, 0, 0, 0).ok();
+                            upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         });
                     });
                 }
@@ -169,7 +174,7 @@ impl<'a> i2c::I2CClient for Mlx90614SMBus<'a> {
     }
 }
 
-impl<'a> Driver for Mlx90614SMBus<'a> {
+impl<'a> SyscallDriver for Mlx90614SMBus<'a> {
     fn command(
         &self,
         command_num: usize,
@@ -229,7 +234,7 @@ impl<'a> Driver for Mlx90614SMBus<'a> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

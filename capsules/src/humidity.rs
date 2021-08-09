@@ -50,8 +50,10 @@
 
 use core::cell::Cell;
 
+use kernel::grant::Grant;
 use kernel::hil;
-use kernel::{CommandReturn, Driver, ErrorCode, Grant, ProcessId};
+use kernel::syscall::{CommandReturn, SyscallDriver};
+use kernel::{ErrorCode, ProcessId};
 
 /// Syscall driver number.
 use crate::driver;
@@ -120,14 +122,14 @@ impl hil::sensors::HumidityClient for HumiditySensor<'_> {
                 if app.subscribed {
                     self.busy.set(false);
                     app.subscribed = false;
-                    upcalls.schedule_upcall(0, tmp_val, 0, 0).ok();
+                    upcalls.schedule_upcall(0, (tmp_val, 0, 0)).ok();
                 }
             });
         }
     }
 }
 
-impl Driver for HumiditySensor<'_> {
+impl SyscallDriver for HumiditySensor<'_> {
     fn command(
         &self,
         command_num: usize,
@@ -146,7 +148,7 @@ impl Driver for HumiditySensor<'_> {
         }
     }
 
-    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::procs::Error> {
+    fn allocate_grant(&self, processid: ProcessId) -> Result<(), kernel::process::Error> {
         self.apps.enter(processid, |_, _| {})
     }
 }

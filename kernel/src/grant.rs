@@ -127,8 +127,8 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::{write, NonNull};
 use core::slice;
 
+use crate::kernel::Kernel;
 use crate::process::{Error, Process, ProcessCustomGrantIdentifer, ProcessId};
-use crate::sched::Kernel;
 use crate::upcall::{Upcall, UpcallError, UpcallId};
 use crate::ErrorCode;
 
@@ -218,9 +218,7 @@ impl<'a> GrantUpcallTable<'a> {
     pub fn schedule_upcall(
         &self,
         subscribe_num: usize,
-        r0: usize,
-        r1: usize,
-        r2: usize,
+        r: (usize, usize, usize),
     ) -> Result<(), UpcallError> {
         // Implement `self.upcalls[subscribe_num]` without a chance of a panic.
         self.upcalls.get(subscribe_num).map_or(
@@ -238,7 +236,7 @@ impl<'a> GrantUpcallTable<'a> {
                     saved_upcall.appdata,
                     saved_upcall.fn_ptr,
                 );
-                upcall.schedule(self.process, r0, r1, r2)
+                upcall.schedule(self.process, r.0, r.1, r.2)
             },
         )
     }

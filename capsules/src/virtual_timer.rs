@@ -1,12 +1,14 @@
 //! Provide multiple Timers on top of a single underlying Alarm.
 
-use crate::virtual_alarm::VirtualMuxAlarm;
 use core::cell::Cell;
 use core::cmp;
-use kernel::common::cells::{NumericCellExt, OptionalCell};
-use kernel::common::{List, ListLink, ListNode};
+
+use kernel::collections::list::{List, ListLink, ListNode};
 use kernel::hil::time::{self, Alarm, Ticks, Time, Timer};
+use kernel::utilities::cells::{NumericCellExt, OptionalCell};
 use kernel::ErrorCode;
+
+use crate::virtual_alarm::VirtualMuxAlarm;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Mode {
@@ -41,7 +43,7 @@ impl<'a, A: Alarm<'a>> ListNode<'a, VirtualTimer<'a, A>> for VirtualTimer<'a, A>
 
 impl<'a, A: Alarm<'a>> VirtualTimer<'a, A> {
     pub fn new(mux_timer: &'a MuxTimer<'a, A>) -> VirtualTimer<'a, A> {
-        let zero = A::ticks_from_seconds(0);
+        let zero = A::Ticks::from(0);
         let v = VirtualTimer {
             mux: mux_timer,
             when: Cell::new(zero),
