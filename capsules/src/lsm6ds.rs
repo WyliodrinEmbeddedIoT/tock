@@ -2,11 +2,12 @@
 //!
 
 #![allow(non_camel_case_types)]
+
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
-use kernel::common::registers::register_bitfields;
+//use kernel::common::registers::register_bitfields;
 
-pub const CHIP_ID: U8 = 0X6C;
+pub const CHIP_ID: u8 = 0x6C;
 pub const ACCELEROMETER_BASE_ADDRESS: u8 = 0x10;
 pub const GYROSCOPE_BASE_ADDRESS: u8 = 0x11;
 
@@ -21,7 +22,7 @@ enum_from_primitive! {
         LSM6DSOX_GYRO_RATE_208_HZ = 5,
         LSM6DSOX_GYRO_RATE_416_HZ = 6,
         LSM6DSOX_GYRO_RATE_833_HZ = 7,
-        LSM6DSOX_GYRO_RATE_1_66k_HZ = 8
+        LSM6DSOX_GYRO_RATE_1_66k_HZ = 8,
         LSM6DSOX_GYRO_RATE_3_33K_HZ = 9,
         LSM6DSOX_GYRO_RATE_6_66K_HZ = 10
     }
@@ -54,7 +55,7 @@ enum_from_primitive! {
     }
 }
 
-enum_from_primitve! {
+enum_from_primitive! {
     #[derive(Clone, Copy, PartialEq)]
     pub enum LSM6DSOXTRGyroRange {
         LSM6DSOX_GYRO_RANGE_250_DPS = 0,
