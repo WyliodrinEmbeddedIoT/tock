@@ -94,3 +94,5 @@ pub mod virtual_sha;
 pub mod virtual_spi;
 pub mod virtual_timer;
 pub mod virtual_uart;
+pub mod lsm6dsoxtr;
+pub mod lsm6ds;

@@ -37,7 +37,10 @@ mod io;
 
 use rp2040::sysinfo;
 
+
+
 mod flash_bootloader;
+
 
 /// Allocate memory for the stack
 #[no_mangle]
@@ -74,6 +77,8 @@ pub struct NanoRP2040Connect {
     led: &'static capsules::led::LedDriver<'static, LedHigh<'static, RPGpioPin<'static>>>,
     adc: &'static capsules::adc::AdcVirtualized<'static>,
     temperature: &'static capsules::temperature::TemperatureSensor<'static>,
+    ninedof: &'static capsules::ninedof::NineDof<'static>,
+    lsm6dsoxtr: &'static capsules::lsm6dsoxtr::Lsm6dsoxtrI2C<'static>,
 
     scheduler: &'static RoundRobinSched<'static>,
     systick: cortexm0p::systick::SysTick,
@@ -92,6 +97,8 @@ impl SyscallDriverLookup for NanoRP2040Connect {
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
+            capsules::lsm6dsoxtr::DRIVER_NUM => f(Some(self.lsm6dsoxtr)),
+            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             _ => f(None),
         }
     }
@@ -227,6 +234,7 @@ pub unsafe fn main() {
     rp2040::init();
 
     let peripherals = static_init!(Rp2040DefaultPeripherals, Rp2040DefaultPeripherals::new());
+    peripherals.set_clocks();
 
     // Set the UART used for panic
     io::WRITER.set_uart(&peripherals.uart0);
@@ -394,7 +402,30 @@ pub unsafe fn main() {
         capsules::temperature::TemperatureSensor<'static>,
         capsules::temperature::TemperatureSensor::new(temp_sensor, grant_temperature)
     );
+
     kernel::hil::sensors::TemperatureDriver::set_client(temp_sensor, temp);
+
+    peripherals.i2c0.init(100 * 1000);
+    //set RX and TX pins in UART mode
+    let gpio_sda = peripherals.pins.get_pin(RPGpio::GPIO12);
+    let gpio_scl = peripherals.pins.get_pin(RPGpio::GPIO13);
+    gpio_sda.set_function(GpioFunction::I2C);
+    gpio_scl.set_function(GpioFunction::I2C);
+    let mux_i2c =
+        components::i2c::I2CMuxComponent::new(&peripherals.i2c0, None, dynamic_deferred_caller)
+            .finalize(components::i2c_mux_component_helper!());
+
+    let lsm6dsoxtr = components::lsm6dsox::Lsm6dsoxtrI2CComponent::new(
+        board_kernel,
+        capsules::lsm6dsoxtr::DRIVER_NUM,
+    )
+    .finalize(components::lsm6ds_i2c_component_helper!(mux_i2c));
+
+    let ninedof =
+        components::ninedof::NineDofComponent::new(board_kernel, capsules::ninedof::DRIVER_NUM)
+            .finalize(components::ninedof_component_helper!(lsm6dsoxtr));
+
+    lsm6dsoxtr.is_present();
 
     let adc_channel_0 = components::adc::AdcComponent::new(&adc_mux, Channel::Channel0)
         .finalize(components::adc_component_helper!(Adc));
@@ -438,6 +469,9 @@ pub unsafe fn main() {
         adc: adc_syscall,
         temperature: temp,
 
+        lsm6dsoxtr: lsm6dsoxtr,
+        ninedof: ninedof,
+
         scheduler,
         systick: cortexm0p::systick::SysTick::new_with_calibration(125_000_000),
     };
@@ -465,7 +499,7 @@ pub unsafe fn main() {
         /// End of the RAM region for app memory.
         static _eappmem: u8;
     }
-
+    
     kernel::process::load_processes(
         board_kernel,
         chip,

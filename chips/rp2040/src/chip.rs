@@ -146,7 +146,12 @@ impl<'a> Rp2040DefaultPeripherals<'a> {
     }
 
     pub fn set_clocks(&'a self) {
+        // spi
         self.spi0.set_clocks(&self.clocks);
+        
+        // i2c
+        self.i2c0.set_resets(&self.resets);
+        self.i2c0.set_clocks(&self.clocks);
     }
 }
 
