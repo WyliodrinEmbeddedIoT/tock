@@ -438,6 +438,11 @@ pub unsafe fn main() {
         46 => &nrf52833_peripherals.gpio_port[Pin::P1_14],
         47 => &nrf52833_peripherals.gpio_port[Pin::P1_15],
     );
+
+    // use kernel::hil::gpio::{Output, Configure};
+
+    // &nrf52833_peripherals.gpio_port[Pin::P0_10].make_output();
+    // &nrf52833_peripherals.gpio_port[Pin::P0_10].set ();
     // use core::mem::MaybeUninit;
     let bpf = static_init!(
         capsules::bpf_exec::BpfDriver<'static, nrf52::gpio::GPIOPin<'static>>, 
@@ -826,8 +831,8 @@ pub unsafe fn main() {
         bpf: bpf,
         console,
         gpio,
-        button,
-        led,
+        // button,
+        // led,
         rng,
         temperature,
         lsm303agr,
