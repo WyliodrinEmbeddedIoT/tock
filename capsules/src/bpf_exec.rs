@@ -10,6 +10,7 @@ use kernel::processbuffer::{ReadOnlyProcessBuffer, ReadableProcessBuffer};
 use kernel::{ProcessId, ErrorCode};
 use kernel::hil::gpio;
 use kernel::hil::gpio::{Configure, Input, Output, InterruptWithValue};
+// use kernel::hil::gpio_bank::GpioBank;
 
 use crate::bpf::rbpf;
 
@@ -194,7 +195,7 @@ impl<'a, IP: gpio::InterruptPin<'a>> SyscallDriver for BpfDriver<'a, IP> {
 
 impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP> {
     fn fired(&self, _pin_num: u32) {
-        let pins = self.pins.as_ref();
+        // let pins = self.pins.as_ref();
         // let (pin, _, _) = self.buttons[pin_num as usize];
         // let value = pin.read();
         // debug!("Pin fired: {:?} ", pin_num);
@@ -211,79 +212,86 @@ impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP>
                                 let vm = rbpf::EbpfVmRaw::new(Some(&program[0..program_len])).unwrap();
                                 self.packet.map(|packet| {
                                     // let mut state: [u8; 15] = [0; 15];
-                                    for (i, maybe_pin) in self.pins.iter().enumerate() {
-                                        if let Some(pin) = maybe_pin {
-                                            if pin.is_input() {
-                                                // debug!("{:?} e input", i);
-                                                packet[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
-                                                let val = pin.read();
-                                                // if i == 34 {
-                                                //     debug!("i=34, value {:?} ", val);
-                                                // }
-                                                if val {
-                                                    packet[i/4] |= 1 << (2 * (3 - (i % 4)));
-                                                } else {
-                                                    packet[i/4] &= !(1 << (2 * (3 - (i % 4))));
-                                                }
-                                            } else {
-                                                // if i == 12 {
-                                                //     debug!("{:?} e output", i);
-                                                // }
-                                                packet[i/4] |= 1 << (2 * (3 - (i % 4)) + 1);
-                                            }
-                                            // state[i/4] = packet[i/4];
-                                        }
-                                        // debug!("i: {:?}", i);
-                                    }
-
-                                    // debug!("inainte");
-                                    // for i in 0..15 {
-                                    //     debug!("{:?} ", packet[i]);
-                                    // }
-                                    
-                                    let res = vm.execute_program(packet).unwrap();
-                                    // debug!("dupa");
-                                    // for i in 0..15 {
-                                    //     debug!("{:?} {:?}", state[i], packet[i]);
-                                    // }
-
-                                    // debug!("\n\n\n\n");
-
-                                    if res == 0 {
-                                        for i in 0..self.pins.len() {
-                                            let value = (packet[i/4] & ( 1 << (2 * (3 - (i % 4))) )) >> (2 * (3 - (i % 4)));
-                                            let mode = (packet[i/4] & ( 1 << (2 * (3 - (i % 4)) + 1) )) >> (2 * (3 - (i % 4)) + 1);
-
-                                            // let value_i = (state[i/4] & ( 1 << (2 * (3 - (i % 4))) )) >> (2 * (3 - (i % 4)));
-                                            // let mode_i = (state[i/4] & ( 1 << (2 * (3 - (i % 4)) + 1) )) >> (2 * (3 - (i % 4)) + 1);
-                                            // if i == 9 {
-                                            //     debug!("Packet: {:?} si state: {:?}", packet[i/4], state[i/4]);
-                                            //     debug!("i=9, value {:?} mode {:?}", value, mode);
-                                            //     debug!("i=9, value_i {:?} mode_i {:?}", value_i, mode_i);
-                                            // }
-                                            if let Some(pin) = pins[i] {
-                                                // if mode != mode_i {
-                                                if mode == 1 {
-                                                    pin.make_output();
-                                                    // if i == 9 {
-                                                    //     debug!("i=9, value {:?} mode {:?}", value, mode);
+                                    // if let Some(pin_9) = self.pins[9] {
+                                    //     pin_9.make_output();
+                                    //     pin_9.set();
+                                        // debug!("Sunt aici");
+                                        for (i, maybe_pin) in self.pins.iter().enumerate() {
+                                            if let Some(pin) = maybe_pin {
+                                                if pin.is_input() {
+                                                    // debug!("{:?} e input", i);
+                                                    packet[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
+                                                    let val = pin.read();
+                                                    // if i == 34 {
+                                                    //     debug!("i=34, value {:?} ", val);
                                                     // }
-                                                    // if value != value_i {
-                                                        if value == 0 {
-                                                            // debug!("{:?} Clear!", i);
-                                                            pin.clear();
-                                                        } else {
-                                                            // debug!("{:?} Set!", i);
-                                                            pin.set();
-                                                        }
-                                                    // }
+                                                    if val {
+                                                        packet[i/4] |= 1 << (2 * (3 - (i % 4)));
+                                                    } else {
+                                                        packet[i/4] &= !(1 << (2 * (3 - (i % 4))));
+                                                    }
                                                 } else {
-                                                    pin.make_input();
+                                                    // if i == 12 {
+                                                    //     debug!("{:?} e output", i);
+                                                    // }
+                                                    packet[i/4] |= 1 << (2 * (3 - (i % 4)) + 1);
                                                 }
+                                                // state[i/4] = packet[i/4];
+                                            }
+                                            // debug!("i: {:?}", i);
+                                        }
+                                        // pin_9.source.read_pins(packet);
+                                        // pin_9.clear();
+                                        // debug!("inainte");
+                                        // for i in 0..15 {
+                                        //     debug!("{:?} ", packet[i]);
+                                        // }
+                                        let res = vm.execute_program(packet).unwrap();
+                                        // debug!("dupa");
+                                        // for i in 0..15 {
+                                        //     debug!("{:?} {:?}", state[i], packet[i]);
+                                        // }
+
+                                        // debug!("\n\n\n\n");
+
+                                        if res == 0 {
+                                            for i in 0..self.pins.len() {
+                                                let value = (packet[i/4] & ( 1 << (2 * (3 - (i % 4))) )) >> (2 * (3 - (i % 4)));
+                                                let mode = (packet[i/4] & ( 1 << (2 * (3 - (i % 4)) + 1) )) >> (2 * (3 - (i % 4)) + 1);
+
+                                                // let value_i = (state[i/4] & ( 1 << (2 * (3 - (i % 4))) )) >> (2 * (3 - (i % 4)));
+                                                // let mode_i = (state[i/4] & ( 1 << (2 * (3 - (i % 4)) + 1) )) >> (2 * (3 - (i % 4)) + 1);
+                                                // if i == 9 {
+                                                //     debug!("Packet: {:?} si state: {:?}", packet[i/4], state[i/4]);
+                                                //     debug!("i=9, value {:?} mode {:?}", value, mode);
+                                                //     debug!("i=9, value_i {:?} mode_i {:?}", value_i, mode_i);
                                                 // }
+                                                if let Some(pin) = self.pins[i] {
+                                                    // if mode != mode_i {
+                                                    if mode == 1 {
+                                                        pin.make_output();
+                                                        // if i == 9 {
+                                                        //     debug!("i=9, value {:?} mode {:?}", value, mode);
+                                                        // }
+                                                        // if value != value_i {
+                                                        // if i != 9 {
+                                                            if value == 0 {
+                                                                // debug!("{:?} Clear!", i);
+                                                                pin.clear();
+                                                            } else {
+                                                                // debug!("{:?} Set!", i);
+                                                                pin.set();
+                                                            }
+                                                        // }
+                                                    } else {
+                                                        pin.make_input();
+                                                    }
+                                                    // }
+                                                }
                                             }
                                         }
-                                    }
+                                        // pin.clear();
+                                    // }
                                 });
                             }
                         });

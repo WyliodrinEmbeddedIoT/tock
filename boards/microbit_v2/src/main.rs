@@ -246,7 +246,7 @@ pub unsafe fn main() {
             // 1 => &nrf52833_peripherals.gpio_port[_GPIO_P1],
             // 2 => &nrf52833_peripherals.gpio_port[_GPIO_P2],
             8 => &nrf52833_peripherals.gpio_port[GPIO_P8],
-            9 => &nrf52833_peripherals.gpio_port[GPIO_P9],
+            // 9 => &nrf52833_peripherals.gpio_port[GPIO_P9],
             // 15 => &nrf52833_peripherals.gpio_port[GPIO_P15],
             16 => &nrf52833_peripherals.gpio_port[GPIO_P16],
         ),

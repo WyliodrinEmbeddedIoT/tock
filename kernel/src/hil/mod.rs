@@ -11,6 +11,7 @@ pub mod eic;
 pub mod entropy;
 pub mod flash;
 pub mod gpio;
+pub mod gpio_bank;
 pub mod gpio_async;
 pub mod i2c;
 pub mod kv_system;

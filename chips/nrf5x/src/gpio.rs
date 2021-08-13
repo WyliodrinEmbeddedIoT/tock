@@ -587,3 +587,62 @@ impl<'a, const N: usize> Port<'a, N> {
         }
     }
 }
+
+impl<'a> hil::gpio_bank::GpioBank<'a> for GPIOPin<'_> {
+    fn read_pins(&self, pin_array: &'a mut [u8]) {
+        for i in 0..48 {
+            let pin = ((i as usize) % GPIO_PER_PORT) as u8;
+            let gpio_registers: StaticRef<GpioRegisters>;
+            unsafe {
+                gpio_registers =
+                    StaticRef::new(
+                        (GPIO_BASE_ADDRESS + ((pin as usize) / GPIO_PER_PORT) * GPIO_SIZE)
+                            as *const GpioRegisters,
+                    );
+            };
+            let dir = gpio_registers.pin_cnf[pin as usize].read_as_enum(PinConfig::DIR);
+            match dir {
+                Some(PinConfig::DIR::Value::Input) => {
+                    pin_array[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
+                    let val = gpio_registers.in_.get() & (1 << pin) != 0;
+                    if val {
+                        pin_array[i/4] |= 1 << (2 * (3 - (i % 4)));
+                    } else {
+                        pin_array[i/4] &= !(1 << (2 * (3 - (i % 4))));
+                    }
+                }
+                Some(PinConfig::DIR::Value::Output) => 
+                    pin_array[i/4] |= 1 << (2 * (3 - (i % 4)) + 1),
+                _ =>  (),
+            }
+        }
+    }
+
+    fn write_pins(&self, pin_array: &'a mut [u8]) {
+        for i in 0..48 {
+            let value = (pin_array[i/4] & ( 1 << (2 * (3 - (i % 4))) )) >> (2 * (3 - (i % 4)));
+            let mode = (pin_array[i/4] & ( 1 << (2 * (3 - (i % 4)) + 1) )) >> (2 * (3 - (i % 4)) + 1);
+            let pin = ((i as usize) % GPIO_PER_PORT) as u8;
+            let gpio_registers: StaticRef<GpioRegisters>;
+            unsafe {
+                gpio_registers =
+                    StaticRef::new(
+                        (GPIO_BASE_ADDRESS + ((pin as usize) / GPIO_PER_PORT) * GPIO_SIZE)
+                            as *const GpioRegisters,
+                    );
+            };
+
+            if mode == 1 {
+                gpio_registers.pin_cnf[pin as usize].modify(PinConfig::DIR::Output);
+                if value == 0 {
+                    gpio_registers.outclr.set(1 << pin);
+                } else {
+                    gpio_registers.outset.set(1 << pin);
+                }
+            } else {
+                gpio_registers.pin_cnf[pin as usize]
+                    .modify(PinConfig::DIR::Input + PinConfig::INPUT::Connect);
+            }
+        }
+    }
+}
