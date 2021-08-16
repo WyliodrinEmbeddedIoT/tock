@@ -8,7 +8,7 @@
 #![cfg_attr(not(doc), no_main)]
 #![deny(missing_docs)]
 
-use kernel::hil::led::LedHigh;
+// use kernel::hil::led::LedHigh;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
@@ -32,9 +32,9 @@ const LED_KERNEL_PIN: Pin = Pin::P0_20;
 const LED_MICROPHONE_PIN: Pin = Pin::P0_20;
 
 // Buttons
-const BUTTON_A: Pin = Pin::P0_14;
-const BUTTON_B: Pin = Pin::P0_23;
-const TOUCH_LOGO: Pin = Pin::P1_04;
+// const BUTTON_A: Pin = Pin::P0_14;
+// const BUTTON_B: Pin = Pin::P0_23;
+// const TOUCH_LOGO: Pin = Pin::P1_04;
 
 // GPIOs
 
@@ -43,9 +43,9 @@ const _GPIO_P0: Pin = Pin::P0_02;
 const _GPIO_P1: Pin = Pin::P0_03;
 const _GPIO_P2: Pin = Pin::P0_04;
 const GPIO_P8: Pin = Pin::P0_10;
-const GPIO_P9: Pin = Pin::P0_09;
+// const GPIO_P9: Pin = Pin::P0_09;
 const GPIO_P16: Pin = Pin::P1_02;
-const GPIO_P12: Pin = Pin::P0_12;
+// const GPIO_P12: Pin = Pin::P0_12;
 
 const UART_TX_PIN: Pin = Pin::P0_06;
 const UART_RX_PIN: Pin = Pin::P1_08;
@@ -385,59 +385,64 @@ pub unsafe fn main() {
     //             //     kernel::hil::gpio::FloatingState::PullNone
     //             ), // Touch Logo
     //         );
-
-    let gpio_pins = components::gpio_component_helper!(
-        nrf52833::gpio::GPIOPin,
+    use kernel::hil::gpio::InterruptValueWrapper;
+    let x = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_00])).finalize();
+    let gpio_pins = static_init!(
+            [&'static InterruptValueWrapper<'static, nrf52833::gpio::GPIOPin>; 48],
+            [x; 48]
+        );
+    // let gpio_pins = components::gpio_component_helper!(
+    //     nrf52833::gpio::GPIOPin,
         // Used as ADC, comment them out in the ADC section to use them as GPIO
-        0 => &nrf52833_peripherals.gpio_port[Pin::P0_00],
-        1 => &nrf52833_peripherals.gpio_port[Pin::P0_01],
-        2 => &nrf52833_peripherals.gpio_port[Pin::P0_02],
-        3 => &nrf52833_peripherals.gpio_port[Pin::P0_03],
-        4 => &nrf52833_peripherals.gpio_port[Pin::P0_04],
-        5 => &nrf52833_peripherals.gpio_port[Pin::P0_05],
-        6 => &nrf52833_peripherals.gpio_port[Pin::P0_06],
-        7 => &nrf52833_peripherals.gpio_port[Pin::P0_07],
-        8 => &nrf52833_peripherals.gpio_port[Pin::P0_08],
-        9 => &nrf52833_peripherals.gpio_port[Pin::P0_09],
-        10 => &nrf52833_peripherals.gpio_port[Pin::P0_10],
-        11 => &nrf52833_peripherals.gpio_port[Pin::P0_11],
-        12 => &nrf52833_peripherals.gpio_port[Pin::P0_12],
-        13 => &nrf52833_peripherals.gpio_port[Pin::P0_13],
-        14 => &nrf52833_peripherals.gpio_port[Pin::P0_14],
-        15 => &nrf52833_peripherals.gpio_port[Pin::P0_15],
-        16 => &nrf52833_peripherals.gpio_port[Pin::P0_16],
-        17 => &nrf52833_peripherals.gpio_port[Pin::P0_17],
-        18 => &nrf52833_peripherals.gpio_port[Pin::P0_18],
-        19 => &nrf52833_peripherals.gpio_port[Pin::P0_19],
-        20 => &nrf52833_peripherals.gpio_port[Pin::P0_20],
-        21 => &nrf52833_peripherals.gpio_port[Pin::P0_21],
-        22 => &nrf52833_peripherals.gpio_port[Pin::P0_22],
-        23 => &nrf52833_peripherals.gpio_port[Pin::P0_23],
-        24 => &nrf52833_peripherals.gpio_port[Pin::P0_24],
-        25 => &nrf52833_peripherals.gpio_port[Pin::P0_25],
-        26 => &nrf52833_peripherals.gpio_port[Pin::P0_26],
-        27 => &nrf52833_peripherals.gpio_port[Pin::P0_27],
-        28 => &nrf52833_peripherals.gpio_port[Pin::P0_28],
-        29 => &nrf52833_peripherals.gpio_port[Pin::P0_29],
-        30 => &nrf52833_peripherals.gpio_port[Pin::P0_30],
-        31 => &nrf52833_peripherals.gpio_port[Pin::P0_31],
-        32 => &nrf52833_peripherals.gpio_port[Pin::P1_00],
-        33 => &nrf52833_peripherals.gpio_port[Pin::P1_01],
-        34 => &nrf52833_peripherals.gpio_port[Pin::P1_02],
-        35 => &nrf52833_peripherals.gpio_port[Pin::P1_03],
-        36 => &nrf52833_peripherals.gpio_port[Pin::P1_04],
-        37 => &nrf52833_peripherals.gpio_port[Pin::P1_05],
-        38 => &nrf52833_peripherals.gpio_port[Pin::P1_06],
-        39 => &nrf52833_peripherals.gpio_port[Pin::P1_07],
-        40 => &nrf52833_peripherals.gpio_port[Pin::P1_08],
-        41 => &nrf52833_peripherals.gpio_port[Pin::P1_09],
-        42 => &nrf52833_peripherals.gpio_port[Pin::P1_10],
-        43 => &nrf52833_peripherals.gpio_port[Pin::P1_11],
-        44 => &nrf52833_peripherals.gpio_port[Pin::P1_12],
-        45 => &nrf52833_peripherals.gpio_port[Pin::P1_13],
-        46 => &nrf52833_peripherals.gpio_port[Pin::P1_14],
-        47 => &nrf52833_peripherals.gpio_port[Pin::P1_15],
-    );
+    gpio_pins[0] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_00])).finalize();
+    gpio_pins[1] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_01])).finalize();
+    gpio_pins[2] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_02])).finalize();
+    gpio_pins[3] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_03])).finalize();
+    gpio_pins[4] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_04])).finalize();
+    gpio_pins[5] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_05])).finalize();
+    gpio_pins[6] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_06])).finalize();
+    gpio_pins[7] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_07])).finalize();
+    gpio_pins[8] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_08])).finalize();
+    gpio_pins[9] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_09])).finalize();
+    gpio_pins[10] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_10])).finalize();
+    gpio_pins[11] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_11])).finalize();
+    gpio_pins[12] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_12])).finalize();
+    gpio_pins[13] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_13])).finalize();
+    gpio_pins[14] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_14])).finalize();
+    gpio_pins[15] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_15])).finalize();
+    gpio_pins[16] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_16])).finalize();
+    gpio_pins[17] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_17])).finalize();
+    gpio_pins[18] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_18])).finalize();
+    gpio_pins[19] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_19])).finalize();
+    gpio_pins[20] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_20])).finalize();
+    gpio_pins[21] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_21])).finalize();
+    gpio_pins[22] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_22])).finalize();
+    gpio_pins[23] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_23])).finalize();
+    gpio_pins[24] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_24])).finalize();
+    gpio_pins[25] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_25])).finalize();
+    gpio_pins[26] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_26])).finalize();
+    gpio_pins[27] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_27])).finalize();
+    gpio_pins[28] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_28])).finalize();
+    gpio_pins[29] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_29])).finalize();
+    gpio_pins[30] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_30])).finalize();
+    gpio_pins[31] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P0_31])).finalize();
+    gpio_pins[32] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_00])).finalize();
+    gpio_pins[33] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_01])).finalize();
+    gpio_pins[34] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_02])).finalize();
+    gpio_pins[35] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_03])).finalize();
+    gpio_pins[36] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_04])).finalize();
+    gpio_pins[37] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_05])).finalize();
+    gpio_pins[38] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_06])).finalize();
+    gpio_pins[39] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_07])).finalize();
+    gpio_pins[40] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_08])).finalize();
+    gpio_pins[41] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_09])).finalize();
+    gpio_pins[42] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_10])).finalize();
+    gpio_pins[43] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_11])).finalize();
+    gpio_pins[44] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_12])).finalize();
+    gpio_pins[45] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_13])).finalize();
+    gpio_pins[46] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_14])).finalize();
+    gpio_pins[47] = static_init!(InterruptValueWrapper<nrf52833::gpio::GPIOPin>, InterruptValueWrapper::new(&nrf52833_peripherals.gpio_port[Pin::P1_15])).finalize();
+    // );
 
     // use kernel::hil::gpio::{Output, Configure};
 
@@ -456,9 +461,9 @@ pub unsafe fn main() {
     );
 
     use kernel::hil::gpio::InterruptWithValue;
-    if let Some(pin) = gpio_pins[34] {
-        pin.set_client(bpf);
-    }
+    // if let Some(pin) = gpio_pins[34] {
+        gpio_pins[34].set_client(bpf);
+    // }
     // use kernel::hil::gpio::InterruptWithValue;
     // for (pin, _, _) in buttons.iter() {
     //     pin.set_client(bpf);

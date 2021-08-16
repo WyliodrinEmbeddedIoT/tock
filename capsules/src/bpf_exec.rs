@@ -28,7 +28,7 @@ pub struct BpfData {
 
 pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
     app: Grant<BpfData, 0>,
-    pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>],
+    pins: &'a [&'a gpio::InterruptValueWrapper<'a, IP>],
     // buttons: &'a [(
     //         &'a gpio::InterruptValueWrapper<'a, IP>,
     //         gpio::ActivationMode,
@@ -42,7 +42,7 @@ pub struct BpfDriver<'a, IP: gpio::InterruptPin<'a>> {
 impl<'a, IP: gpio::InterruptPin<'a>> BpfDriver<'a, IP> {
     pub fn new(
         app: Grant<BpfData, 0>,
-        pins: &'a [Option<&'a gpio::InterruptValueWrapper<'a, IP>>],
+        pins: &'a [&'a gpio::InterruptValueWrapper<'a, IP>],
         // buttons: &'a [(
         //     &'a gpio::InterruptValueWrapper<'a, IP>,
         //     gpio::ActivationMode,
@@ -134,26 +134,22 @@ impl<'a, IP: gpio::InterruptPin<'a>> SyscallDriver for BpfDriver<'a, IP> {
                     CommandReturn::failure(ErrorCode::INVAL)
                 } else {
                     // debug!("Set input for {:?}", pin_index);
-                    let maybe_pin = self.pins[pin_index as usize];
-                    if let Some(pin) = maybe_pin {
-                        pin.make_input();
-                        match arg2 {
-                            0 => {
-                                pin.set_floating_state(gpio::FloatingState::PullNone);
-                                CommandReturn::success()
-                            }
-                            1 => {
-                                pin.set_floating_state(gpio::FloatingState::PullUp);
-                                CommandReturn::success()
-                            }
-                            2 => {
-                                pin.set_floating_state(gpio::FloatingState::PullDown);
-                                CommandReturn::success()
-                            }
-                            _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
+                    let pin = self.pins[pin_index as usize];
+                    pin.make_input();
+                    match arg2 {
+                        0 => {
+                            pin.set_floating_state(gpio::FloatingState::PullNone);
+                            CommandReturn::success()
                         }
-                    } else {
-                        CommandReturn::failure(ErrorCode::NODEVICE)
+                        1 => {
+                            pin.set_floating_state(gpio::FloatingState::PullUp);
+                            CommandReturn::success()
+                        }
+                        2 => {
+                            pin.set_floating_state(gpio::FloatingState::PullDown);
+                            CommandReturn::success()
+                        }
+                        _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
                     }
                 }
             },
@@ -163,19 +159,15 @@ impl<'a, IP: gpio::InterruptPin<'a>> SyscallDriver for BpfDriver<'a, IP> {
                 let pin_index = arg1;
                 self.app
                     .enter(appid, |_app, _| {
-                        let maybe_pin = self.pins[pin_index as usize];
+                        let pin = self.pins[pin_index as usize];
                         // debug!("Set interrupt for {:?}", pin_index);
-                        if let Some(pin) = maybe_pin {
-                            let _ = pin.enable_interrupts(gpio::InterruptEdge::EitherEdge);
+                        let _ = pin.enable_interrupts(gpio::InterruptEdge::EitherEdge);
                         // let _ = self.buttons[arg1]
                         //     .0
                         //     .enable_interrupts(gpio::InterruptEdge::EitherEdge);
 
-                            self.process_id.replace(appid);
-                            CommandReturn::success()
-                        } else {
-                            CommandReturn::failure(ErrorCode::NODEVICE)
-                        }
+                        self.process_id.replace(appid);
+                        CommandReturn::success()
 
                     })
                     .unwrap_or_else(|err| CommandReturn::failure(err.into()))
@@ -213,35 +205,33 @@ impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP>
                                 self.packet.map(|packet| {
                                     // let mut state: [u8; 15] = [0; 15];
                                     // if let Some(pin_9) = self.pins[9] {
-                                    //     pin_9.make_output();
-                                    //     pin_9.set();
+                                        self.pins[9].make_output();
+                                        self.pins[9].set();
                                         // debug!("Sunt aici");
-                                        for (i, maybe_pin) in self.pins.iter().enumerate() {
-                                            if let Some(pin) = maybe_pin {
-                                                if pin.is_input() {
-                                                    // debug!("{:?} e input", i);
-                                                    packet[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
-                                                    let val = pin.read();
-                                                    // if i == 34 {
-                                                    //     debug!("i=34, value {:?} ", val);
-                                                    // }
-                                                    if val {
-                                                        packet[i/4] |= 1 << (2 * (3 - (i % 4)));
-                                                    } else {
-                                                        packet[i/4] &= !(1 << (2 * (3 - (i % 4))));
-                                                    }
+                                        for (i, pin) in self.pins.iter().enumerate() {
+                                            if pin.is_input() {
+                                                // debug!("{:?} e input", i);
+                                                packet[i/4] &= !(1 << (2 * (3 - (i % 4)) + 1));
+                                                let val = pin.read();
+                                                // if i == 34 {
+                                                //     debug!("i=34, value {:?} ", val);
+                                                // }
+                                                if val {
+                                                    packet[i/4] |= 1 << (2 * (3 - (i % 4)));
                                                 } else {
-                                                    // if i == 12 {
-                                                    //     debug!("{:?} e output", i);
-                                                    // }
-                                                    packet[i/4] |= 1 << (2 * (3 - (i % 4)) + 1);
+                                                    packet[i/4] &= !(1 << (2 * (3 - (i % 4))));
                                                 }
-                                                // state[i/4] = packet[i/4];
+                                            } else {
+                                                // if i == 12 {
+                                                //     debug!("{:?} e output", i);
+                                                // }
+                                                packet[i/4] |= 1 << (2 * (3 - (i % 4)) + 1);
                                             }
+                                            // state[i/4] = packet[i/4];
                                             // debug!("i: {:?}", i);
                                         }
                                         // pin_9.source.read_pins(packet);
-                                        // pin_9.clear();
+                                        self.pins[9].clear();
                                         // debug!("inainte");
                                         // for i in 0..15 {
                                         //     debug!("{:?} ", packet[i]);
@@ -266,28 +256,26 @@ impl<'a, IP: gpio::InterruptPin<'a>> gpio::ClientWithValue for BpfDriver<'a, IP>
                                                 //     debug!("i=9, value {:?} mode {:?}", value, mode);
                                                 //     debug!("i=9, value_i {:?} mode_i {:?}", value_i, mode_i);
                                                 // }
-                                                if let Some(pin) = self.pins[i] {
-                                                    // if mode != mode_i {
-                                                    if mode == 1 {
-                                                        pin.make_output();
-                                                        // if i == 9 {
-                                                        //     debug!("i=9, value {:?} mode {:?}", value, mode);
-                                                        // }
-                                                        // if value != value_i {
-                                                        // if i != 9 {
-                                                            if value == 0 {
-                                                                // debug!("{:?} Clear!", i);
-                                                                pin.clear();
-                                                            } else {
-                                                                // debug!("{:?} Set!", i);
-                                                                pin.set();
-                                                            }
-                                                        // }
-                                                    } else {
-                                                        pin.make_input();
-                                                    }
+                                                // if mode != mode_i {
+                                                if mode == 1 {
+                                                    self.pins[i].make_output();
+                                                    // if i == 9 {
+                                                    //     debug!("i=9, value {:?} mode {:?}", value, mode);
                                                     // }
+                                                    // if value != value_i {
+                                                    if i != 9 {
+                                                        if value == 0 {
+                                                            // debug!("{:?} Clear!", i);
+                                                            self.pins[i].clear();
+                                                        } else {
+                                                            // debug!("{:?} Set!", i);
+                                                            self.pins[i].set();
+                                                        }
+                                                    }
+                                                } else {
+                                                    self.pins[i].make_input();
                                                 }
+                                                // }
                                             }
                                         }
                                         // pin.clear();
