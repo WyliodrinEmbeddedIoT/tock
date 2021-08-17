@@ -33,6 +33,7 @@ use kernel::utilities::registers::{ReadOnly, ReadWrite, WriteOnly};
 use kernel::utilities::StaticRef;
 
 use crate::ccm;
+use crate::nvic;
 
 /// General-purpose I/Os
 #[repr(C)]
@@ -83,6 +84,7 @@ enum_from_primitive! {
     ///
     /// [^1]: 12.5.1 GPIO memory map, page 1009 of the Reference Manual.
     #[repr(u16)]
+    #[derive(Copy, Clone)]
     enum GpioPort {
         GPIO1 = 0b000,
         GPIO2 = 0b001,
@@ -355,43 +357,47 @@ type GPIO4<'a> = Port<'a, 32>;
 type GPIO5<'a> = Port<'a, 3>;
 
 impl<'a> Port<'a, 32> {
-    const fn new_32(registers: StaticRef<GpioRegisters>, clock: PortClock<'a>) -> Self {
+    const fn new_32(
+        registers: StaticRef<GpioRegisters>,
+        clock: PortClock<'a>,
+        port: GpioPort,
+    ) -> Self {
         Self::new(
             registers,
             clock,
             [
-                Pin::new(registers, 00),
-                Pin::new(registers, 01),
-                Pin::new(registers, 02),
-                Pin::new(registers, 03),
-                Pin::new(registers, 04),
-                Pin::new(registers, 05),
-                Pin::new(registers, 06),
-                Pin::new(registers, 07),
-                Pin::new(registers, 08),
-                Pin::new(registers, 09),
-                Pin::new(registers, 10),
-                Pin::new(registers, 11),
-                Pin::new(registers, 12),
-                Pin::new(registers, 13),
-                Pin::new(registers, 14),
-                Pin::new(registers, 15),
-                Pin::new(registers, 16),
-                Pin::new(registers, 17),
-                Pin::new(registers, 18),
-                Pin::new(registers, 19),
-                Pin::new(registers, 20),
-                Pin::new(registers, 21),
-                Pin::new(registers, 22),
-                Pin::new(registers, 23),
-                Pin::new(registers, 24),
-                Pin::new(registers, 25),
-                Pin::new(registers, 26),
-                Pin::new(registers, 27),
-                Pin::new(registers, 28),
-                Pin::new(registers, 29),
-                Pin::new(registers, 30),
-                Pin::new(registers, 31),
+                Pin::new(registers, 00, port),
+                Pin::new(registers, 01, port),
+                Pin::new(registers, 02, port),
+                Pin::new(registers, 03, port),
+                Pin::new(registers, 04, port),
+                Pin::new(registers, 05, port),
+                Pin::new(registers, 06, port),
+                Pin::new(registers, 07, port),
+                Pin::new(registers, 08, port),
+                Pin::new(registers, 09, port),
+                Pin::new(registers, 10, port),
+                Pin::new(registers, 11, port),
+                Pin::new(registers, 12, port),
+                Pin::new(registers, 13, port),
+                Pin::new(registers, 14, port),
+                Pin::new(registers, 15, port),
+                Pin::new(registers, 16, port),
+                Pin::new(registers, 17, port),
+                Pin::new(registers, 18, port),
+                Pin::new(registers, 19, port),
+                Pin::new(registers, 20, port),
+                Pin::new(registers, 21, port),
+                Pin::new(registers, 22, port),
+                Pin::new(registers, 23, port),
+                Pin::new(registers, 24, port),
+                Pin::new(registers, 25, port),
+                Pin::new(registers, 26, port),
+                Pin::new(registers, 27, port),
+                Pin::new(registers, 28, port),
+                Pin::new(registers, 29, port),
+                Pin::new(registers, 30, port),
+                Pin::new(registers, 31, port),
             ],
         )
     }
@@ -399,56 +405,63 @@ impl<'a> Port<'a, 32> {
         Self::new_32(
             GPIO1_BASE,
             PortClock(ccm::PeripheralClock::ccgr1(ccm, ccm::HCLK1::GPIO1)),
+            GpioPort::GPIO1,
         )
     }
     const fn gpio2(ccm: &'a ccm::Ccm) -> GPIO2<'a> {
         Self::new_32(
             GPIO2_BASE,
             PortClock(ccm::PeripheralClock::ccgr0(ccm, ccm::HCLK0::GPIO2)),
+            GpioPort::GPIO2,
         )
     }
     const fn gpio4(ccm: &'a ccm::Ccm) -> GPIO4<'a> {
         Self::new_32(
             GPIO4_BASE,
             PortClock(ccm::PeripheralClock::ccgr3(ccm, ccm::HCLK3::GPIO4)),
+            GpioPort::GPIO4,
         )
     }
 }
 
 impl<'a> Port<'a, 28> {
-    const fn new_28(registers: StaticRef<GpioRegisters>, clock: PortClock<'a>) -> Self {
+    const fn new_28(
+        registers: StaticRef<GpioRegisters>,
+        clock: PortClock<'a>,
+        port: GpioPort,
+    ) -> Self {
         Self::new(
             registers,
             clock,
             [
-                Pin::new(registers, 00),
-                Pin::new(registers, 01),
-                Pin::new(registers, 02),
-                Pin::new(registers, 03),
-                Pin::new(registers, 04),
-                Pin::new(registers, 05),
-                Pin::new(registers, 06),
-                Pin::new(registers, 07),
-                Pin::new(registers, 08),
-                Pin::new(registers, 09),
-                Pin::new(registers, 10),
-                Pin::new(registers, 11),
-                Pin::new(registers, 12),
-                Pin::new(registers, 13),
-                Pin::new(registers, 14),
-                Pin::new(registers, 15),
-                Pin::new(registers, 16),
-                Pin::new(registers, 17),
-                Pin::new(registers, 18),
-                Pin::new(registers, 19),
-                Pin::new(registers, 20),
-                Pin::new(registers, 21),
-                Pin::new(registers, 22),
-                Pin::new(registers, 23),
-                Pin::new(registers, 24),
-                Pin::new(registers, 25),
-                Pin::new(registers, 26),
-                Pin::new(registers, 27),
+                Pin::new(registers, 00, port),
+                Pin::new(registers, 01, port),
+                Pin::new(registers, 02, port),
+                Pin::new(registers, 03, port),
+                Pin::new(registers, 04, port),
+                Pin::new(registers, 05, port),
+                Pin::new(registers, 06, port),
+                Pin::new(registers, 07, port),
+                Pin::new(registers, 08, port),
+                Pin::new(registers, 09, port),
+                Pin::new(registers, 10, port),
+                Pin::new(registers, 11, port),
+                Pin::new(registers, 12, port),
+                Pin::new(registers, 13, port),
+                Pin::new(registers, 14, port),
+                Pin::new(registers, 15, port),
+                Pin::new(registers, 16, port),
+                Pin::new(registers, 17, port),
+                Pin::new(registers, 18, port),
+                Pin::new(registers, 19, port),
+                Pin::new(registers, 20, port),
+                Pin::new(registers, 21, port),
+                Pin::new(registers, 22, port),
+                Pin::new(registers, 23, port),
+                Pin::new(registers, 24, port),
+                Pin::new(registers, 25, port),
+                Pin::new(registers, 26, port),
+                Pin::new(registers, 27, port),
             ],
         )
     }
@@ -456,19 +469,24 @@ impl<'a> Port<'a, 28> {
         Self::new_28(
             GPIO3_BASE,
             PortClock(ccm::PeripheralClock::ccgr2(ccm, ccm::HCLK2::GPIO3)),
+            GpioPort::GPIO3,
         )
     }
 }
 
 impl<'a> Port<'a, 3> {
-    const fn new_3(registers: StaticRef<GpioRegisters>, clock: PortClock<'a>) -> Self {
+    const fn new_3(
+        registers: StaticRef<GpioRegisters>,
+        clock: PortClock<'a>,
+        port: GpioPort,
+    ) -> Self {
         Self::new(
             registers,
             clock,
             [
-                Pin::new(registers, 00),
-                Pin::new(registers, 01),
-                Pin::new(registers, 02),
+                Pin::new(registers, 00, port),
+                Pin::new(registers, 01, port),
+                Pin::new(registers, 02, port),
             ],
         )
     }
@@ -476,6 +494,7 @@ impl<'a> Port<'a, 3> {
         Self::new_3(
             GPIO5_BASE,
             PortClock(ccm::PeripheralClock::ccgr1(ccm, ccm::HCLK1::GPIO5)),
+            GpioPort::GPIO5,
         )
     }
 }
@@ -546,6 +565,7 @@ pub struct Pin<'a> {
     registers: StaticRef<GpioRegisters>,
     offset: usize,
     client: OptionalCell<&'a dyn hil::gpio::Client>,
+    gpio_bank: GpioPort,
 }
 
 trait U32Ext {
@@ -581,13 +601,15 @@ impl<'a> Pin<'a> {
                 GpioPort::GPIO5 => GPIO5_BASE,
             },
             pin_id.offset(),
+            pin_id.port(),
         )
     }
-    const fn new(registers: StaticRef<GpioRegisters>, offset: usize) -> Self {
+    const fn new(registers: StaticRef<GpioRegisters>, offset: usize, gpio_bank: GpioPort) -> Self {
         Pin {
             registers,
             offset,
             client: OptionalCell::empty(),
+            gpio_bank,
         }
     }
 
@@ -750,6 +772,44 @@ impl<'a> hil::gpio::Interrupt<'a> for Pin<'a> {
                 self.set_edge_sensitive(mode);
 
                 self.unmask_interrupt();
+
+                match self.gpio_bank {
+                    GpioPort::GPIO1 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO1_1).enable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO1_2).enable();
+                        }
+                    }
+                    GpioPort::GPIO2 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO2_1).enable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO2_2).enable();
+                        }
+                    }
+                    GpioPort::GPIO3 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO3_1).enable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO3_2).enable();
+                        }
+                    }
+                    GpioPort::GPIO4 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO4_1).enable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO4_2).enable();
+                        }
+                    }
+                    GpioPort::GPIO5 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO5_1).enable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO5_2).enable();
+                        }
+                    }
+                }
             });
         }
     }
@@ -759,6 +819,44 @@ impl<'a> hil::gpio::Interrupt<'a> for Pin<'a> {
             atomic(|| {
                 self.mask_interrupt();
                 self.clear_pending();
+
+                match self.gpio_bank {
+                    GpioPort::GPIO1 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO1_1).disable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO1_2).disable();
+                        }
+                    }
+                    GpioPort::GPIO2 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO2_1).disable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO2_2).disable();
+                        }
+                    }
+                    GpioPort::GPIO3 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO3_1).disable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO3_2).disable();
+                        }
+                    }
+                    GpioPort::GPIO4 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO4_1).disable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO4_2).disable();
+                        }
+                    }
+                    GpioPort::GPIO5 => {
+                        if self.offset < 16 {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO5_1).disable();
+                        } else {
+                            cortexm7::nvic::Nvic::new(nvic::GPIO5_2).disable();
+                        }
+                    }
+                }
             });
         }
     }
