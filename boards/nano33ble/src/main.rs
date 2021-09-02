@@ -110,8 +110,8 @@ pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 // Function for the CDC/USB stack to use to enter the bootloader.
 fn baud_rate_reset_bootloader_enter() {
     unsafe {
-        // 0x90 is the magic value the bootloader expects
-        NRF52_POWER.unwrap().set_gpregret(0x90);
+        // // 0x90 is the magic value the bootloader expects
+        // NRF52_POWER.unwrap().set_gpregret(0x90);
         cortexm4::scb::reset();
     }
 }
