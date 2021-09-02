@@ -10,6 +10,12 @@ use kernel::debug;
 use kernel::hil;
 use kernel::hil::usb::TransferType;
 
+macro_rules! internal_err {
+    [ $( $arg:expr ),+ ] => {
+        panic!($( $arg ),+);
+    };
+}
+
 register_structs! {
     Ep_ctrl {
         (0x00 => ep_in_ctrl: ReadWrite<u32, EP_CONTROL::Register>),
@@ -34,11 +40,24 @@ register_structs! {
         (0x04 => setup_l: ReadWrite<u32, SETUP_L::Register>),
         (0x08 => ep_ctrl: [Ep_ctrl; 15]),
         (0x80 => ep_buf_ctrl: [Ep_buf_ctrl; 16]),
-        (0x100 => ep0_buffer0: [ReadWrite<u32, EP0_BUFFER::Register>; 16]),
-        (0x140 => optional_ep0_buffer0: [ReadWrite<u32, OPTIONAL_EP0_BUFFER::Register>; 16]),
+        (0x100 => ep0_buffer0: detail::EndpointRegisters),
+        (0x140 => optional_ep0_buffer0: detail::EndpointRegisters),
         // (0x180 => @END),
-        (0x180 => buffers: [u64; 58]),
+        (0x180 => buffers: [detail::EndpointRegisters; 58]),
         (0x1000 => @END),
+    }
+}
+mod detail {
+    use kernel::common::cells::VolatileCell;
+    #[repr(C)]
+    pub struct EndpointRegisters {
+        ptr: VolatileCell<*const u8>,
+    }
+
+    impl EndpointRegisters {
+        pub fn set_buffer(&self, slice: &[VolatileCell<u8>]) {
+            self.ptr.set(slice.as_ptr() as *const u8);
+        }
     }
 }
 
@@ -1028,64 +1047,67 @@ INTS [
 ];
 
 register_bitfields![u32,
-SETUP_H [
-    // SETUP OFFSET(0) NUMBITS(8) [
-    BM_REQUEST_TYPE OFFSET(0) NUMBITS(8) [
-        IN = 0x0,
-        OUT = 0x80,
+    SETUP_H [
+        // SETUP OFFSET(0) NUMBITS(8) [
+        BM_REQUEST_TYPE OFFSET(0) NUMBITS(8) [
+            IN = 0x80,
+            OUT = 0x0,
+        ],
+        B_REQUEST OFFSET(8) NUMBITS(8) [
+            GET_ADDRESS = 0x05,
+            GET_DESCRIPTOR = 0x07,
+            GET_CONFIGURATION = 0x09,
+        ],
+        W_VALUE_L OFFSET(16) NUMBITS(8) [],
+        W_VALUE_H OFFSET(24) NUMBITS(8) [],
     ],
-    B_REQUEST OFFSET(8) NUMBITS(8) [
-        SET_ADDRESS = 0x05,
-        SET_DESCRIPTOR = 0x07,
-        SET_CONFIGURATION = 0x09,
+    SETUP_L [
+        W_INDEX_L OFFSET(0) NUMBITS(8) [],
+        W_INDEX_H OFFSET(8) NUMBITS(8) [],
+        W_LENGTH_L OFFSET(16) NUMBITS(8) [],
+        W_LENGTH_H OFFSET(24) NUMBITS(8) [],
     ],
-    W_VALUE OFFSET(16) NUMBITS(16) [],
-],
-SETUP_L [
-    W_INDEX OFFSET(0) NUMBITS(16) [],
-    W_LENGTH OFFSET(16) NUMBITS(16) [],
-],
-EP_CONTROL [
-    ENDPOINT_ENABLE OFFSET(31) NUMBITS(1) [],
-    DOUBLE_BUFFERED OFFSET(30) NUMBITS(1) [],
-    INTERRUPT_SINGLE_BIT OFFSET(29) NUMBITS(1) [],
-    INTERRUPT_DOUBLE_BIT OFFSET(28) NUMBITS(1) [],
-    ENDPOINT_TYPE OFFSET(26) NUMBITS(2) [
-        CONTROL = 0,
-        ISO = 1,
-        BULK = 2,
-        INT = 3
+    EP_CONTROL [
+        ENDPOINT_ENABLE OFFSET(31) NUMBITS(1) [],
+        DOUBLE_BUFFERED OFFSET(30) NUMBITS(1) [],
+        INTERRUPT_SINGLE_BIT OFFSET(29) NUMBITS(1) [],
+        INTERRUPT_DOUBLE_BIT OFFSET(28) NUMBITS(1) [],
+        ENDPOINT_TYPE OFFSET(26) NUMBITS(2) [
+            CONTROL = 0,
+            ISO = 1,
+            BULK = 2,
+            INT = 3
+        ],
+        INT_STALL OFFSET(17) NUMBITS(1) [],
+        INT_NAK OFFSET(16) NUMBITS(1) [],
+        ADDR_BASE OFFSET(6) NUMBITS(10) [],
     ],
-    INT_STALL OFFSET(17) NUMBITS(1) [],
-    INT_NAK OFFSET(16) NUMBITS(1) [],
-    ADDR_BASE OFFSET(0) NUMBITS(16) [],
-],
-EP_BUFFER_CONTROL [
-    BUFFER1_FULL OFFSET(31) NUMBITS(1) [],
-    LAST_BUFFER1 OFFSET(30) NUMBITS(1) [],
-    DATA_PID1 OFFSET(29) NUMBITS(1) [],
-    DOUBLE_BUFFERED_OFFSET_ISO OFFSET(27) NUMBITS(2) [
-        OFFSET_128 = 0,
-        OFFSET_256 = 1,
-        OFFSET_512 = 2,
-        OFFSET_1024 = 3,
+    EP_BUFFER_CONTROL [
+        BUFFER1_FULL OFFSET(31) NUMBITS(1) [],
+        LAST_BUFFER1 OFFSET(30) NUMBITS(1) [],
+        DATA_PID1 OFFSET(29) NUMBITS(1) [],
+        DOUBLE_BUFFERED_OFFSET_ISO OFFSET(27) NUMBITS(2) [
+            OFFSET_128 = 0,
+            OFFSET_256 = 1,
+            OFFSET_512 = 2,
+            OFFSET_1024 = 3,
+        ],
+        AVAILABLE1 OFFSET(26) NUMBITS(1) [],
+        TRANSFER_LENGTH1 OFFSET(16) NUMBITS(10) [],
+        BUFFER0_FULL OFFSET(15) NUMBITS(1) [],
+        LAST_BUFFER0 OFFSET(14) NUMBITS(1) [],
+        DATA_PID0 OFFSET(13) NUMBITS(1) [],
+        RESET_BUFFER OFFSET(12) NUMBITS(1) [],
+        STALL OFFSET(11) NUMBITS(1) [],
+        AVAILABLE0 OFFSET(10) NUMBITS(1) [],
+        TRANSFER_LENGTH0 OFFSET(0) NUMBITS(10) [],
     ],
-    AVAILABLE1 OFFSET(26) NUMBITS(1) [],
-    TRANSFER_LENGTH1 OFFSET(16) NUMBITS(10) [],
-    BUFFER0_FULL OFFSET(15) NUMBITS(1) [],
-    LAST_BUFFER0 OFFSET(14) NUMBITS(1) [],
-    DATA_PID0 OFFSET(13) NUMBITS(1) [],
-    RESET_BUFFER OFFSET(12) NUMBITS(1) [],
-    STALL OFFSET(11) NUMBITS(1) [],
-    AVAILABLE0 OFFSET(10) NUMBITS(1) [],
-    TRANSFER_LENGTH0 OFFSET(0) NUMBITS(10) [],
-],
-EP0_BUFFER [
-    BUFF OFFSET(0) NUMBITS(32) []
-],
-OPTIONAL_EP0_BUFFER [
-    BUFF OFFSET(0) NUMBITS(32) []
-],
+    EP0_BUFFER [
+        BUFF OFFSET(0) NUMBITS(32) []
+    ],
+    OPTIONAL_EP0_BUFFER [
+        BUFF OFFSET(0) NUMBITS(32) []
+    ],
 ];
 
 #[allow(dead_code)]
@@ -1208,6 +1230,44 @@ pub enum EndpointType {
     NONE,
     IN,
     OUT,
+}
+
+pub struct USBDeviceDescriptor {
+    bLength: u8,
+    bDescriptorType: u8,
+    bcdUSB: u16,
+    bDeviceClass: u8,
+    bDeviceSubClass: u8,
+    bDeviceProtocol: u8,
+    bMaxPacketSize0: u8,
+    idVendor: u16,
+    idProduct: u16,
+    bcdDevice: u16,
+    iManufacturer: u8,
+    iProduct: u8,
+    iSerialNumber: u8,
+    bNumConfigurations: u8,
+}
+
+impl USBDeviceDescriptor {
+    const fn new() -> Self {
+        USBDeviceDescriptor {
+            bLength: 18,
+            bDescriptorType: 0x01,
+            bcdUSB: 0x0110,
+            bDeviceClass: 0,
+            bDeviceSubClass: 0,
+            bDeviceProtocol: 0,
+            bMaxPacketSize0: 64,
+            idVendor: 0,
+            idProduct: 1,
+            bcdDevice: 0,
+            iManufacturer: 1,
+            iProduct: 2,
+            iSerialNumber: 0,
+            bNumConfigurations: 1,
+        }
+    }
 }
 
 pub struct Endpoint<'a> {
@@ -1363,140 +1423,462 @@ impl<'a> UsbCtrl<'a> {
     }
 
     pub fn handle_interrupt(&self) {
-        if self.registers.ints.is_set(INTS::SETUP_REQ) {
-            self.registers
-                .sie_status
-                .modify(SIE_STATUS::SETUP_REC::CLEAR);
+        debug!(
+            "setup_req {} buff_status {} bus_reset {} ints {}",
+            self.registers.ints.read(INTS::SETUP_REQ),
+            self.registers.ints.read(INTS::BUFF_STATUS),
+            self.registers.ints.read(INTS::BUS_RESET),
+            self.registers.ints.get()
+        );
+        if self.registers.ints.is_set(INTS::BUS_RESET) {
+            debug!("BUS_RESET");
+            self.registers.sie_status.modify(SIE_STATUS::BUS_RESET::SET);
             // panic!("all good till now {}", self.registers.buff_status.get());
-            self.usb_handle_setup_packet();
+            // usb_bus_reset
         }
 
         if self.registers.ints.is_set(INTS::BUFF_STATUS) {
             // printf("BUS RESET\n");
-            panic!("BUF_STATUS");
+            // panic!("BUF_STATUS");
             // usb_hw_clear->sie_status = USB_SIE_STATUS_BUS_RESET_BITS;
             // usb_handle_buff_status();
+            self.registers
+                .buff_status
+                .modify(BUFF_STATUS::EP0_OUT::CLEAR);
+            self.registers
+                .buff_status
+                .modify(BUFF_STATUS::EP0_IN::CLEAR);
+            self.transmit_out_ep0();
         }
         // debug!("{}", self.registers.ints.read(INTS::BUS_RESET));
-        if self.registers.ints.is_set(INTS::BUS_RESET) {
-            debug!("BUS_RESET");
-            self.registers
-                .sie_status
-                .modify(SIE_STATUS::BUS_RESET::CLEAR);
+        if self.registers.ints.is_set(INTS::SETUP_REQ) {
+            debug!("SETUP_REQ");
+            self.registers.sie_status.modify(SIE_STATUS::SETUP_REC::SET);
+            debug!("{}", self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE));
             // panic!("all good till now {}", self.registers.buff_status.get());
-            // usb_bus_reset
-        }
-        debug!(
-            "{} {} {}",
-            self.registers.ints.read(INTS::SETUP_REQ),
-            self.registers.ints.read(INTS::BUFF_STATUS),
-            self.registers.ints.read(INTS::BUS_RESET),
-        );
-        if self.registers.ints.get() != 0 {
-            panic!(
-                "{} {} {}",
-                self.registers.ints.read(INTS::SETUP_REQ),
-                self.registers.ints.read(INTS::BUFF_STATUS),
-                self.registers.ints.read(INTS::BUS_RESET),
-            );
+            self.usb_handle_setup_packet();
         }
     }
 
     fn usb_handle_setup_packet(&self) {
-        match self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) {
-            0 => match self.dpsram.setup_h.read(SETUP_H::B_REQUEST) {
-                0x05 => {
-                    // panic!("usb_set_device_address(pkt)");
-                    self.dpsram.setup_h.modify(
-                        SETUP_H::W_VALUE.val(self.dpsram.setup_h.read(SETUP_H::W_VALUE) & 0xFF),
-                    );
-                    self.should_set_address.set(true);
-                    self.usb_start_transfer(0, 0);
-                }
-                0x09 => {
-                    panic!("usb_set_device_configuration(pkt)");
-                }
-                _ => {
-                    panic!("usb_acknowledge_out_request()");
-                }
-            },
-            0x80 => {
-                panic!("OUT");
-            }
-            _ => {
-                panic!("UNDEFINED");
-            }
+        debug!(
+            "BM_REQUEST_TYPE {} {} {} {} {}",
+            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+            self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_OUT),
+            self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_IN),
+            self.dpsram.ep_buf_ctrl[0]
+                .ep_in_buf_ctrl
+                .read(EP_BUFFER_CONTROL::AVAILABLE0),
+            self.dpsram.ep_buf_ctrl[0]
+                .ep_in_buf_ctrl
+                .read(EP_BUFFER_CONTROL::BUFFER0_FULL),
+        );
+        let endpoint = 0;
+        // let state = self.descriptors[endpoint].state.get().ctrl_state();
+        // match state {
+        //     CtrlState::Init => {
+        // We are idle, and ready for any control transfer.
+
+        let ep_buf = &self.descriptors[endpoint].slice_out;
+        let ep_buf = ep_buf.expect("No OUT slice set for this descriptor");
+        if ep_buf.len() < 8 {
+            panic!("EP0 DMA buffer length < 8");
         }
-        // if self.dpsram.setup_h.get() read(SETUP_H::BM_REQUEST_TYPE) {
-        //     if self.dpsram.setup.read(SETUP::B_REQUEST) == UsbRequest::SET_ADDRESS as u32 {
-        //         panic!("usb_set_device_address(pkt)");
-        //     } else if self.dpsram.setup.read(SETUP::B_REQUEST)
-        //         == UsbRequest::SET_CONFIGURATION as u32
-        //     {
-        //         panic!("usb_set_device_configuration(pkt)");
-        //     } else {
-        //         panic!("usb_acknowledge_out_request()");
-        //     }
-        // } else if self.dpsram.setup.read(SETUP::BM_REQUEST_TYPE) == UsbDirection::OUT as u32 {
-        //     if self.dpsram.setup.read(SETUP::B_REQUEST) == UsbRequest::GET_DESCRIPTOR as u32 {
-        //         let descriptor_type = self.dpsram.setup.read(SETUP::W_VALUE) >> 8;
-        //         match descriptor_type {
-        //             UsbDt::DEVICE as u32 => panic!("usb_handle_device_descriptor() GET DEVICE DESCRIPTOR"),
-        //             UsbDt::CONFIG as u32 => panic!("usb_handle_config_descriptor(pkt) GET CONFIG DESCRIPTOR"),
-        //             UsbDt::STRING as u32 => panic!("usb_handle_string_descriptor(pkt) GET STRING DESCRIPTOR"),
-        //             _ => panic!("should not reach this state"),
-        //         }
+
+        // Re-construct the SETUP packet from various registers. The
+        // client's ctrl_setup() will parse it as a SetupData
+        // descriptor.
+        ep_buf[0].set(self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) as u8);
+        ep_buf[1].set(self.dpsram.setup_h.read(SETUP_H::B_REQUEST) as u8);
+        ep_buf[2].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_L) as u8);
+        ep_buf[3].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_H) as u8);
+        ep_buf[4].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_L) as u8);
+        ep_buf[5].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_H) as u8);
+        ep_buf[6].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L) as u8);
+        ep_buf[7].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) as u8);
+        let size = self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L)
+            + (self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) << 8);
+        debug!(
+            "setup packet {} {} {} {} {} {}",
+            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+            self.dpsram.setup_h.read(SETUP_H::B_REQUEST),
+            self.dpsram.setup_h.read(SETUP_H::W_VALUE_H)
+                << 8 + self.dpsram.setup_h.read(SETUP_H::W_VALUE_L),
+            self.dpsram.setup_l.read(SETUP_L::W_INDEX_H)
+                << 8 + self.dpsram.setup_l.read(SETUP_L::W_INDEX_L),
+            self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H)
+                << 8 + self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L),
+            size
+        );
+        self.client.map(|client| {
+            // Notify the client that the ctrl setup event has occurred.
+            // Allow it to configure any data we need to send back.
+            match client.ctrl_setup(endpoint) {
+                hil::usb::CtrlSetupResult::OkSetAddress => {}
+                hil::usb::CtrlSetupResult::Ok => {
+                    // Setup request is successful.
+                    if size == 0 {
+                        debug!(
+                            "size 0 {}",
+                            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE)
+                        );
+                        // Directly handle a 0 length setup request.
+                        self.complete_ctrl_status();
+                    } else {
+                        debug!(
+                            "bm req {} {}",
+                            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+                            0x80
+                        );
+                        match self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) {
+                            0x80 => {
+                                // CTRL WRITE transfer with data to
+                                // receive.
+                                debug!("80");
+
+                                self.descriptors[endpoint]
+                                    .state
+                                    .set(EndpointState::Ctrl(CtrlState::ReadIn));
+                                // Transmit first packet if DMA is
+                                // available.
+                                self.transmit_in_ep0();
+                            }
+                            0 => {
+                                debug!("0");
+                                self.descriptors[endpoint]
+                                    .state
+                                    .set(EndpointState::Ctrl(CtrlState::WriteOut));
+                                self.handle_ep0datadone();
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                _err => {
+                    // An error occurred, we
+                    self.registers
+                        .ep_stall_arm
+                        .modify(EP_STALL_ARM::EP0_IN::SET);
+                    self.registers
+                        .ep_stall_arm
+                        .modify(EP_STALL_ARM::EP0_OUT::SET);
+                    self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+                }
+            }
+        });
+        // }
+
+        //     CtrlState::ReadIn | CtrlState::ReadStatus | CtrlState::WriteOut => {
+        //         // Unexpected state to receive a SETUP packet. Let's STALL the endpoint.
+        //         self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
         //     }
         // }
-        // panic!(
-        //     "{} {}",
-        //     self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
-        //     self.dpsram.setup_h.read(SETUP_H::B_REQUEST)
-        // );
     }
 
-    fn ep_is_tx(&self, endpoint: usize) -> bool {
-        self.descriptors[endpoint].ep_type.get() == EndpointType::OUT
+    fn handle_ep0datadone(&self) {
+        debug!("EP0DATADONE");
+        let endpoint = 0;
+        let state = self.descriptors[endpoint].state.get().ctrl_state();
+        match state {
+            CtrlState::ReadIn => {
+                debug!("readin");
+                self.transmit_in_ep0();
+            }
+
+            CtrlState::ReadStatus => {
+                debug!("readstatus");
+                self.complete_ctrl_status();
+            }
+
+            CtrlState::WriteOut => {
+                debug!("writeout");
+
+                // We just completed the Setup stage for a CTRL WRITE transfer,
+                // and now we need to enable DMA so the USBD peripheral can copy
+                // the received data. If the DMA is in use, queue our request.
+                self.transmit_out_ep0();
+            }
+
+            CtrlState::Init => {
+                debug!("init");
+
+                // We shouldn't be there. Let's STALL the endpoint.
+                self.registers
+                    .ep_stall_arm
+                    .modify(EP_STALL_ARM::EP0_OUT::SET);
+                self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+            }
+        }
     }
 
-    fn usb_start_transfer(&self, len: u16, endpoint: usize) {
-        // let mut val = len | self.dpsram.setup_h.read(SETUP_H::);
-        if self.ep_is_tx(endpoint) {
-            // 10th bit
-            self.dpsram.ep_buf_ctrl[endpoint]
-                .ep_out_buf_ctrl
-                .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
-        }
-        if endpoint < 9 {
-            if self.dpsram.ep_buf_ctrl[endpoint]
-                .ep_in_buf_ctrl
-                .is_set(EP_BUFFER_CONTROL::DATA_PID0)
-            {
-                self.dpsram.ep_buf_ctrl[endpoint].ep_in_buf_ctrl.modify(
-                    EP_BUFFER_CONTROL::DATA_PID0::CLEAR + EP_BUFFER_CONTROL::DATA_PID1::SET,
-                );
-            } else {
-                self.dpsram.ep_buf_ctrl[endpoint].ep_in_buf_ctrl.modify(
-                    EP_BUFFER_CONTROL::DATA_PID1::CLEAR + EP_BUFFER_CONTROL::DATA_PID0::SET,
-                );
-            }
-        } else {
-            if self.dpsram.ep_buf_ctrl[endpoint]
-                .ep_out_buf_ctrl
-                .is_set(EP_BUFFER_CONTROL::DATA_PID0)
-            {
-                self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
-                    EP_BUFFER_CONTROL::DATA_PID0::CLEAR + EP_BUFFER_CONTROL::DATA_PID1::SET,
-                );
-            } else {
-                self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
-                    EP_BUFFER_CONTROL::DATA_PID1::CLEAR + EP_BUFFER_CONTROL::DATA_PID0::SET,
-                );
-            }
-        }
-        panic!("handled function");
+    fn transmit_in_ep0(&self) {
+        let endpoint = 0;
+
+        self.client.map(|client| {
+            match client.ctrl_in(endpoint) {
+                hil::usb::CtrlInResult::Packet(size, last) => {
+                    if size == 0 {
+                        internal_err!("Empty ctrl packet?");
+                    }
+                    let slice = self.descriptors[endpoint]
+                        .slice_in
+                        .expect("No IN slice set for this descriptor");
+                    debug!("packet size is {}", size);
+                    // self.registers.epin[endpoint].set_buffer(&slice[..size]);
+                    // self.registers.task_startepin[endpoint].write(Task::ENABLE::SET);
+                    self.dpsram.ep_buf_ctrl[endpoint]
+                        .ep_in_buf_ctrl
+                        .modify(EP_BUFFER_CONTROL::AVAILABLE0::SET);
+                    self.dpsram.ep_buf_ctrl[endpoint]
+                        .ep_in_buf_ctrl
+                        .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(size as u32));
+                    self.dpsram.ep0_buffer0.set_buffer(slice);
+                    self.dpsram.ep_buf_ctrl[endpoint]
+                        .ep_in_buf_ctrl
+                        .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+                    // self.registers
+                    //     .sie_status
+                    //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
+                    self.registers.buff_status.modify(BUFF_STATUS::EP0_IN::SET);
+                    if last {
+                        self.registers
+                            .sie_status
+                            .modify(SIE_STATUS::TRANS_COMPLETE::SET);
+                        self.descriptors[endpoint]
+                            .state
+                            .set(EndpointState::Ctrl(CtrlState::ReadStatus));
+                    }
+                }
+
+                hil::usb::CtrlInResult::Delay => {
+                    debug!("delay");
+                    self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_NAK::SET);
+                }
+
+                hil::usb::CtrlInResult::Error => {
+                    debug!("error");
+                    // An error occurred, we STALL
+                    self.registers
+                        .ep_stall_arm
+                        .modify(EP_STALL_ARM::EP0_IN::SET);
+                    self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+                }
+            };
+        });
+    }
+
+    fn transmit_out_ep0(&self) {
+        let endpoint = 0;
+        let slice = self.descriptors[endpoint]
+            .slice_out
+            .expect("No OUT slice set for this descriptor");
+        debug!("transmit out ep0");
+        self.dpsram.ep0_buffer0.set_buffer(slice);
+        self.dpsram.ep_buf_ctrl[endpoint]
+            .ep_out_buf_ctrl
+            .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+        self.dpsram.ep_buf_ctrl[endpoint]
+            .ep_out_buf_ctrl
+            .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(0 as u32));
+        self.registers
+            .sie_status
+            .modify(SIE_STATUS::TRANS_COMPLETE::SET);
+        self.registers.buff_status.modify(BUFF_STATUS::EP0_OUT::SET);
+    }
+
+    fn complete_ctrl_status(&self) {
+        let endpoint = 0;
+
+        self.client.map(|client| {
+            client.ctrl_status(endpoint);
+            self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+            client.ctrl_status_complete(endpoint);
+            self.descriptors[endpoint]
+                .state
+                .set(EndpointState::Ctrl(CtrlState::Init));
+        });
     }
 }
 
 // enpoint control EP0 setup
 // bulk date
+
+impl<'a> hil::usb::UsbController<'a> for UsbCtrl<'a> {
+    fn set_client(&self, client: &'a dyn hil::usb::Client<'a>) {
+        self.client.set(client);
+    }
+
+    fn endpoint_set_ctrl_buffer(&self, buf: &'a [VolatileCell<u8>]) {
+        if buf.len() < 8 {
+            panic!("Endpoint buffer must be at least 8 bytes");
+        }
+        if !buf.len().is_power_of_two() {
+            panic!("Buffer size must be a power of 2");
+        }
+        self.descriptors[0].slice_in.set(buf);
+        self.descriptors[0].slice_out.set(buf);
+    }
+
+    fn endpoint_set_in_buffer(&self, endpoint: usize, buf: &'a [VolatileCell<u8>]) {
+        if buf.len() < 8 {
+            panic!("Endpoint buffer must be at least 8 bytes");
+        }
+        if !buf.len().is_power_of_two() {
+            panic!("Buffer size must be a power of 2");
+        }
+        if endpoint == 0 || endpoint >= N_ENDPOINTS {
+            panic!("Endpoint number is invalid");
+        }
+        debug!("in");
+        self.descriptors[endpoint].slice_in.set(buf);
+    }
+
+    fn endpoint_set_out_buffer(&self, endpoint: usize, buf: &'a [VolatileCell<u8>]) {
+        if buf.len() < 8 {
+            panic!("Endpoint buffer must be at least 8 bytes");
+        }
+        if !buf.len().is_power_of_two() {
+            panic!("Buffer size must be a power of 2");
+        }
+        if endpoint == 0 || endpoint >= N_ENDPOINTS {
+            panic!("Endpoint number is invalid");
+        }
+        debug!("out");
+        self.descriptors[endpoint].slice_out.set(buf);
+    }
+
+    fn enable_as_device(&self, speed: hil::usb::DeviceSpeed) {
+        match speed {
+            hil::usb::DeviceSpeed::Low => internal_err!("Low speed is not supported"),
+            hil::usb::DeviceSpeed::Full => {}
+        }
+        // self.start();
+    }
+
+    fn attach(&self) {
+        // self.enable_pullup();
+    }
+
+    fn detach(&self) {
+        // self.disable_pullup();
+    }
+
+    fn set_address(&self, _addr: u16) {
+        // Nothing to do, it's handled by PHY of nrf52 chip.
+    }
+
+    fn enable_address(&self) {
+        let _regs = &*self.registers;
+        // Nothing to do, it's handled by PHY of nrf52 chip.
+    }
+
+    fn endpoint_in_enable(&self, transfer_type: TransferType, endpoint: usize) {
+        match transfer_type {
+            TransferType::Control => {
+                panic!("There is no IN control endpoint");
+            }
+            TransferType::Bulk | TransferType::Interrupt => {
+                if endpoint == 0 || endpoint >= N_ENDPOINTS {
+                    panic!("Bulk/Interrupt endpoints are endpoints 1 to 7");
+                }
+                // self.enable_in_endpoint_(transfer_type, endpoint);
+            }
+            TransferType::Isochronous => unimplemented!("isochronous endpoint"),
+        }
+    }
+
+    fn endpoint_out_enable(&self, transfer_type: TransferType, endpoint: usize) {
+        match transfer_type {
+            TransferType::Control => {
+                if endpoint != 0 {
+                    panic!("Only endpoint 0 can be a control endpoint");
+                }
+                // self.enable_out_endpoint_(transfer_type, endpoint);
+            }
+            TransferType::Bulk | TransferType::Interrupt => {
+                if endpoint == 0 || endpoint >= N_ENDPOINTS {
+                    panic!("Bulk/Interrupt endpoints are endpoints 1 to 7");
+                }
+                // self.enable_out_endpoint_(transfer_type, endpoint);
+            }
+            TransferType::Isochronous => unimplemented!("isochronous endpoint"),
+        }
+    }
+
+    fn endpoint_in_out_enable(&self, transfer_type: TransferType, endpoint: usize) {
+        match transfer_type {
+            TransferType::Control => {
+                panic!("There is no IN control endpoint");
+            }
+            TransferType::Bulk | TransferType::Interrupt => {
+                if endpoint == 0 || endpoint >= N_ENDPOINTS {
+                    panic!("Bulk/Interrupt endpoints are endpoints 1 to 7");
+                }
+                // self.enable_in_out_endpoint_(transfer_type, endpoint);
+            }
+            TransferType::Isochronous => unimplemented!("isochronous endpoint"),
+        }
+    }
+
+    fn endpoint_resume_in(&self, endpoint: usize) {
+        // Get the state of the endpoint that the upper layer requested to start
+        // an IN transfer with for our state machine.
+        let (_, in_state, _) = self.descriptors[endpoint].state.get().bulk_state();
+        // If the state is `None`, this endpoint is not configured and should
+        // not have been used to call `endpoint_resume_in()`.
+        assert!(in_state.is_some());
+
+        // If there is an active DMA request, or we are waiting on finishing up
+        // a previous IN transfer, we queue this request and it will be serviced
+        // after those complete.
+        // if self.dma_pending.get() || in_state != Some(BulkInState::Init) {
+        //     debug_events!("requesting resume_in[{}]", endpoint);
+        //     // A DMA is already pending. Schedule the resume for later.
+        //     self.descriptors[endpoint].request_transmit_in.set(true);
+        // } else {
+        //     // If we aren't waiting on anything, trigger the transaction now.
+        //     //
+        //     // NOTE! TODO! We can't actually do this. This leads to an upcall
+        //     // (`client.packet_in()`) happening as a direct result of a downcall
+        //     // (this `endpoint_resume_in()` call). Unfortunately, the nRF52
+        //     // doesn't give us a great interrupt to use to check the
+        //     // `request_transmit_in` flag if we were to queue unconditionally in
+        //     // `endpoint_resume_in()`.
+        //     self.transmit_in(endpoint);
+        // }
+    }
+
+    fn endpoint_resume_out(&self, endpoint: usize) {
+        let (transfer_type, in_state, out_state) =
+            self.descriptors[endpoint].state.get().bulk_state();
+        assert!(out_state.is_some());
+
+        match out_state.unwrap() {
+            BulkOutState::OutDelay => {
+                // The endpoint has now finished processing the last ENDEPOUT. No EPDATA event
+                // happened in the meantime, so the state is now back to Init.
+                self.descriptors[endpoint].state.set(EndpointState::Bulk(
+                    transfer_type,
+                    in_state,
+                    Some(BulkOutState::Init),
+                ));
+            }
+            BulkOutState::OutData { size: _ } => {
+                // Although the client reported a delay before, an EPDATA event has
+                // happened in the meantime. This pending transaction will now
+                // continue in transmit_out().
+                // if self.dma_pending.get() {
+                //     debug_events!("requesting resume_out[{}]", endpoint);
+                //     // A DMA is already pending. Schedule the resume for later.
+                //     self.descriptors[endpoint].request_transmit_out.set(true);
+                // } else {
+                //     // Trigger the transaction now.
+                //     self.transmit_out(endpoint);
+                // }
+            }
+            BulkOutState::Init | BulkOutState::OutDma { size: _ } => {
+                internal_err!("Unexpected state: {:?}", out_state);
+            }
+        }
+    }
+}

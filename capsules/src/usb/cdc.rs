@@ -42,6 +42,8 @@ pub const MAX_CTRL_PACKET_SIZE_SAM4L: u8 = 8;
 pub const MAX_CTRL_PACKET_SIZE_NRF52840: u8 = 64;
 /// Platform-specific packet length for the `earlgrey` USB hardware.
 pub const MAX_CTRL_PACKET_SIZE_EARLGREY: u8 = 64;
+/// Platform-specific packet length for the `RP2040` USB hardware.
+pub const MAX_CTRL_PACKET_SIZE_RP2040: u8 = 64;
 /// Number of ms to buffer uart transmissions before beginning to drop them.
 /// This is useful in that it allows users time to connect over CDC without losing message,
 /// while still guaranteeing that blocking uart transmissions eventually get a callback even
