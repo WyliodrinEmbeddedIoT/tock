@@ -8,7 +8,7 @@ use kernel::{create_capability, static_init_half};
 // Setup static space for the objects.
 #[macro_export]
 macro_rules! lsm6ds_i2c_component_helper {
-    ($i2c_mux:expr, $accelerometer_address:expr, $gyroscope_address:expr  $(,)?) => {{
+    ($i2c_mux:expr, $accelerometer_address:expr $(,)?) => {{
         use capsules::lsm6dsoxtr::Lsm6dsoxtrI2C;
         use capsules::virtual_i2c::I2CDevice;
         use core::mem::MaybeUninit;
@@ -18,12 +18,10 @@ macro_rules! lsm6ds_i2c_component_helper {
         let accelerometer_i2c =
             components::i2c::I2CComponent::new($i2c_mux, $accelerometer_address)
                 .finalize(components::i2c_component_helper!());
-        let gyroscope_i2c = components::i2c::I2CComponent::new($i2c_mux, $gyroscope_address)
-            .finalize(components::i2c_component_helper!());
+        
         static mut lsm6dsoxtr: MaybeUninit<Lsm6dsoxtrI2C<'static>> = MaybeUninit::uninit();
         (
             &accelerometer_i2c,
-            &gyroscope_i2c,
             &mut BUFFER,
             &mut lsm6dsoxtr,
         )
@@ -32,8 +30,7 @@ macro_rules! lsm6ds_i2c_component_helper {
     ($i2c_mux:expr $(,)?) => {{
         $crate::lsm6ds_i2c_component_helper!(
             $i2c_mux,
-            capsules::lsm6ds::ACCELEROMETER_BASE_ADDRESS,
-            capsules::lsm6ds::GYROSCOPE_BASE_ADDRESS
+            capsules::lsm6ds::ACCELEROMETER_BASE_ADDRESS
         )
     }};
 }
@@ -55,7 +52,6 @@ impl Lsm6dsoxtrI2CComponent {
 impl Component for Lsm6dsoxtrI2CComponent {
     type StaticInput = (
         &'static I2CDevice<'static>,
-        &'static I2CDevice<'static>,
         &'static mut [u8],
         &'static mut MaybeUninit<Lsm6dsoxtrI2C<'static>>,
     );
@@ -65,12 +61,11 @@ impl Component for Lsm6dsoxtrI2CComponent {
         let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
         let grant = self.board_kernel.create_grant(self.driver_num, &grant_cap);
         let lsm6dsox = static_init_half!(
-            static_buffer.3,
+            static_buffer.2,
             Lsm6dsoxtrI2C<'static>,
-            Lsm6dsoxtrI2C::new(static_buffer.0, static_buffer.1, static_buffer.2, grant)
+            Lsm6dsoxtrI2C::new(static_buffer.0, static_buffer.1, grant)
         );
         static_buffer.0.set_client(lsm6dsox);
-        static_buffer.1.set_client(lsm6dsox);
 
         lsm6dsox
     }

@@ -16,13 +16,14 @@ use enum_primitive::cast::FromPrimitive;
 use kernel::component::Component;
 use kernel::debug;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
+use kernel::grant::Grant;
 use kernel::hil::led::LedHigh;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::scheduler::round_robin::RoundRobinSched;
 use kernel::syscall::SyscallDriver;
 use kernel::{capabilities, create_capability, static_init, Kernel};
 use rp2040;
-
+use kernel::hil::sensors::NineDof;
 use rp2040::adc::{Adc, Channel};
 use rp2040::chip::{Rp2040, Rp2040DefaultPeripherals};
 use rp2040::clocks::{
@@ -37,10 +38,7 @@ mod io;
 
 use rp2040::sysinfo;
 
-
-
 mod flash_bootloader;
-
 
 /// Allocate memory for the stack
 #[no_mangle]
@@ -403,6 +401,8 @@ pub unsafe fn main() {
         capsules::temperature::TemperatureSensor::new(temp_sensor, grant_temperature)
     );
 
+    
+
     kernel::hil::sensors::TemperatureDriver::set_client(temp_sensor, temp);
 
     peripherals.i2c0.init(100 * 1000);
@@ -413,7 +413,8 @@ pub unsafe fn main() {
     gpio_scl.set_function(GpioFunction::I2C);
     let mux_i2c =
         components::i2c::I2CMuxComponent::new(&peripherals.i2c0, None, dynamic_deferred_caller)
-            .finalize(components::i2c_mux_component_helper!());
+        .finalize(components::i2c_mux_component_helper!());
+
 
     let lsm6dsoxtr = components::lsm6dsox::Lsm6dsoxtrI2CComponent::new(
         board_kernel,
@@ -424,8 +425,41 @@ pub unsafe fn main() {
     let ninedof =
         components::ninedof::NineDofComponent::new(board_kernel, capsules::ninedof::DRIVER_NUM)
             .finalize(components::ninedof_component_helper!(lsm6dsoxtr));
+    
 
-    lsm6dsoxtr.is_present();
+
+    let temp_sensor_lsm6dsoxtr = components::temperature_rp2040::TemperatureRp2040Component::new(1.721, 0.706)
+    .finalize(components::temperaturerp2040_adc_component_helper!(
+        rp2040::adc::Adc, // comp lsm6dsox nu se incadreaza in macro
+        Channel::Channel4,
+        adc_mux
+    ));
+    let grant_cap_lsm6dsoxtr = create_capability!(capabilities::MemoryAllocationCapability);
+    let grant_temperature_lsm6dsoxtr =
+        board_kernel.create_grant(capsules::temperature::DRIVER_NUM, &grant_cap_lsm6dsoxtr);
+
+    
+    let temp = static_init!(
+        capsules::temperature::TemperatureSensor<'static>,
+        capsules::temperature::TemperatureSensor::new(temp_sensor_lsm6dsoxtr, grant_temperature_lsm6dsoxtr)
+    );
+
+            
+        
+            kernel::hil::sensors::TemperatureDriver::set_client(temp_sensor_lsm6dsoxtr, temp);
+
+   lsm6dsoxtr.configure(capsules::lsm6ds::LSM6DSOXGyroDataRate::LSM6DSOX_GYRO_RATE_12_5_HZ, capsules::lsm6ds::LSM6DSOXAccelDataRate::LSM6DSOX_ACCEL_RATE_12_5_HZ,capsules::lsm6ds::LSM6DSOXAccelRange::LSM6DSOX_ACCEL_RANGE_2_G,capsules::lsm6ds::LSM6DSOXTRGyroRange::LSM6DSOX_GYRO_RANGE_250_DPS, true);
+    //lsm6dsoxtr.is_present();
+//    lsm6dsoxtr.set_accelerometer_power_mode(
+//       capsules::lsm6ds::LSM6DSOXAccelDataRate::LSM6DSOX_ACCEL_RATE_12_5_HZ,
+//        true,
+//     );
+
+
+ 
+     //lsm6dsoxtr.read_gyroscope_xyz();
+
+
 
     let adc_channel_0 = components::adc::AdcComponent::new(&adc_mux, Channel::Channel0)
         .finalize(components::adc_component_helper!(Adc));
@@ -499,7 +533,7 @@ pub unsafe fn main() {
         /// End of the RAM region for app memory.
         static _eappmem: u8;
     }
-    
+
     kernel::process::load_processes(
         board_kernel,
         chip,
