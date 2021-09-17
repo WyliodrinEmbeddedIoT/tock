@@ -1,14 +1,13 @@
 use core::cell::Cell;
-use core::iter::empty;
-use kernel::common::cells::{OptionalCell, VolatileCell};
-use kernel::common::registers::interfaces::{ReadWriteable, Readable, Writeable};
-use kernel::common::registers::{
-    self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
-};
-use kernel::common::StaticRef;
 use kernel::debug;
 use kernel::hil;
 use kernel::hil::usb::TransferType;
+use kernel::utilities::cells::{OptionalCell, VolatileCell};
+use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
+use kernel::utilities::registers::{
+    self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+};
+use kernel::utilities::StaticRef;
 
 macro_rules! internal_err {
     [ $( $arg:expr ),+ ] => {
@@ -40,24 +39,18 @@ register_structs! {
         (0x04 => setup_l: ReadWrite<u32, SETUP_L::Register>),
         (0x08 => ep_ctrl: [Ep_ctrl; 15]),
         (0x80 => ep_buf_ctrl: [Ep_buf_ctrl; 16]),
-        (0x100 => ep0_buffer0: detail::EndpointRegisters),
-        (0x140 => optional_ep0_buffer0: detail::EndpointRegisters),
+        (0x100 => ep0_buffer0: [VolatileCell<u8>; 0x40]),
+        (0x140 => optional_ep0_buffer0: detail::EndpointBuffer<0x40>),
         // (0x180 => @END),
-        (0x180 => buffers: [detail::EndpointRegisters; 58]),
+        (0x180 => buffers: detail::EndpointBuffer<{ 4096-0x180 }>),
         (0x1000 => @END),
     }
 }
 mod detail {
-    use kernel::common::cells::VolatileCell;
+    use kernel::utilities::cells::VolatileCell;
     #[repr(C)]
-    pub struct EndpointRegisters {
-        ptr: VolatileCell<*const u8>,
-    }
-
-    impl EndpointRegisters {
-        pub fn set_buffer(&self, slice: &[VolatileCell<u8>]) {
-            self.ptr.set(slice.as_ptr() as *const u8);
-        }
+    pub struct EndpointBuffer<const LEN: usize> {
+        ptr: [VolatileCell<u8>; LEN],
     }
 }
 
@@ -1430,33 +1423,24 @@ impl<'a> UsbCtrl<'a> {
             self.registers.ints.read(INTS::BUS_RESET),
             self.registers.ints.get()
         );
-        if self.registers.ints.is_set(INTS::BUS_RESET) {
-            debug!("BUS_RESET");
-            self.registers.sie_status.modify(SIE_STATUS::BUS_RESET::SET);
-            // panic!("all good till now {}", self.registers.buff_status.get());
-            // usb_bus_reset
+        if self.registers.ints.is_set(INTS::SETUP_REQ) {
+            debug!("SETUP_REQ");
+            self.registers.sie_status.modify(SIE_STATUS::SETUP_REC::SET);
+            debug!("{}", self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE));
+            self.usb_handle_setup_packet();
         }
-
         if self.registers.ints.is_set(INTS::BUFF_STATUS) {
-            // printf("BUS RESET\n");
-            // panic!("BUF_STATUS");
-            // usb_hw_clear->sie_status = USB_SIE_STATUS_BUS_RESET_BITS;
-            // usb_handle_buff_status();
             self.registers
                 .buff_status
                 .modify(BUFF_STATUS::EP0_OUT::CLEAR);
             self.registers
                 .buff_status
                 .modify(BUFF_STATUS::EP0_IN::CLEAR);
-            self.transmit_out_ep0();
+            // self.transmit_out_ep0();
         }
-        // debug!("{}", self.registers.ints.read(INTS::BUS_RESET));
-        if self.registers.ints.is_set(INTS::SETUP_REQ) {
-            debug!("SETUP_REQ");
-            self.registers.sie_status.modify(SIE_STATUS::SETUP_REC::SET);
-            debug!("{}", self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE));
-            // panic!("all good till now {}", self.registers.buff_status.get());
-            self.usb_handle_setup_packet();
+        if self.registers.ints.is_set(INTS::BUS_RESET) {
+            debug!("BUS_RESET");
+            self.registers.sie_status.modify(SIE_STATUS::BUS_RESET::SET);
         }
     }
 
@@ -1624,22 +1608,53 @@ impl<'a> UsbCtrl<'a> {
                         .slice_in
                         .expect("No IN slice set for this descriptor");
                     debug!("packet size is {}", size);
-                    // self.registers.epin[endpoint].set_buffer(&slice[..size]);
-                    // self.registers.task_startepin[endpoint].write(Task::ENABLE::SET);
                     self.dpsram.ep_buf_ctrl[endpoint]
                         .ep_in_buf_ctrl
                         .modify(EP_BUFFER_CONTROL::AVAILABLE0::SET);
                     self.dpsram.ep_buf_ctrl[endpoint]
                         .ep_in_buf_ctrl
                         .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(size as u32));
-                    self.dpsram.ep0_buffer0.set_buffer(slice);
+
+                    for idx in 0..size {
+                        self.dpsram.ep0_buffer0[idx].set(slice[idx].get());
+                    }
+                    debug!("1621 size is {}", size);
+                    debug!(
+                        "recv 1 {} {} {} {} {} {} {} {} {} {}",
+                        self.dpsram.ep0_buffer0[0].get(),
+                        self.dpsram.ep0_buffer0[1].get(),
+                        self.dpsram.ep0_buffer0[2].get(),
+                        self.dpsram.ep0_buffer0[3].get(),
+                        self.dpsram.ep0_buffer0[4].get(),
+                        self.dpsram.ep0_buffer0[5].get(),
+                        self.dpsram.ep0_buffer0[6].get(),
+                        self.dpsram.ep0_buffer0[7].get(),
+                        self.dpsram.ep0_buffer0[8].get(),
+                        self.dpsram.ep0_buffer0[9].get(),
+                    );
+                    debug!(
+                        "recv 2 {} {} {} {} {} {} {} {} {} {}",
+                        self.dpsram.ep0_buffer0[10].get(),
+                        self.dpsram.ep0_buffer0[11].get(),
+                        self.dpsram.ep0_buffer0[12].get(),
+                        self.dpsram.ep0_buffer0[13].get(),
+                        self.dpsram.ep0_buffer0[14].get(),
+                        self.dpsram.ep0_buffer0[15].get(),
+                        self.dpsram.ep0_buffer0[16].get(),
+                        self.dpsram.ep0_buffer0[17].get(),
+                        self.dpsram.ep0_buffer0[18].get(),
+                        self.dpsram.ep0_buffer0[19].get(),
+                    );
                     self.dpsram.ep_buf_ctrl[endpoint]
                         .ep_in_buf_ctrl
                         .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+                    self.dpsram.ep_buf_ctrl[endpoint]
+                        .ep_in_buf_ctrl
+                        .modify(EP_BUFFER_CONTROL::DATA_PID1::SET);
                     // self.registers
                     //     .sie_status
                     //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
-                    self.registers.buff_status.modify(BUFF_STATUS::EP0_IN::SET);
+                    // self.registers.buff_status.modify(BUFF_STATUS::EP0_IN::SET);
                     if last {
                         self.registers
                             .sie_status
@@ -1673,17 +1688,51 @@ impl<'a> UsbCtrl<'a> {
             .slice_out
             .expect("No OUT slice set for this descriptor");
         debug!("transmit out ep0");
-        self.dpsram.ep0_buffer0.set_buffer(slice);
+        self.dpsram.ep_buf_ctrl[endpoint]
+            .ep_out_buf_ctrl
+            .modify(EP_BUFFER_CONTROL::AVAILABLE0::SET);
+        self.dpsram.ep_buf_ctrl[endpoint]
+            .ep_out_buf_ctrl
+            .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(slice.len() as u32));
+        for idx in 0..slice.len() {
+            slice[idx].set(self.dpsram.ep0_buffer0[idx].get());
+        }
+        debug!(
+            "out 1 {} {} {} {} {} {} {} {} {} {}",
+            slice[0].get(),
+            slice[1].get(),
+            slice[2].get(),
+            slice[3].get(),
+            slice[4].get(),
+            slice[5].get(),
+            slice[6].get(),
+            slice[7].get(),
+            slice[8].get(),
+            slice[9].get(),
+        );
+        debug!(
+            "out 2 {} {} {} {} {} {} {} {} {} {}",
+            slice[10].get(),
+            slice[11].get(),
+            slice[12].get(),
+            slice[13].get(),
+            slice[14].get(),
+            slice[15].get(),
+            slice[16].get(),
+            slice[17].get(),
+            slice[18].get(),
+            slice[19].get(),
+        );
+        debug!("1726 size is {}", slice.len());
         self.dpsram.ep_buf_ctrl[endpoint]
             .ep_out_buf_ctrl
             .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+        // self.registers
+        //     .sie_status
+        //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
         self.dpsram.ep_buf_ctrl[endpoint]
-            .ep_out_buf_ctrl
-            .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(0 as u32));
-        self.registers
-            .sie_status
-            .modify(SIE_STATUS::TRANS_COMPLETE::SET);
-        self.registers.buff_status.modify(BUFF_STATUS::EP0_OUT::SET);
+            .ep_in_buf_ctrl
+            .modify(EP_BUFFER_CONTROL::DATA_PID1::SET);
     }
 
     fn complete_ctrl_status(&self) {
