@@ -336,6 +336,16 @@ pub unsafe fn main() {
         ]
     );
 
+    /// CDC
+    let strings = static_init!(
+        [&str; 3],
+        [
+            "Raspberry Pi",      // Manufacturer
+            "Pico - TockOS",     // Product
+            "00000000000000000", // Serial number
+        ]
+    );
+
     let cdc = components::cdc::CdcAcmComponent::new(
         &peripherals.usb,
         capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_RP2040,
