@@ -1,13 +1,13 @@
 //! LSM6DSOXTR sensors
 //!
+//! Author: Cristiana Andrei <cristiana.andrei@stud.fils.upb.ro>
 
 #![allow(non_camel_case_types)]
 
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
-use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 
-use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
+use kernel::utilities::registers::register_bitfields;
 //use kernel::common::registers::register_bitfields;
 
 pub const CHIP_ID: u8 = 0x6C;
@@ -91,9 +91,7 @@ enum_from_primitive! {
 
 pub(crate) const SCALE_FACTOR_ACCEL: [u16; 4] = [61, 488, 122, 244];
 pub(crate) const SCALE_FACTOR_GYRO: [u16; 4] = [875, 1750, 3500, 7000];
-pub(crate) const TEMP_SENSITIVITY_FACTOR:u16 = 256;
-
-
+pub(crate) const TEMP_SENSITIVITY_FACTOR: u16 = 256;
 
 enum_from_primitive! {
     #[derive(Clone, Copy, PartialEq)]
@@ -109,7 +107,6 @@ enum_from_primitive! {
         OUT_Z_H_A = 0x2D
     }
 }
-
 
 register_bitfields![u8,
     pub (crate) CTRL1_XL [
