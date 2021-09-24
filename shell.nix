@@ -68,6 +68,8 @@ in
     # in the $PATH
     NO_RUSTUP = "1";
 
+    RUST_SRC_PATH = "${rustPlatform.rustLibSrc}";
+
     # The defaults "objcopy" and "objdump" are wrong (for x86), use
     # "llvm-obj{copy,dump}" as defined in the makefile
     shellHook = ''
