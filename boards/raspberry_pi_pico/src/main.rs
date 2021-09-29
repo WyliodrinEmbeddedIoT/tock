@@ -344,8 +344,8 @@ pub unsafe fn main() {
     let cdc = components::cdc::CdcAcmComponent::new(
         &peripherals.usb,
         capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_RP2040,
-        0x0,
-        0x1,
+        0x0000,
+        0x0001,
         strings,
         mux_alarm,
         dynamic_deferred_caller,
@@ -355,10 +355,6 @@ pub unsafe fn main() {
         rp2040::usb::UsbCtrl,
         rp2040::timer::RPTimer
     ));
-
-    // Configure the USB stack to enable a serial port over CDC-ACM.
-    cdc.enable();
-    cdc.attach();
 
     // UART
     // Create a shared UART channel for kernel debug.
@@ -432,7 +428,7 @@ pub unsafe fn main() {
     ));
 
     peripherals.adc.init();
-
+    peripherals.usb.enable();
     let adc_mux = components::adc::AdcMuxComponent::new(&peripherals.adc)
         .finalize(components::adc_mux_component_helper!(Adc));
 
@@ -534,6 +530,11 @@ pub unsafe fn main() {
         peripherals.sysinfo.get_revision(),
         platform_type
     );
+
+    // Configure the USB stack to enable a serial port over CDC-ACM.
+    cdc.enable();
+    cdc.attach();
+
     debug!("Initialization complete. Enter main loop");
 
     /// These symbols are defined in the linker script.
