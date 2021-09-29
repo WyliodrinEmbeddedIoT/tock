@@ -1040,12 +1040,26 @@ INTS [
 ];
 
 register_bitfields![u32,
+    RequestType [
+        RECIPIENT OFFSET(0) NUMBITS(5) [
+            Device = 0,
+            Interface = 1,
+            Endpoint = 2,
+            Other = 3
+        ],
+        TYPE OFFSET(5) NUMBITS(2) [
+            Standard = 0,
+            Class = 1,
+            Vendor = 2
+        ],
+        DIRECTION OFFSET(7) NUMBITS(1) [
+            HostToDevice = 0,
+            DeviceToHost = 1
+        ]
+    ],
     SETUP_H [
         // SETUP OFFSET(0) NUMBITS(8) [
-        BM_REQUEST_TYPE OFFSET(0) NUMBITS(8) [
-            IN = 0x80,
-            OUT = 0x0,
-        ],
+        BM_REQUEST_TYPE OFFSET(0) NUMBITS(8) [],
         B_REQUEST OFFSET(8) NUMBITS(8) [
             GET_ADDRESS = 0x05,
             GET_DESCRIPTOR = 0x07,
@@ -1303,7 +1317,11 @@ pub struct UsbCtrl<'a> {
     state: OptionalCell<UsbState>,
     client: OptionalCell<&'a dyn hil::usb::Client<'a>>,
     descriptors: [Endpoint<'a>; N_ENDPOINTS],
-    should_set_address: OptionalCell<bool>,
+    should_set_address: VolatileCell<bool>,
+    address: VolatileCell<u32>,
+    counter: VolatileCell<u32>,
+    next_pid_in: [VolatileCell<u8>; 16],
+    next_pid_out: [VolatileCell<u8>; 16],
 }
 
 impl<'a> UsbCtrl<'a> {
@@ -1331,14 +1349,50 @@ impl<'a> UsbCtrl<'a> {
                 Endpoint::new(),
                 Endpoint::new(),
             ],
-            should_set_address: OptionalCell::new(false),
+            should_set_address: VolatileCell::new(false),
+            address: VolatileCell::new(0),
+            counter: VolatileCell::new(0),
+            next_pid_in: [
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+            ],
+            next_pid_out: [
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+                VolatileCell::new(0),
+            ],
         }
     }
 
     pub fn enable(&self) {
-        self.registers
-            .main_ctrl
-            .modify(MAIN_CTRL::CONTROLLER_EN::CLEAR);
+        self.registers.main_ctrl.set(0); // modify(MAIN_CTRL::CONTROLLER_EN::CLEAR);
         self.registers
             .usb_muxing
             .modify(USB_MUXING::TO_PHY::SET + USB_MUXING::SOFTCON::SET);
@@ -1374,16 +1428,6 @@ impl<'a> UsbCtrl<'a> {
             _ => unreachable!("unexisting endpoint"),
         });
 
-        self.registers
-            .addr_endp1
-            .modify(ADDR_ENDP1::INTEP_DIR::CLEAR + ADDR_ENDP1::ENDPOINT.val(endpoint as u32));
-        // unsafe {
-        //     // + ADDR_ENDP1::ADDRESS.val((&DPSRAM[endpoint * 64] as *const u8) as u32),
-        //     match endpoint {
-        //         0 => self.registers.addr_endp.modify(ADDR_ENDP::ADDRESS.val(&self.dpsram.))
-        //     }
-        // };
-
         self.enable_interrupts(endpoint);
     }
 
@@ -1416,147 +1460,172 @@ impl<'a> UsbCtrl<'a> {
     }
 
     pub fn handle_interrupt(&self) {
+        self.counter.set(self.counter.get() + 1);
+        if self.counter.get() == 100 {
+            panic!("counter {}", self.counter.get());
+        }
+        let setup = self.registers.ints.is_set(INTS::SETUP_REQ);
         debug!(
-            "setup_req {} buff_status {} bus_reset {} ints {}",
-            self.registers.ints.read(INTS::SETUP_REQ),
+            "\nsetup_req {} buff_status {} bus_reset {} ints {} counter {}",
+            setup,
             self.registers.ints.read(INTS::BUFF_STATUS),
             self.registers.ints.read(INTS::BUS_RESET),
-            self.registers.ints.get()
+            self.registers.ints.get(),
+            self.counter.get()
         );
+        if self.registers.ints.is_set(INTS::BUS_RESET) {
+            debug!("\nBUS_RESET");
+
+            self.registers.sie_status.modify(SIE_STATUS::BUS_RESET::SET);
+            self.registers.addr_endp.modify(ADDR_ENDP::ADDRESS.val(0));
+            self.address.set(0);
+            // self.usb_handle_setup_packet();
+        }
         if self.registers.ints.is_set(INTS::SETUP_REQ) {
             debug!("SETUP_REQ");
             self.registers.sie_status.modify(SIE_STATUS::SETUP_REC::SET);
-            debug!("{}", self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE));
             self.usb_handle_setup_packet();
         }
         if self.registers.ints.is_set(INTS::BUFF_STATUS) {
+            debug!("\nBUFF_STATUS");
+
+            if !self.should_set_address.get() {
+                self.transmit_out_ep0();
+            }
             self.registers
                 .buff_status
                 .modify(BUFF_STATUS::EP0_OUT::CLEAR);
             self.registers
                 .buff_status
                 .modify(BUFF_STATUS::EP0_IN::CLEAR);
+
+            self.handle_ep0datadone();
+
             // self.transmit_out_ep0();
         }
-        if self.registers.ints.is_set(INTS::BUS_RESET) {
-            debug!("BUS_RESET");
-            self.registers.sie_status.modify(SIE_STATUS::BUS_RESET::SET);
-        }
+        debug!("waiting for another interrupt");
     }
 
     fn usb_handle_setup_packet(&self) {
-        debug!(
-            "BM_REQUEST_TYPE {} {} {} {} {}",
-            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
-            self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_OUT),
-            self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_IN),
-            self.dpsram.ep_buf_ctrl[0]
-                .ep_in_buf_ctrl
-                .read(EP_BUFFER_CONTROL::AVAILABLE0),
-            self.dpsram.ep_buf_ctrl[0]
-                .ep_in_buf_ctrl
-                .read(EP_BUFFER_CONTROL::BUFFER0_FULL),
-        );
+        // debug!(
+        //     "BM_REQUEST_TYPE {} {} {} {} {}",
+        //     self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+        //     self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_OUT),
+        //     self.registers.ep_stall_arm.read(EP_STALL_ARM::EP0_IN),
+        //     self.dpsram.ep_buf_ctrl[0]
+        //         .ep_in_buf_ctrl
+        //         .read(EP_BUFFER_CONTROL::AVAILABLE0),
+        //     self.dpsram.ep_buf_ctrl[0]
+        //         .ep_in_buf_ctrl
+        //         .read(EP_BUFFER_CONTROL::BUFFER0_FULL),
+        // );
         let endpoint = 0;
-        // let state = self.descriptors[endpoint].state.get().ctrl_state();
-        // match state {
-        //     CtrlState::Init => {
+
         // We are idle, and ready for any control transfer.
+        let state = self.descriptors[endpoint].state.get().ctrl_state();
+        match state {
+            CtrlState::Init => {
+                let ep_buf = &self.descriptors[endpoint].slice_out;
+                let ep_buf = ep_buf.expect("No OUT slice set for this descriptor");
+                if ep_buf.len() < 8 {
+                    panic!("EP0 DMA buffer length < 8");
+                }
 
-        let ep_buf = &self.descriptors[endpoint].slice_out;
-        let ep_buf = ep_buf.expect("No OUT slice set for this descriptor");
-        if ep_buf.len() < 8 {
-            panic!("EP0 DMA buffer length < 8");
-        }
-
-        // Re-construct the SETUP packet from various registers. The
-        // client's ctrl_setup() will parse it as a SetupData
-        // descriptor.
-        ep_buf[0].set(self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) as u8);
-        ep_buf[1].set(self.dpsram.setup_h.read(SETUP_H::B_REQUEST) as u8);
-        ep_buf[2].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_L) as u8);
-        ep_buf[3].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_H) as u8);
-        ep_buf[4].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_L) as u8);
-        ep_buf[5].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_H) as u8);
-        ep_buf[6].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L) as u8);
-        ep_buf[7].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) as u8);
-        let size = self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L)
-            + (self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) << 8);
-        debug!(
-            "setup packet {} {} {} {} {} {}",
-            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
-            self.dpsram.setup_h.read(SETUP_H::B_REQUEST),
-            self.dpsram.setup_h.read(SETUP_H::W_VALUE_H)
-                << 8 + self.dpsram.setup_h.read(SETUP_H::W_VALUE_L),
-            self.dpsram.setup_l.read(SETUP_L::W_INDEX_H)
-                << 8 + self.dpsram.setup_l.read(SETUP_L::W_INDEX_L),
-            self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H)
-                << 8 + self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L),
-            size
-        );
-        self.client.map(|client| {
-            // Notify the client that the ctrl setup event has occurred.
-            // Allow it to configure any data we need to send back.
-            match client.ctrl_setup(endpoint) {
-                hil::usb::CtrlSetupResult::OkSetAddress => {}
-                hil::usb::CtrlSetupResult::Ok => {
-                    // Setup request is successful.
-                    if size == 0 {
-                        debug!(
-                            "size 0 {}",
-                            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE)
-                        );
-                        // Directly handle a 0 length setup request.
-                        self.complete_ctrl_status();
-                    } else {
-                        debug!(
-                            "bm req {} {}",
-                            self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
-                            0x80
-                        );
-                        match self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) {
-                            0x80 => {
-                                // CTRL WRITE transfer with data to
-                                // receive.
-                                debug!("80");
-
-                                self.descriptors[endpoint]
-                                    .state
-                                    .set(EndpointState::Ctrl(CtrlState::ReadIn));
-                                // Transmit first packet if DMA is
-                                // available.
-                                self.transmit_in_ep0();
+                // Re-construct the SETUP packet from various registers. The
+                // client's ctrl_setup() will parse it as a SetupData
+                // descriptor.
+                ep_buf[0].set(self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) as u8);
+                ep_buf[1].set(self.dpsram.setup_h.read(SETUP_H::B_REQUEST) as u8);
+                ep_buf[2].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_L) as u8);
+                ep_buf[3].set(self.dpsram.setup_h.read(SETUP_H::W_VALUE_H) as u8);
+                ep_buf[4].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_L) as u8);
+                ep_buf[5].set(self.dpsram.setup_l.read(SETUP_L::W_INDEX_H) as u8);
+                ep_buf[6].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L) as u8);
+                ep_buf[7].set(self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) as u8);
+                let size = self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L)
+                    + (self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) << 8);
+                // debug!(
+                //     "setup packet {} {} wValue {} {} {} {}",
+                //     self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+                //     self.dpsram.setup_h.read(SETUP_H::B_REQUEST),
+                //     self.dpsram.setup_h.read(SETUP_H::W_VALUE_H)
+                //         << 8 + self.dpsram.setup_h.read(SETUP_H::W_VALUE_L),
+                //     self.dpsram.setup_l.read(SETUP_L::W_INDEX_H)
+                //         << 8 + self.dpsram.setup_l.read(SETUP_L::W_INDEX_L),
+                //     self.dpsram.setup_l.read(SETUP_L::W_LENGTH_L)
+                //         + (self.dpsram.setup_l.read(SETUP_L::W_LENGTH_H) << 8),
+                //     size
+                // );
+                self.client.map(|client| {
+                    // Notify the client that the ctrl setup event has occurred.
+                    // Allow it to configure any data we need to send back.
+                    match client.ctrl_setup(endpoint) {
+                        hil::usb::CtrlSetupResult::OkSetAddress => {
+                            self.should_set_address.set(true);
+                            self.dpsram.ep_buf_ctrl[0].ep_in_buf_ctrl.modify(
+                                EP_BUFFER_CONTROL::AVAILABLE0::SET
+                                    + EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(0)
+                                    + EP_BUFFER_CONTROL::BUFFER0_FULL::SET
+                                    + EP_BUFFER_CONTROL::DATA_PID0::SET
+                                    + EP_BUFFER_CONTROL::LAST_BUFFER0::SET,
+                            );
+                            debug!("Sent 0 on 0x80");
+                            self.descriptors[0]
+                                .state
+                                .set(EndpointState::Ctrl(CtrlState::ReadStatus));
+                        }
+                        hil::usb::CtrlSetupResult::Ok => {
+                            // Setup request is successful.
+                            if size == 0 {
+                                // Directly handle a 0 length setup request.
+                                self.complete_ctrl_status();
+                            } else {
+                                debug!(
+                                    "bm req {} {}",
+                                    self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE),
+                                    0x80
+                                );
+                                match self.dpsram.setup_h.read(SETUP_H::BM_REQUEST_TYPE) >> 7 {
+                                    1 => {
+                                        self.descriptors[endpoint]
+                                            .state
+                                            .set(EndpointState::Ctrl(CtrlState::ReadIn));
+                                        // Transmit first packet if DMA is
+                                        // available.
+                                        debug!("1542");
+                                        self.transmit_in_ep0();
+                                    }
+                                    0 => {
+                                        debug!("1546");
+                                        self.descriptors[endpoint]
+                                            .state
+                                            .set(EndpointState::Ctrl(CtrlState::WriteOut));
+                                        self.handle_ep0datadone();
+                                    }
+                                    _ => unreachable!(),
+                                }
                             }
-                            0 => {
-                                debug!("0");
-                                self.descriptors[endpoint]
-                                    .state
-                                    .set(EndpointState::Ctrl(CtrlState::WriteOut));
-                                self.handle_ep0datadone();
-                            }
-                            _ => unreachable!(),
+                        }
+                        _err => {
+                            // An error occurred, we
+                            self.registers
+                                .ep_stall_arm
+                                .modify(EP_STALL_ARM::EP0_IN::SET);
+                            self.registers
+                                .ep_stall_arm
+                                .modify(EP_STALL_ARM::EP0_OUT::SET);
+                            self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
                         }
                     }
-                }
-                _err => {
-                    // An error occurred, we
-                    self.registers
-                        .ep_stall_arm
-                        .modify(EP_STALL_ARM::EP0_IN::SET);
-                    self.registers
-                        .ep_stall_arm
-                        .modify(EP_STALL_ARM::EP0_OUT::SET);
-                    self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
-                }
+                });
             }
-        });
-        // }
 
-        //     CtrlState::ReadIn | CtrlState::ReadStatus | CtrlState::WriteOut => {
-        //         // Unexpected state to receive a SETUP packet. Let's STALL the endpoint.
-        //         self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
-        //     }
-        // }
+            CtrlState::ReadIn | CtrlState::ReadStatus | CtrlState::WriteOut => {
+                // Unexpected state to receive a SETUP packet. Let's STALL the endpoint.
+                self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+                debug!("ERROR");
+            }
+        }
     }
 
     fn handle_ep0datadone(&self) {
@@ -1597,7 +1666,6 @@ impl<'a> UsbCtrl<'a> {
 
     fn transmit_in_ep0(&self) {
         let endpoint = 0;
-
         self.client.map(|client| {
             match client.ctrl_in(endpoint) {
                 hil::usb::CtrlInResult::Packet(size, last) => {
@@ -1608,61 +1676,27 @@ impl<'a> UsbCtrl<'a> {
                         .slice_in
                         .expect("No IN slice set for this descriptor");
                     debug!("packet size is {}", size);
-                    self.dpsram.ep_buf_ctrl[endpoint]
-                        .ep_in_buf_ctrl
-                        .modify(EP_BUFFER_CONTROL::AVAILABLE0::SET);
-                    self.dpsram.ep_buf_ctrl[endpoint]
-                        .ep_in_buf_ctrl
-                        .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(size as u32));
 
                     for idx in 0..size {
                         self.dpsram.ep0_buffer0[idx].set(slice[idx].get());
                     }
-                    debug!("1621 size is {}", size);
-                    debug!(
-                        "recv 1 {} {} {} {} {} {} {} {} {} {}",
-                        self.dpsram.ep0_buffer0[0].get(),
-                        self.dpsram.ep0_buffer0[1].get(),
-                        self.dpsram.ep0_buffer0[2].get(),
-                        self.dpsram.ep0_buffer0[3].get(),
-                        self.dpsram.ep0_buffer0[4].get(),
-                        self.dpsram.ep0_buffer0[5].get(),
-                        self.dpsram.ep0_buffer0[6].get(),
-                        self.dpsram.ep0_buffer0[7].get(),
-                        self.dpsram.ep0_buffer0[8].get(),
-                        self.dpsram.ep0_buffer0[9].get(),
+                    self.dpsram.ep_buf_ctrl[endpoint].ep_in_buf_ctrl.modify(
+                        EP_BUFFER_CONTROL::AVAILABLE0::SET
+                            + EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(size as u32)
+                            + EP_BUFFER_CONTROL::BUFFER0_FULL::SET
+                            + EP_BUFFER_CONTROL::DATA_PID0::SET,
                     );
-                    debug!(
-                        "recv 2 {} {} {} {} {} {} {} {} {} {}",
-                        self.dpsram.ep0_buffer0[10].get(),
-                        self.dpsram.ep0_buffer0[11].get(),
-                        self.dpsram.ep0_buffer0[12].get(),
-                        self.dpsram.ep0_buffer0[13].get(),
-                        self.dpsram.ep0_buffer0[14].get(),
-                        self.dpsram.ep0_buffer0[15].get(),
-                        self.dpsram.ep0_buffer0[16].get(),
-                        self.dpsram.ep0_buffer0[17].get(),
-                        self.dpsram.ep0_buffer0[18].get(),
-                        self.dpsram.ep0_buffer0[19].get(),
-                    );
-                    self.dpsram.ep_buf_ctrl[endpoint]
-                        .ep_in_buf_ctrl
-                        .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
-                    self.dpsram.ep_buf_ctrl[endpoint]
-                        .ep_in_buf_ctrl
-                        .modify(EP_BUFFER_CONTROL::DATA_PID1::SET);
-                    // self.registers
-                    //     .sie_status
-                    //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
-                    // self.registers.buff_status.modify(BUFF_STATUS::EP0_IN::SET);
+                    debug!("Sent {} on 0x80", size);
                     if last {
-                        self.registers
-                            .sie_status
-                            .modify(SIE_STATUS::TRANS_COMPLETE::SET);
+                        // debug!("1675 last");
+                        // self.registers
+                        //     .sie_status
+                        //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
                         self.descriptors[endpoint]
                             .state
                             .set(EndpointState::Ctrl(CtrlState::ReadStatus));
                     }
+                    // debug!("SEND ON IN");
                 }
 
                 hil::usb::CtrlInResult::Delay => {
@@ -1684,68 +1718,80 @@ impl<'a> UsbCtrl<'a> {
 
     fn transmit_out_ep0(&self) {
         let endpoint = 0;
-        let slice = self.descriptors[endpoint]
-            .slice_out
-            .expect("No OUT slice set for this descriptor");
+        // let slice = self.descriptors[endpoint]
+        //     .slice_out
+        //     .expect("No OUT slice set for this descriptor");
         debug!("transmit out ep0");
-        self.dpsram.ep_buf_ctrl[endpoint]
-            .ep_out_buf_ctrl
-            .modify(EP_BUFFER_CONTROL::AVAILABLE0::SET);
-        self.dpsram.ep_buf_ctrl[endpoint]
-            .ep_out_buf_ctrl
-            .modify(EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(slice.len() as u32));
-        for idx in 0..slice.len() {
-            slice[idx].set(self.dpsram.ep0_buffer0[idx].get());
+        // for idx in 0..slice.len() {
+        //     slice[idx].set(self.dpsram.ep0_buffer0[idx].get());
+        // }
+        // debug!(
+        //     "out 1 {} {} {} {} {} {} {} {} {} {}",
+        //     slice[0].get(),
+        //     slice[1].get(),
+        //     slice[2].get(),
+        //     slice[3].get(),
+        //     slice[4].get(),
+        //     slice[5].get(),
+        //     slice[6].get(),
+        //     slice[7].get(),
+        //     slice[8].get(),
+        //     slice[9].get(),
+        // );
+        // debug!(
+        //     "out 2 {} {} {} {} {} {} {} {} {} {}",
+        //     slice[10].get(),
+        //     slice[11].get(),
+        //     slice[12].get(),
+        //     slice[13].get(),
+        //     slice[14].get(),
+        //     slice[15].get(),
+        //     slice[16].get(),
+        //     slice[17].get(),
+        //     slice[18].get(),
+        //     slice[19].get(),
+        // );
+        if self.next_pid_out[endpoint].get() == 1 {
+            self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
+                EP_BUFFER_CONTROL::AVAILABLE0::SET
+                    + EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(0)
+                    + EP_BUFFER_CONTROL::DATA_PID0::SET
+                    + EP_BUFFER_CONTROL::LAST_BUFFER0::SET,
+            );
+            debug!("PID is 1");
+            self.next_pid_out[endpoint].set(0);
+        } else {
+            self.dpsram.ep_buf_ctrl[endpoint].ep_out_buf_ctrl.modify(
+                EP_BUFFER_CONTROL::AVAILABLE0::SET
+                    + EP_BUFFER_CONTROL::TRANSFER_LENGTH0.val(0)
+                    + EP_BUFFER_CONTROL::DATA_PID0::CLEAR
+                    + EP_BUFFER_CONTROL::LAST_BUFFER0::SET,
+            );
+            debug!("PID is 0");
+            self.next_pid_out[endpoint].set(1);
         }
-        debug!(
-            "out 1 {} {} {} {} {} {} {} {} {} {}",
-            slice[0].get(),
-            slice[1].get(),
-            slice[2].get(),
-            slice[3].get(),
-            slice[4].get(),
-            slice[5].get(),
-            slice[6].get(),
-            slice[7].get(),
-            slice[8].get(),
-            slice[9].get(),
-        );
-        debug!(
-            "out 2 {} {} {} {} {} {} {} {} {} {}",
-            slice[10].get(),
-            slice[11].get(),
-            slice[12].get(),
-            slice[13].get(),
-            slice[14].get(),
-            slice[15].get(),
-            slice[16].get(),
-            slice[17].get(),
-            slice[18].get(),
-            slice[19].get(),
-        );
-        debug!("1726 size is {}", slice.len());
-        self.dpsram.ep_buf_ctrl[endpoint]
-            .ep_out_buf_ctrl
-            .modify(EP_BUFFER_CONTROL::BUFFER0_FULL::SET);
+        debug!("Sent 0 on 0x00");
+        // self.registers.buff_status.modify(BUFF_STATUS::EP0_OUT::SET);
+        self.descriptors[endpoint]
+            .state
+            .set(EndpointState::Ctrl(CtrlState::ReadStatus));
         // self.registers
         //     .sie_status
         //     .modify(SIE_STATUS::TRANS_COMPLETE::SET);
-        self.dpsram.ep_buf_ctrl[endpoint]
-            .ep_in_buf_ctrl
-            .modify(EP_BUFFER_CONTROL::DATA_PID1::SET);
     }
 
     fn complete_ctrl_status(&self) {
         let endpoint = 0;
-
+        self.should_set_address.set(false);
         self.client.map(|client| {
             client.ctrl_status(endpoint);
-            self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
+            // self.registers.sie_ctrl.write(SIE_CTRL::EP0_INT_STALL::SET);
             client.ctrl_status_complete(endpoint);
             self.descriptors[endpoint]
                 .state
                 .set(EndpointState::Ctrl(CtrlState::Init));
         });
+        debug!("complete_ctrl_status done");
     }
 }
 
@@ -1812,13 +1858,15 @@ impl<'a> hil::usb::UsbController<'a> for UsbCtrl<'a> {
         // self.disable_pullup();
     }
 
-    fn set_address(&self, _addr: u16) {
-        // Nothing to do, it's handled by PHY of nrf52 chip.
+    fn set_address(&self, addr: u16) {
+        debug!("THE ADDRESS IS {}", addr);
+        self.address.set(addr as u32);
     }
 
     fn enable_address(&self) {
-        let _regs = &*self.registers;
-        // Nothing to do, it's handled by PHY of nrf52 chip.
+        self.registers
+            .addr_endp
+            .modify(ADDR_ENDP::ADDRESS.val(self.address.get()));
     }
 
     fn endpoint_in_enable(&self, transfer_type: TransferType, endpoint: usize) {

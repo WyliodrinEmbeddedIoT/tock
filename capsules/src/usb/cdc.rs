@@ -420,9 +420,11 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
 
             match CDCCntrlMessage::from(b_request) {
                 CDCCntrlMessage::SetLineCoding => {
+                    kernel::debug!("SetLineCoding");
                     self.ctrl_state.set(CtrlState::SetLineCoding);
                 }
                 CDCCntrlMessage::SetControlLineState => {
+                    kernel::debug!("SetControlLineState");
                     // Bit 0 and 1 of the value (setup_data.value) can be set
                     // D0: Indicates to DCE if DTE is present or not.
                     //     - 0 -> Not present
@@ -439,6 +441,8 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
                     self.ctrl_state.set(CtrlState::SetControlLineState);
                 }
                 CDCCntrlMessage::SendBreak => {
+                    kernel::debug!("SendBreak");
+
                     // On Mac, we seem to get the SEND_BREAK to signal that a
                     // client disconnects.
                     self.state.set(State::Enumerated)

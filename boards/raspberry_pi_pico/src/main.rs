@@ -339,8 +339,8 @@ pub unsafe fn main() {
     let cdc = components::cdc::CdcAcmComponent::new(
         &peripherals.usb,
         capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_RP2040,
-        0x0,
-        0x1,
+        0x0000,
+        0x0001,
         strings,
         mux_alarm,
         dynamic_deferred_caller,
