@@ -20,6 +20,7 @@ use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClie
 use kernel::hil::gpio::{Configure, FloatingState};
 use kernel::hil::i2c::I2CMaster;
 use kernel::hil::led::LedHigh;
+use kernel::hil::usb::Client;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::scheduler::round_robin::RoundRobinSched;
 use kernel::syscall::SyscallDriver;
@@ -47,6 +48,13 @@ mod flash_bootloader;
 #[no_mangle]
 #[link_section = ".stack_buffer"]
 pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
+
+// Function for the CDC/USB stack to use to enter the bootloader.
+fn baud_rate_reset_bootloader_enter() {
+    // unsafe {
+    // cortexm0::scb::reset();
+    // }
+}
 
 // Manually setting the boot header section that contains the FCB header
 #[used]
@@ -322,6 +330,35 @@ pub unsafe fn main() {
         mux_alarm,
     )
     .finalize(components::alarm_component_helper!(RPTimer));
+
+    // CDC
+    let strings = static_init!(
+        [&str; 3],
+        [
+            "Raspberry Pi",      // Manufacturer
+            "Pico - TockOS",     // Product
+            "00000000000000000", // Serial number
+        ]
+    );
+
+    let cdc = components::cdc::CdcAcmComponent::new(
+        &peripherals.usb,
+        capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_RP2040,
+        0x0,
+        0x1,
+        strings,
+        mux_alarm,
+        dynamic_deferred_caller,
+        Some(&baud_rate_reset_bootloader_enter),
+    )
+    .finalize(components::usb_cdc_acm_component_helper!(
+        rp2040::usb::UsbCtrl,
+        rp2040::timer::RPTimer
+    ));
+
+    // Configure the USB stack to enable a serial port over CDC-ACM.
+    cdc.enable();
+    cdc.attach();
 
     // UART
     // Create a shared UART channel for kernel debug.
