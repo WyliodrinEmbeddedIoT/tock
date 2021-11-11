@@ -61,7 +61,7 @@ static mut ALARM: Option<&'static MuxAlarm<'static, esp32_c3::timg::TimG<'static
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x900] = [0; 0x900];
+pub static mut STACK_MEMORY: [u8; 0x1200] = [0; 0x1200];
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform. We've included an alarm and console.
@@ -274,6 +274,8 @@ unsafe fn setup() -> (
     ));
     let _ = process_console.start();
 
+    esp32_c3::wifi::wifi_init();
+
     let esp32_c3_board = static_init!(
         Esp32C3Board,
         Esp32C3Board {
@@ -290,7 +292,7 @@ unsafe fn setup() -> (
         chip,
         core::slice::from_raw_parts(
             &_sapps as *const u8,
-            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+            &_sapps as *const u8 as usize - &_sapps as *const u8 as usize,
         ),
         core::slice::from_raw_parts_mut(
             &mut _sappmem as *mut u8,

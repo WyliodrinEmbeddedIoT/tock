@@ -112,7 +112,7 @@ SECTIONS
         *(.text .text.* .gnu.linkonce.t.*)
 
         _srodata = .;
-        *(.rodata .rodata.* .gnu.linkonce.r.*)
+        *(.rodata .rodata.* .gnu.linkonce.r.* .rodata_wlog*)
 
         /* C++ exception unwinding information */
         *(.ARM.extab* .gnu.linkonce.armextab.*)

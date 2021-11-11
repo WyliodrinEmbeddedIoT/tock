@@ -1,6 +1,7 @@
 //! Drivers and chip support for ESP32-C3.
 
 #![feature(const_fn_trait_bound, naked_functions, asm)]
+#![feature(c_variadic)]
 #![no_std]
 #![crate_name = "esp32_c3"]
 #![crate_type = "rlib"]
@@ -10,3 +11,5 @@ pub mod intc;
 pub mod interrupts;
 pub mod sysreg;
 pub mod timg;
+
+pub mod wifi;
