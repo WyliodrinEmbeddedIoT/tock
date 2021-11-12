@@ -9,6 +9,7 @@
 #![deny(missing_docs)]
 #![feature(asm, naked_functions)]
 
+use capsules::virtual_adc;
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use components::gpio::GpioComponent;
 use components::led::LedsComponent;
@@ -17,6 +18,7 @@ use kernel::component::Component;
 use kernel::debug;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::hil::led::LedHigh;
+use kernel::hil::time::Alarm;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::scheduler::round_robin::RoundRobinSched;
 use kernel::syscall::SyscallDriver;
@@ -32,8 +34,8 @@ use rp2040::clocks::{
 };
 use rp2040::gpio::{GpioFunction, RPGpio, RPGpioPin};
 use rp2040::resets::Peripheral;
-use rp2040::timer::RPTimer;
 use rp2040::spi::Spi;
+use rp2040::timer::RPTimer;
 mod io;
 
 use rp2040::sysinfo;
@@ -292,7 +294,7 @@ pub unsafe fn main() {
     let memory_allocation_capability = create_capability!(capabilities::MemoryAllocationCapability);
 
     let dynamic_deferred_call_clients =
-        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+        static_init!([DynamicDeferredCallClientState; 3], Default::default());
     let dynamic_deferred_caller = static_init!(
         DynamicDeferredCall,
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
@@ -336,14 +338,14 @@ pub unsafe fn main() {
             // Used for serial communication. Comment them in if you don't use serial.
             // 0 => peripherals.pins.get_pin(RPGpio::GPIO0),
             // 1 => peripherals.pins.get_pin(RPGpio::GPIO1),
-            2 => peripherals.pins.get_pin(RPGpio::GPIO2),
-            3 => peripherals.pins.get_pin(RPGpio::GPIO3),
+            // 2 => peripherals.pins.get_pin(RPGpio::GPIO2),
+            // 3 => peripherals.pins.get_pin(RPGpio::GPIO3),
             // 4 => peripherals.pins.get_pin(RPGpio::GPIO4),
-            // 5 => peripherals.pins.get_pin(RPGpio::GPIO5),
+            5 => peripherals.pins.get_pin(RPGpio::GPIO5),
             // 6 => peripherals.pins.get_pin(RPGpio::GPIO6),
             // 7 => peripherals.pins.get_pin(RPGpio::GPIO7),
             // 8 => peripherals.pins.get_pin(RPGpio::GPIO8),
-            9 => peripherals.pins.get_pin(RPGpio::GPIO9),
+            // 9 => peripherals.pins.get_pin(RPGpio::GPIO9),
             // 10 => peripherals.pins.get_pin(RPGpio::GPIO10),
             // 11 => peripherals.pins.get_pin(RPGpio::GPIO11),
             // 12 => peripherals.pins.get_pin(RPGpio::GPIO12),
@@ -373,28 +375,57 @@ pub unsafe fn main() {
 
     //set CLK, MOSI and CS pins in SPI mode
     let spi_clk = peripherals.pins.get_pin(RPGpio::GPIO14);
-    let spi_csn = peripherals.pins.get_pin(RPGpio::GPIO10);
+    // let spi_csn = peripherals.pins.get_pin(RPGpio::GPIO10);
     let spi_mosi = peripherals.pins.get_pin(RPGpio::GPIO11);
     let spi_miso = peripherals.pins.get_pin(RPGpio::GPIO8);
     spi_clk.set_function(GpioFunction::SPI);
-    spi_csn.set_function(GpioFunction::SPI);
+    // spi_csn.set_function(GpioFunction::SPI);
     spi_mosi.set_function(GpioFunction::SPI);
     spi_miso.set_function(GpioFunction::SPI);
-    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi1)
+    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi1, dynamic_deferred_caller)
         .finalize(components::spi_mux_component_helper!(Spi));
 
-    let nina_spi = components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO10)).finalize(
-            components::spi_component_helper!(Spi));
+    let nina_spi =
+        components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO9))
+            .finalize(components::spi_component_helper!(Spi));
 
-    let write_buffer = static_init! ([u8; 100], [0; 100]);
-    let read_buffer = static_init! ([u8; 100], [0; 100]);
+    let write_buffer = static_init!([u8; 1024], [0; 1024]);
+    let read_buffer = static_init!([u8; 1024], [0; 1024]);
 
+    use ::kernel::hil::spi::SpiMasterDevice;
     use capsules::virtual_spi::VirtualSpiMasterDevice;
 
-    let nina = static_init! (capsules::nina_w102::NinaW102<'static, VirtualSpiMasterDevice<'static, rp2040::spi::Spi<'static>>, RPGpioPin<'static>>, capsules::nina_w102::NinaW102::new (nina_spi, write_buffer, read_buffer, peripherals.pins.get_pin(RPGpio::GPIO7), peripherals.pins.get_pin(RPGpio::GPIO5)));
-    nina_spi.configure ();
+    let virtual_alarm_nina = static_init!(
+        capsules::virtual_alarm::VirtualMuxAlarm<'static, rp2040::timer::RPTimer<'static>>,
+        capsules::virtual_alarm::VirtualMuxAlarm::new(mux_alarm)
+    );
+
+    let nina = static_init!(
+        capsules::nina_w102::NinaW102<
+            'static,
+            VirtualSpiMasterDevice<'static, rp2040::spi::Spi<'static>>,
+            RPGpioPin<'static>,
+            VirtualMuxAlarm<'static, rp2040::timer::RPTimer<'static>>,
+        >,
+        capsules::nina_w102::NinaW102::new(
+            nina_spi,
+            write_buffer,
+            read_buffer,
+            peripherals.pins.get_pin(RPGpio::GPIO9),
+            peripherals.pins.get_pin(RPGpio::GPIO10),
+            peripherals.pins.get_pin(RPGpio::GPIO3),
+            peripherals.pins.get_pin(RPGpio::GPIO2),
+            virtual_alarm_nina
+        )
+    );
+    virtual_alarm_nina.set_alarm_client(nina);
+    nina_spi.configure(kernel::hil::spi::ClockPolarity::IdleLow ,
+        kernel::hil::spi::ClockPhase::SampleLeading,
+        8_000_000);
     nina_spi.set_client(nina);
-    nina.get_firmware_version ();
+    nina.init();
+    // nina.get_firmware_version();
+    
 
     let led = LedsComponent::new(components::led_component_helper!(
         LedHigh<'static, RPGpioPin<'static>>,
