@@ -18,6 +18,7 @@ use kernel::component::Component;
 use kernel::debug;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::hil::led::LedHigh;
+use kernel::hil::spi::SpiMaster;
 use kernel::hil::time::Alarm;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::scheduler::round_robin::RoundRobinSched;
@@ -382,15 +383,23 @@ pub unsafe fn main() {
     // spi_csn.set_function(GpioFunction::SPI);
     spi_mosi.set_function(GpioFunction::SPI);
     spi_miso.set_function(GpioFunction::SPI);
-    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi1, dynamic_deferred_caller)
+    let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi0, dynamic_deferred_caller)
         .finalize(components::spi_mux_component_helper!(Spi));
 
-    let nina_spi =
-        components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO9))
-            .finalize(components::spi_component_helper!(Spi));
+    let nina_spi = &peripherals.spi0;
+    //     components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO9))
+    //         .finalize(components::spi_component_helper!(Spi));
+
+    nina_spi.specify_chip_select(peripherals.pins.get_pin(RPGpio::GPIO9));
+    nina_spi.set_rate(8_000_000);
+    nina_spi.set_phase(kernel::hil::spi::ClockPhase::SampleLeading);
+    nina_spi.set_polarity(kernel::hil::spi::ClockPolarity::IdleLow );
+    
 
     let write_buffer = static_init!([u8; 1024], [0; 1024]);
     let read_buffer = static_init!([u8; 1024], [0; 1024]);
+    let one_byte_read_buffer = static_init!([u8; 1], [0; 1]);
+
 
     use ::kernel::hil::spi::SpiMasterDevice;
     use capsules::virtual_spi::VirtualSpiMasterDevice;
@@ -403,7 +412,7 @@ pub unsafe fn main() {
     let nina = static_init!(
         capsules::nina_w102::NinaW102<
             'static,
-            VirtualSpiMasterDevice<'static, rp2040::spi::Spi<'static>>,
+            Spi<'static>,
             RPGpioPin<'static>,
             VirtualMuxAlarm<'static, rp2040::timer::RPTimer<'static>>,
         >,
@@ -411,6 +420,7 @@ pub unsafe fn main() {
             nina_spi,
             write_buffer,
             read_buffer,
+            one_byte_read_buffer,
             peripherals.pins.get_pin(RPGpio::GPIO9),
             peripherals.pins.get_pin(RPGpio::GPIO10),
             peripherals.pins.get_pin(RPGpio::GPIO3),
@@ -418,10 +428,10 @@ pub unsafe fn main() {
             virtual_alarm_nina
         )
     );
-    virtual_alarm_nina.set_alarm_client(nina);
-    nina_spi.configure(kernel::hil::spi::ClockPolarity::IdleLow ,
-        kernel::hil::spi::ClockPhase::SampleLeading,
-        8_000_000);
+   virtual_alarm_nina.set_alarm_client(nina);
+    // nina_spi.configure(kernel::hil::spi::ClockPolarity::IdleLow ,
+    //     kernel::hil::spi::ClockPhase::SampleLeading,
+    //     8_000_000);
     nina_spi.set_client(nina);
     nina.init();
     // nina.get_firmware_version();
