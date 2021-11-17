@@ -247,6 +247,8 @@ pub struct Spi<'a> {
 
     transfers: Cell<u8>,
     active_after: Cell<bool>,
+
+    times: Cell<usize>,
 }
 
 impl<'a> Spi<'a> {
@@ -267,6 +269,8 @@ impl<'a> Spi<'a> {
 
             transfers: Cell::new(SPI_IDLE),
             active_after: Cell::new(false),
+        
+            times: Cell::new(0),
         }
     }
 
@@ -287,6 +291,8 @@ impl<'a> Spi<'a> {
 
             transfers: Cell::new(SPI_IDLE),
             active_after: Cell::new(false),
+
+            times: Cell::new(0),
         }
     }
 
@@ -303,11 +309,15 @@ impl<'a> Spi<'a> {
     }
 
     pub fn handle_interrupt(&self) {
+        self.times.set (self.times.get() + 1);
+        // if self.times.get () > 100 {
+        //     panic!("too many interrupts");
+        // }
         if self.registers.sspsr.is_set(SSPSR::TFE) {
             // if transmit fifo empty is set
             if self.tx_buffer.is_some() {
                 if self.registers.sspsr.is_set(SSPSR::TNF)
-                    && self.tx_position.get() < self.len.get()
+                    && self.tx_position.get() < self.len.get() 
                 {
                     self.tx_buffer.map(|buf| {
                         // debug!("position {} of {}", self.tx_position.get(), self.len.get());
@@ -335,7 +345,9 @@ impl<'a> Spi<'a> {
                         buf[self.rx_position.get()] = byte;
                     });
                     self.rx_position.set(self.rx_position.get() + 1);
-                } else {
+                } 
+                
+                if self.rx_position.get() >= self.len.get() {
                     self.transfers
                         .set(self.transfers.get() & !SPI_READ_IN_PROGRESS);
                 }
@@ -347,6 +359,8 @@ impl<'a> Spi<'a> {
                 panic! ("no buffer");
             }
         }
+
+        // kernel::debug!("tx {}. rx {}", self.tx_position.get(), self.rx_position.get());
 
         if self.transfers.get() == SPI_IN_PROGRESS {
             if !self.active_after.get() {
@@ -410,9 +424,11 @@ impl<'a> Spi<'a> {
                 self.transfers
                     .set(self.transfers.get() | SPI_READ_IN_PROGRESS);
             }
+            else {
+                panic!("no read buffer");
+            }
 
             read_buffer.map(|buf| {
-                debug! ("receive buffer");
                 self.rx_buffer.replace(buf);
                 self.len.set(count);
                 self.rx_position.set(0);

@@ -386,10 +386,11 @@ pub unsafe fn main() {
     let mux_spi = components::spi::SpiMuxComponent::new(&peripherals.spi0, dynamic_deferred_caller)
         .finalize(components::spi_mux_component_helper!(Spi));
 
-    let nina_spi = &peripherals.spi0;
+    let nina_spi = &peripherals.spi1;
     //     components::spi::SpiComponent::new(mux_spi, peripherals.pins.get_pin(RPGpio::GPIO9))
     //         .finalize(components::spi_component_helper!(Spi));
 
+    nina_spi.init();
     nina_spi.specify_chip_select(peripherals.pins.get_pin(RPGpio::GPIO9));
     nina_spi.set_rate(8_000_000);
     nina_spi.set_phase(kernel::hil::spi::ClockPhase::SampleLeading);

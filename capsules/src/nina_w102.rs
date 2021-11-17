@@ -160,7 +160,7 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
     }
 
     fn wait_for_chip_ready(&self) -> Result<(), ErrorCode> {
-        for i in 0..100000 {
+        for i in 0..100000000 {
             if !self.ready.read() {
                 return Ok(());
             }
@@ -276,12 +276,114 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
     fn receive_command(&self, command: Command) -> Result<(), ErrorCode> {
         // // should be async
         //while self.ready.read() {}
+        debug!("receive command");
         // debug!("Intra pe receive_command");
         self.wait_for_chip_ready()?;
         // panic! ("chip ready");
         self.wait_for_chip_select()?;
 
         self.receive_byte(command, 0, 1000)
+    }
+
+    fn process_buffer(&self, command: Command) -> Result<(), ErrorCode> {
+        debug!("Intra in process buffer");
+        self.read_buffer
+            .take()
+            .map_or(Err(ErrorCode::NOMEM), |read_buffer| {
+                if read_buffer[0] == START_CMD {
+                    debug!("E start");
+                    debug!("byte {}", read_buffer[POS_CMD]);
+                    if read_buffer[POS_CMD] == (command as u8) | REPLY_FLAG {
+                        debug!("Pachetul e ok");
+                        /*  debug!(
+                            "{:?}",
+                            core::str::from_utf8(&read_buffer[index + 2..index + 4])
+                        );*/
+                        let param_len = read_buffer[POS_LEN]; //comanda start scan networks are si param len
+
+                        // debug!("params {}", param_len);
+
+                        let mut current_position = 0;
+                        for parameter_index in 0..param_len {
+                            let pos = POS_PARAM + current_position;
+                            // debug!("params position {}", param_len);
+                            // debug!("Schimba currebnt pos");
+                            if pos < read_buffer.len() {
+                                current_position =
+                                    (current_position + read_buffer[pos] as usize) as usize;
+                                // debug!("Schimba currebnt pos");
+                            } else {
+                                break;
+                            }
+                            current_position = current_position + 1;
+                        }
+
+                        // debug!("Iese din for");
+                        let end_pos = POS_PARAM + current_position;
+
+                        // debug!("End pos este {:?} ", end_pos);
+                        // debug!("read_buffer[end_pos] este {:?}", read_buffer[end_pos]);
+                        if end_pos < read_buffer.len() && read_buffer[end_pos] == END_CMD {
+                            // ok
+                            // debug!("A gasit end cmd");
+                            match command {
+                                Command::GetFwVersion => {
+                                    debug!("{:?}", core::str::from_utf8(&read_buffer[4..10]));
+                                    self.read_buffer.replace(read_buffer);
+                                    self.get_connection_status()
+                                }
+                                Command::GetConnStatusCmd => {
+                                    // debug!("{:?}", core::str::from_utf8(&read_buffer[4..10]));
+                                    self.read_buffer.replace(read_buffer);
+                                    self.start_scan_networks()
+                                }
+                                Command::StartScanNetworksCmd => {
+                                    // debug!("{:?}", core::str::from_utf8(&read_buffer[4..10]));
+                                    self.read_buffer.replace(read_buffer);
+                                    self.status.set(Status::ScanNetworks);
+                                    self.alarm.set_alarm(
+                                        self.alarm.now(),
+                                        self.alarm.ticks_from_ms(2000),
+                                    );
+                                    Ok(())
+                                }
+                                Command::ScanNetworksCmd => {
+                                    // debug!("{:?}", &read_buffer[0..end_pos+1]);
+                                    let mut current_position = 0;
+                                    for parameter_index in 0..param_len {
+                                        let pos = POS_PARAM + current_position;
+                                        // debug!("params position {}", param_len);
+                                        // debug!("Schimba currebnt pos");
+                                        if pos < read_buffer.len() {
+                                            debug! ("{:?}", core::str::from_utf8(&read_buffer[pos+1..pos+(read_buffer[pos] as usize)+1]));
+                                            current_position = (current_position
+                                                + read_buffer[pos] as usize)
+                                                as usize;
+                                            // debug!("Schimba currebnt pos");
+                                        } else {
+                                            break;
+                                        }
+                                        current_position = current_position + 1;
+                                    }
+                                    self.read_buffer.replace(read_buffer);
+                                    // self.get_connection_status()
+                                    Ok(())
+                                }
+                                _ => Ok(()),
+                            }
+                        } else {
+                            Err(ErrorCode::INVAL)
+                        }
+                    } else if read_buffer[POS_CMD] == ERROR_CMD {
+                        Err(ErrorCode::FAIL)
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    debug!("Nu e start");
+                    Err(ErrorCode::INVAL)
+                }
+            })
     }
 }
 
@@ -308,15 +410,21 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S,
                 self.write_buffer.replace(write_buffer);
                 read_buffer.map_or(Err(ErrorCode::NOMEM), |buffer| {
                     let byte = buffer[0];
-                    debug!("position {} byte {} timeout {}", position, byte, timeout);
+                    // debug!("position {} byte {} timeout {}", position, byte, timeout);
                     self.one_byte_read_buffer.replace(buffer);
                     if position == 0 {
                         if byte == START_CMD || byte == ERROR_CMD {
+                            debug!("byte {} timeout {}", byte, timeout);
                             self.read_buffer.map(|buffer| {
-                                buffer[position] = byte;
+                                buffer[0] = byte;
                             });
-                            // TODO replace 100 with self.read_buffer.len() (use map)
-                            self.receive_byte(command, 1, 1000)
+                            if byte == START_CMD {
+                                // TODO replace 100 with self.read_buffer.len() (use map)
+                                self.receive_byte(command, 1, 1000)
+                            } else {
+                                debug!("process error buffer");
+                                Ok(())
+                            }
                         } else if timeout > 0 {
                             self.receive_byte(command, 0, timeout - 1)
                         } else {
@@ -325,15 +433,17 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S,
                             Err(ErrorCode::NOACK)
                         }
                     } else {
+                        self.read_buffer.map(|buffer| {
+                            buffer[position] = byte;
+                        });
                         if byte == END_CMD {
-                            self.read_buffer.map(|buffer| {
-                                buffer[position] = byte;
-                            });
                             // stop spi
                             self.cs.set();
+                            self.spi.release_low();
                             debug!("process the buffer");
+                            self.process_buffer(command);
+
                             Ok(())
-                            //self.proccess_buffer(TODO)
                             //self.cs.set()
                         } else if timeout > 0 {
                             self.receive_byte(command, position + 1, timeout - 1)
@@ -507,10 +617,10 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S,
                 //         Err(ErrorCode::NOACK)
                 //     };
 
-                    // debug!("ready {}", self.ready.read());
-                    // TODO make sure this while exists
-                    // while self.ready.read() {}
-                    // debug!("ready {}", self.ready.read());
+                // debug!("ready {}", self.ready.read());
+                // TODO make sure this while exists
+                // while self.ready.read() {}
+                // debug!("ready {}", self.ready.read());
                 // });
             }
             Status::Idle => {
