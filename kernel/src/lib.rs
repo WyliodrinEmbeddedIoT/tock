@@ -115,6 +115,7 @@ pub mod utilities;
 mod config;
 mod kernel;
 mod memop;
+mod mp;
 mod process_policies;
 mod process_printer;
 mod process_standard;
