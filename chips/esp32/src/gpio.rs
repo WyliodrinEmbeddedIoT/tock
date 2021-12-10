@@ -253,13 +253,14 @@ impl gpio::Output for GpioPin<'_> {
         }
         self.registers.gpio_out.is_set(self.pin)
     }
-
+    #[inline(always)]
     fn set(&self) {
         self.registers
             .gpio_out_w1ts
             .set(self.pin.mask << self.pin.shift);
     }
 
+    #[inline(always)]
     fn clear(&self) {
         self.registers
             .gpio_out_w1tc

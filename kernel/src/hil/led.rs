@@ -93,3 +93,18 @@ impl<P: gpio::Pin> Led for LedLow<'_, P> {
         !self.pin.read()
     }
 }
+
+
+
+pub trait LedRGB {
+    /// Initialize the LED. Must be called before the LED is used.
+    fn init(&self);
+
+    /// Turn the LED on with specified color.
+    fn on(&self, red:u8,  green:u8, blue:u8);
+
+    /// Turn the LED off.
+    fn off(&self);
+
+}
+

@@ -9,9 +9,10 @@
 #![test_runner(test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+use core::ops::Index;
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use esp32_c3::chip::Esp32C3DefaultPeripherals;
-use kernel::capabilities;
+use kernel::{capabilities, ProcessId};
 use kernel::component::Component;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
@@ -19,7 +20,10 @@ use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::scheduler::priority::PrioritySched;
 use kernel::utilities::registers::interfaces::ReadWriteable;
 use kernel::{create_capability, debug, hil, static_init};
+use kernel::hil::gpio::Output;
+use kernel::hil::led::LedRGB;
 use rv32i::csr;
+
 
 pub mod io;
 
@@ -76,6 +80,8 @@ struct Esp32C3Board {
     >,
     scheduler: &'static PrioritySched,
     scheduler_timer: &'static VirtualSchedulerTimer<esp32_c3::timg::TimG<'static>>,
+    //led_rgb: &'static capsules::led_rgb::LedRGBDriver<'static,esp32::gpio::GpioPin<'static> , esp32_c3::timg::TimG<'static> >,
+    led_rgb: &'static capsules::led_rgb::LedRGBDriver<'static,esp32_c3::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::timg::TimG<'static>>>,
 }
 
 /// Mapping of integer syscalls to objects that implement syscalls.
@@ -223,6 +229,16 @@ unsafe fn setup() -> (
         VirtualSchedulerTimer::new(&peripherals.timg1)
     );
 
+    let ws2812b_led = static_init!(
+        esp32_c3::ws2812b::WS2812B<esp32::gpio::GpioPin,esp32_c3::timg::TimG<'static>>,
+        esp32_c3::ws2812b::WS2812B::new(peripherals.gpio.index(8), &peripherals.timg0)
+    );
+    ws2812b_led.init();
+    let led_rgb = static_init!(
+        capsules::led_rgb::LedRGBDriver<esp32_c3::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::timg::TimG<'static>>>,
+        capsules::led_rgb::LedRGBDriver::new(ws2812b_led)
+    );
+
     let chip = static_init!(
         esp32_c3::chip::Esp32C3<
             Esp32C3DefaultPeripherals,
@@ -294,6 +310,7 @@ unsafe fn setup() -> (
             gpio,
             scheduler,
             scheduler_timer,
+            led_rgb,
         }
     );
 
@@ -334,7 +351,20 @@ pub unsafe fn main() {
         let (board_kernel, esp32_c3_board, chip, _peripherals) = setup();
 
         let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
+        // _peripherals.gpio.toggle(8);
+        _peripherals.gpio.index(6).toggle();
+        //_peripherals.gpio.clear(9);
+        _peripherals.gpio.index(9).toggle();
+        //esp32_c3_board.led_rgb.init();
+        debug!("led is starting thing");
+        //esp32_c3_board.led_rgb.show_rainbow(3000);
+        //esp32_c3_board.led_rgb.command()
+       //esp32_c3_board.led_rgb.command(1,0xff0000,0,None);
+        debug!("after led thing");
+        //_peripherals.gpio.clear(8);
 
+        //_peripherals.gpio.toggle(9);
+        debug!("toggled pin");
         board_kernel.kernel_loop(
             esp32_c3_board,
             chip,
@@ -346,6 +376,7 @@ pub unsafe fn main() {
 
 #[cfg(test)]
 use kernel::platform::watchdog::WatchDog;
+use kernel::syscall::SyscallDriver;
 
 #[cfg(test)]
 fn test_runner(tests: &[&dyn Fn()]) {
