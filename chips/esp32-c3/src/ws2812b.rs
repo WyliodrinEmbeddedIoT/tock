@@ -16,10 +16,7 @@ pub const T1L:u32 = 9;
 
 
 
-#[inline(always)]
-pub fn nop() {
-    unimplemented!()
-}
+
 
 pub struct WS2812B<'a, L: kernel::hil::gpio::Configure + kernel::hil::gpio::Output, T: kernel::hil::time::Time > {
     pin: &'a L,
@@ -48,6 +45,14 @@ impl<'a, L: kernel::hil::gpio::Configure + kernel::hil::gpio::Output, T: kernel:
     }
 
     #[inline(always)]
+    fn delay_nop(&self, mut num_nops:u32) {
+        while num_nops>0 {
+            rv32i::support::nop();
+            num_nops-=1; //?
+        }
+    }
+
+    #[inline(always)]
     fn delay_ns(&self, ns:u32) {
         let now: u32 = self.time.now().into_u32();
         //let until:u32 = now + ns/50;
@@ -66,17 +71,18 @@ impl<'a, L: kernel::hil::gpio::Configure + kernel::hil::gpio::Output, T: kernel:
     #[inline(always)]
     fn send_one(&self){
         self.pin.set();
-        self.delay_ticks(T1H);
+        self.delay_nop(T1H);
         self.pin.clear();
-        self.delay_ticks(T1L);
+        self.delay_nop(T1L);
     }
 
     #[inline(always)]
     fn send_zero(&self){
         self.pin.set();
-        self.delay_ticks(T0H);
+        //self.delay_ticks(T0H);
+        self.delay_nop(T0H);
         self.pin.clear();
-        self.delay_ticks(T0L);
+        self.delay_nop(T0L);
     }
 
     pub fn show_color(&self, col:u32){
@@ -84,7 +90,8 @@ impl<'a, L: kernel::hil::gpio::Configure + kernel::hil::gpio::Output, T: kernel:
         let mut j = 0;
         while  j < 30{
             self.pin.clear();
-            self.delay_us(1000);
+            //self.delay_us(1000);
+            self.delay_nop(1000);
             let mut i = 0;
             let mut send = col;
             while i < 24 {

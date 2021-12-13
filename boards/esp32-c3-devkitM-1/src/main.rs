@@ -94,6 +94,7 @@ impl SyscallDriverLookup for Esp32C3Board {
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::console::DRIVER_NUM => f(Some(self.console)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules::led_rgb::DRIVER_NUM => f(Some(self.led_rgb)),
             _ => f(None),
         }
     }
@@ -355,10 +356,10 @@ pub unsafe fn main() {
         _peripherals.gpio.index(6).toggle();
         //_peripherals.gpio.clear(9);
         _peripherals.gpio.index(9).toggle();
-        //esp32_c3_board.led_rgb.init();
+        esp32_c3_board.led_rgb.init();
         debug!("led is starting thing");
-        //esp32_c3_board.led_rgb.show_rainbow(3000);
         //esp32_c3_board.led_rgb.command()
+        //esp32_c3_board.led_rgb.on(0,0,0);
        //esp32_c3_board.led_rgb.command(1,0xff0000,0,None);
         debug!("after led thing");
         //_peripherals.gpio.clear(8);

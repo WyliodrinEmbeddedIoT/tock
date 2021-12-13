@@ -3,7 +3,7 @@
 //!
 //! These traits are designed to be able encompass the wide
 //! variety of hardare counters in a general yet efficient way. They
-//! abstract the frequency of a counter through the `Frequency` trait
+//! abstract the frequency of a counter through the `Frequency` trait`
 //! and the width of a time value through the `Ticks`
 //! trait. Higher-level software abstractions should generally rely on
 //! standard and common implementations of these traits (e.g.. `u32`
@@ -14,6 +14,7 @@
 use crate::ErrorCode;
 use core::cmp::{Eq, Ord, Ordering, PartialOrd};
 use core::fmt;
+use core::time::Duration;
 
 /// An integer type defining the width of a time value, which allows
 /// clients to know when wraparound will occur.
@@ -145,6 +146,12 @@ impl<T: Time + ?Sized> ConvertTicks<<T as Time>::Ticks> for T {
     fn ticks_to_us(&self, tick: <T as Time>::Ticks) -> u32 {
         tick.saturating_scale(1_000_000, <T as Time>::Frequency::frequency())
     }
+}
+
+///This is intended for devices that need to sleep for very short
+/// precise amount of time ( example the neopixel).
+pub trait SynchronousTime{
+    fn sleep(&self,duration: Duration);
 }
 
 /// Represents a static moment in time, that does not change over
@@ -713,6 +720,9 @@ impl PartialEq for Ticks64 {
 }
 
 impl Eq for Ticks64 {}
+
+
+
 
 #[cfg(test)]
 mod tests {

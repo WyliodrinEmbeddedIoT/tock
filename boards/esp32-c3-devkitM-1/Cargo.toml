@@ -9,6 +9,6 @@ edition = "2021"
 components = { path = "../components" }
 rv32i = { path = "../../arch/rv32i" }
 capsules = { path = "../../capsules" }
-kernel = { path = "../../kernel" }
+kernel = { path = "../../kernel", features = ["debug_load_processes","trace_syscalls"] }
 esp32 = { path = "../../chips/esp32" }
 esp32-c3 = { path = "../../chips/esp32-c3" }
