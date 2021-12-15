@@ -25,9 +25,12 @@ impl<'a, L: LedRGB> LedRGBDriver<'a, L> {
     pub fn init(&self){
         self.led.init()
     }
+    /*
     pub fn on(&self,r:u8,g:u8,b:u8){
         self.led.on(r,g,b)
     }
+
+     */
 
 }
 

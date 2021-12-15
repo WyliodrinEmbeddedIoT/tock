@@ -10,5 +10,4 @@ pub mod intc;
 pub mod interrupts;
 pub mod sysreg;
 pub mod timg;
-pub mod ws2812b;
-mod synchronous_timer;
+pub mod synchronous_timer;

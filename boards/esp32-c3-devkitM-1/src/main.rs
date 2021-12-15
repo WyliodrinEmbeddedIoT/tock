@@ -81,7 +81,7 @@ struct Esp32C3Board {
     scheduler: &'static PrioritySched,
     scheduler_timer: &'static VirtualSchedulerTimer<esp32_c3::timg::TimG<'static>>,
     //led_rgb: &'static capsules::led_rgb::LedRGBDriver<'static,esp32::gpio::GpioPin<'static> , esp32_c3::timg::TimG<'static> >,
-    led_rgb: &'static capsules::led_rgb::LedRGBDriver<'static,esp32_c3::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::timg::TimG<'static>>>,
+    led_rgb: &'static capsules::led_rgb::LedRGBDriver<'static,capsules::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::synchronous_timer::SynchronousTimer<>>>,
 }
 
 /// Mapping of integer syscalls to objects that implement syscalls.
@@ -230,13 +230,18 @@ unsafe fn setup() -> (
         VirtualSchedulerTimer::new(&peripherals.timg1)
     );
 
+    let synchronous_timer = static_init!(
+        esp32_c3::synchronous_timer::SynchronousTimer<>,
+        esp32_c3::synchronous_timer::SynchronousTimer::new()
+    );
+
     let ws2812b_led = static_init!(
-        esp32_c3::ws2812b::WS2812B<esp32::gpio::GpioPin,esp32_c3::timg::TimG<'static>>,
-        esp32_c3::ws2812b::WS2812B::new(peripherals.gpio.index(8), &peripherals.timg0)
+        capsules::ws2812b::WS2812B<esp32::gpio::GpioPin,esp32_c3::synchronous_timer::SynchronousTimer<>>,
+        capsules::ws2812b::WS2812B::new(peripherals.gpio.index(8), synchronous_timer)
     );
     ws2812b_led.init();
     let led_rgb = static_init!(
-        capsules::led_rgb::LedRGBDriver<esp32_c3::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::timg::TimG<'static>>>,
+        capsules::led_rgb::LedRGBDriver<capsules::ws2812b::WS2812B<'static, esp32::gpio::GpioPin<'static>,  esp32_c3::synchronous_timer::SynchronousTimer<>>>,
         capsules::led_rgb::LedRGBDriver::new(ws2812b_led)
     );
 

@@ -98,3 +98,4 @@ pub mod virtual_spi;
 pub mod virtual_timer;
 pub mod virtual_uart;
 pub mod led_rgb;
+pub mod ws2812b;

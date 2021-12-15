@@ -1,23 +1,21 @@
 use core::time::Duration;
-use kernel::hil::time::SyncronousTime;
+use kernel::hil::time::{Frequency, SynchronousTime,Time};
 
-pub struct SynchronousTimer<'a,F:kernel::hil::time::Frequency> {
-    frequency: &'a F,
+pub struct SynchronousTimer<> {
 }
 
-impl<'a,F> SynchronousTimer<'a, F> {
+pub const FREQ:u128 = 20_000_000;
+impl<> SynchronousTimer<> {
     pub fn new(
-        frequency: &'a F,
     ) -> Self {
         Self {
-        frequency
         }
     }
 }
 
-impl <'a,F> kernel::hil::time::SyncronousTime for SynchronousTimer<'a,F> {
+impl <> kernel::hil::time::SynchronousTime for SynchronousTimer<> {
     fn sleep(&self, duration: Duration) {
-        let mut num_nops:u32 = duration.as_nanos()*self.frequency;
+        let mut num_nops:u128 = duration.as_nanos()*FREQ/1000_000_000;
         while num_nops>0 {
             rv32i::support::nop();
             num_nops-=1; //?
