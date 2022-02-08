@@ -2,6 +2,7 @@
 
 use core::cell::Cell;
 use cortexm4::support::atomic;
+use kernel::debug;
 use kernel::hil;
 use kernel::hil::usb::TransferType;
 use kernel::utilities::cells::{OptionalCell, VolatileCell};
@@ -1136,7 +1137,6 @@ impl<'a> Usbd<'a> {
 
         let active_events = self.active_events(&saved_inter);
         let events_to_process = saved_inter.bitand(active_events.get());
-
         // The following order in which we test events is important.
         // Interrupts should be processed from bit 0 to bit 31 but EP0SETUP must be last.
         if events_to_process.is_set(Interrupt::USBRESET) {
@@ -1152,6 +1152,7 @@ impl<'a> Usbd<'a> {
             }
         }
         if events_to_process.is_set(Interrupt::EP0DATADONE) {
+            debug!("buff status");
             self.handle_ep0datadone();
         }
         if events_to_process.is_set(Interrupt::ENDISOIN) {
@@ -1287,6 +1288,7 @@ impl<'a> Usbd<'a> {
     }
 
     fn handle_usbreset(&self) {
+        debug!("BUS RESET");
         for (ep, desc) in self.descriptors.iter().enumerate() {
             match desc.state.get() {
                 EndpointState::Disabled => {}
@@ -1709,6 +1711,7 @@ impl<'a> Usbd<'a> {
     }
 
     fn complete_ctrl_status(&self) {
+        debug!("complete ctrl");
         let endpoint = 0;
 
         self.client.map(|client| {
@@ -1752,14 +1755,15 @@ impl<'a> Usbd<'a> {
     }
 
     fn transmit_in_ep0(&self) {
+        debug!("transmit in");
         let endpoint = 0;
-
         self.client.map(|client| {
             match client.ctrl_in(endpoint) {
                 hil::usb::CtrlInResult::Packet(size, last) => {
                     if size == 0 {
                         internal_err!("Empty ctrl packet?");
                     }
+                    debug!("sent {} on transmit_in", size);
                     self.start_dma_in(endpoint, size);
                     if last {
                         self.descriptors[endpoint]
@@ -1788,12 +1792,13 @@ impl<'a> Usbd<'a> {
     /// us data. We now need to configure DMA so that the peripheral can copy us
     /// the data.
     fn transmit_out_ep0(&self) {
+        debug!("transmit out");
         let endpoint = 0;
         self.start_dma_out(endpoint);
     }
 
     fn transmit_in(&self, endpoint: usize) {
-        debug_events!("transmit_in({})", endpoint);
+        debug!("transmit_in({})", endpoint);
 
         self.client.map(|client| {
             let (transfer_type, in_state, out_state) =

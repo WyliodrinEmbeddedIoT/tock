@@ -7,7 +7,7 @@ use kernel::platform::chip::InterruptService;
 
 use crate::adc;
 use crate::clocks::Clocks;
-use crate::gpio::{RPPins, SIO};
+use crate::gpio::{RPGpio, RPPins, SIO};
 use crate::i2c;
 use crate::interrupts;
 use crate::resets::Resets;
@@ -152,6 +152,7 @@ impl<'a> Rp2040DefaultPeripherals<'a> {
         self.spi0.set_clocks(&self.clocks);
         self.uart0.set_clocks(&self.clocks);
         self.i2c0.resolve_dependencies(&self.clocks, &self.resets);
+        self.usb.set_gpio(self.pins.get_pin(RPGpio::GPIO15));
     }
 }
 

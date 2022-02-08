@@ -256,7 +256,7 @@ pub unsafe fn main() {
     peripherals.resolve_dependencies();
 
     // Set the UART used for panic
-    io::WRITER.set_uart(&peripherals.uart0);
+    // io::WRITER.set_uart(&peripherals.uart0);
 
     // Reset all peripherals except QSPI (we might be booting from Flash), PLL USB and PLL SYS
     peripherals.resets.reset_all_except(&[
@@ -344,8 +344,8 @@ pub unsafe fn main() {
     let cdc = components::cdc::CdcAcmComponent::new(
         &peripherals.usb,
         capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_RP2040,
-        0x0000,
-        0x0001,
+        0x0,
+        0x1,
         strings,
         mux_alarm,
         dynamic_deferred_caller,
@@ -358,12 +358,8 @@ pub unsafe fn main() {
 
     // UART
     // Create a shared UART channel for kernel debug.
-    let uart_mux = components::console::UartMuxComponent::new(
-        &peripherals.uart0,
-        115200,
-        dynamic_deferred_caller,
-    )
-    .finalize(());
+    let uart_mux = components::console::UartMuxComponent::new(cdc, 115200, dynamic_deferred_caller)
+        .finalize(());
 
     // Setup the console.
     let console = components::console::ConsoleComponent::new(
@@ -374,6 +370,10 @@ pub unsafe fn main() {
     .finalize(());
     // Create the debugger object that handles calls to `debug!()`.
     components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
+
+    // Configure the USB stack to enable a serial port over CDC-ACM.
+    cdc.enable();
+    cdc.attach();
 
     let gpio = GpioComponent::new(
         board_kernel,
@@ -428,7 +428,6 @@ pub unsafe fn main() {
     ));
 
     peripherals.adc.init();
-    peripherals.usb.enable();
     let adc_mux = components::adc::AdcMuxComponent::new(&peripherals.adc)
         .finalize(components::adc_mux_component_helper!(Adc));
 
@@ -530,10 +529,6 @@ pub unsafe fn main() {
         peripherals.sysinfo.get_revision(),
         platform_type
     );
-
-    // Configure the USB stack to enable a serial port over CDC-ACM.
-    cdc.enable();
-    cdc.attach();
 
     debug!("Initialization complete. Enter main loop");
 

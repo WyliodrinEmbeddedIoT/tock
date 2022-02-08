@@ -466,7 +466,9 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
                     |line_coding| {
                         // If the device is configuring the baud rate to what we
                         // expect, we continue with the connecting process.
+
                         if line_coding.baud_rate == 115200 {
+                            // kernel::debug!("baud {}", line_coding.baud_rate);
                             self.set_connecting_state(true, false);
                         }
 
@@ -645,6 +647,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
             if remaining > 0 {
                 // We do, so ask to send again.
                 self.tx_buffer.replace(tx_buf);
+                // panic!("resume from packet transmitted");
                 self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
             } else {
                 // We don't have anything to send, so that means we are
@@ -697,12 +700,14 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> uart::Transmit<'a>
             if self.state.get() == State::Connected {
                 // Then signal to the lower layer that we are ready to do a TX
                 // by putting data in the IN endpoint.
+                // panic!("resume from transmit buffer");
                 self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
                 Ok(())
             } else if self.boot_period.get() {
                 // indicate success because we will try to send it once a host connects
                 Ok(())
             } else {
+                // panic!("deferred call");
                 // indicate success, but we will not actually queue this message -- just schedule
                 // a deferred callback to return the buffer immediately.
                 self.deferred_call_pending_droptx.set(true);
@@ -775,6 +780,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> AlarmClient for CdcA
         if self.state.get() == State::ConnectingDelay {
             self.state.set(State::Connected);
             if self.tx_buffer.is_some() {
+                // panic!("resume from alarm");
                 self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
             }
         } else {
