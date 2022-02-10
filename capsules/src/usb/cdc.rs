@@ -466,9 +466,9 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
                     |line_coding| {
                         // If the device is configuring the baud rate to what we
                         // expect, we continue with the connecting process.
-
+                        kernel::debug!("baud {}", line_coding.baud_rate);
                         if line_coding.baud_rate == 115200 {
-                            // kernel::debug!("baud {}", line_coding.baud_rate);
+                            // panic!("baud {}", line_coding.baud_rate);
                             self.set_connecting_state(true, false);
                         }
 
