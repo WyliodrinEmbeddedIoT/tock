@@ -41,6 +41,8 @@ impl IoWrite for Writer {
     fn write(&mut self, buf: &[u8]) {
         let rcc = stm32f303xc::rcc::Rcc::new();
         let uart = stm32f303xc::usart::Usart::new_usart1(&rcc);
+        // uncomment this to use a different uart port
+        // let uart = stm32f303xc::usart::Usart::new_usart2(&rcc);
 
         if !self.initialized {
             self.initialized = true;

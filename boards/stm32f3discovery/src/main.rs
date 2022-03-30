@@ -49,7 +49,7 @@ const FAULT_RESPONSE: kernel::process::PanicFaultPolicy = kernel::process::Panic
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
-pub static mut STACK_MEMORY: [u8; 0x1400] = [0; 0x1400];
+pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform.
@@ -185,6 +185,19 @@ unsafe fn set_pin_primary_functions(
         pin.set_alternate_function(AlternateFunction::AF7);
     });
 
+    // uncomment this to use USART2
+    // pa2 and pa3 (USART2) are connected to the FT232R on the Disocvery Shield
+    // gpio_ports.get_pin(PinId::PA02).map(|pin| {
+    //     pin.set_mode(Mode::AlternateFunctionMode);
+    //     // AF7 is USART2_TX
+    //     pin.set_alternate_function(AlternateFunction::AF7);
+    // });
+    // gpio_ports.get_pin(PinId::PA03).map(|pin| {
+    //     pin.set_mode(Mode::AlternateFunctionMode);
+    //     // AF7 is USART2_RX
+    //     pin.set_alternate_function(AlternateFunction::AF7);
+    // });
+
     // button is connected on pa00
     gpio_ports.get_pin(PinId::PA00).map(|pin| {
         pin.enable_interrupt();
@@ -251,6 +264,7 @@ unsafe fn set_pin_primary_functions(
         pin.set_mode(stm32f303xc::gpio::Mode::AnalogMode);
     });
 
+    // comment channel 3 and 4 to use USART2
     // channel 3
     gpio_ports.get_pin(PinId::PA02).map(|pin| {
         pin.set_mode(stm32f303xc::gpio::Mode::AnalogMode);
@@ -329,6 +343,7 @@ unsafe fn set_pin_primary_functions(
 unsafe fn setup_peripherals(tim2: &stm32f303xc::tim2::Tim2) {
     // USART1 IRQn is 37
     cortexm4::nvic::Nvic::new(stm32f303xc::nvic::USART1).enable();
+    // cortexm4::nvic::Nvic::new(stm32f303xc::nvic::USART2).enable();
 
     // TIM2 IRQn is 28
     tim2.enable_clock();
@@ -411,6 +426,14 @@ pub unsafe fn main() {
         dynamic_deferred_caller,
     )
     .finalize(());
+
+    // peripherals.usart2.enable_clock();
+    // let uart_mux = components::console::UartMuxComponent::new(
+    //     &peripherals.usart2,
+    //     115200,
+    //     dynamic_deferred_caller,
+    // )
+    // .finalize(());
 
     // `finalize()` configures the underlying USART, so we need to
     // tell `send_byte()` not to configure the USART again.
@@ -714,6 +737,7 @@ pub unsafe fn main() {
         components::adc::AdcComponent::new(&adc_mux, stm32f303xc::adc::Channel::Channel2)
             .finalize(components::adc_component_helper!(stm32f303xc::adc::Adc));
 
+    // comment channels 3 and 4 to use USART2
     let adc_channel_3 =
         components::adc::AdcComponent::new(&adc_mux, stm32f303xc::adc::Channel::Channel3)
             .finalize(components::adc_component_helper!(stm32f303xc::adc::Adc));
