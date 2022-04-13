@@ -912,37 +912,41 @@ impl<'a, A: Alarm<'a>, C: ProcessManagementCapability> uart::ReceiveClient
                 0 => debug!("ProcessConsole had read of 0 bytes"),
                 1 => {
                     self.command_buffer.map(|command| {
-                        let previous_byte = self.previous_byte.get();
-                        self.previous_byte.set(read_buf[0]);
-                        let index = self.command_index.get() as usize;
-                        if read_buf[0] == ('\n' as u8) || read_buf[0] == ('\r' as u8) {
-                            if (previous_byte == ('\n' as u8) || previous_byte == ('\r' as u8))
-                                && previous_byte != read_buf[0]
+                        if read_buf[0] != 0 {
+                            let previous_byte = self.previous_byte.get();
+                            self.previous_byte.set(read_buf[0]);
+                            let index = self.command_index.get() as usize;
+                            if read_buf[0] == ('\n' as u8) || read_buf[0] == ('\r' as u8) {
+                                if (previous_byte == ('\n' as u8) || previous_byte == ('\r' as u8))
+                                    && previous_byte != read_buf[0]
+                                {
+                                    // ignore the \n or \r as it is the second byte of a \r\n sequence
+                                    // reset the sequence
+                                    self.previous_byte.set(0);
+                                } else {
+                                    self.execute.set(true);
+                                    let _ = self.write_bytes(&['\r' as u8, '\n' as u8]);
+                                }
+                            } else if read_buf[0] == ('\x08' as u8) || read_buf[0] == ('\x7F' as u8)
                             {
-                                // ignore the \n or \r as it is the second byte of a \r\n sequence
-                                // reset the sequence
-                                self.previous_byte.set(0);
-                            } else {
-                                self.execute.set(true);
-                                let _ = self.write_bytes(&['\r' as u8, '\n' as u8]);
-                            }
-                        } else if read_buf[0] == ('\x08' as u8) || read_buf[0] == ('\x7F' as u8) {
-                            if index > 0 {
-                                // Backspace, echo and remove last byte
-                                // Note echo is '\b \b' to erase
-                                let _ = self.write_bytes(&['\x08' as u8, ' ' as u8, '\x08' as u8]);
-                                command[index - 1] = '\0' as u8;
-                                self.command_index.set(index - 1);
-                            }
-                        } else if index < (command.len() - 1) && read_buf[0] < 128 {
-                            // For some reason, sometimes reads return > 127 but no error,
-                            // which causes utf-8 decoding failure, so check byte is < 128. -pal
+                                if index > 0 {
+                                    // Backspace, echo and remove last byte
+                                    // Note echo is '\b \b' to erase
+                                    let _ =
+                                        self.write_bytes(&['\x08' as u8, ' ' as u8, '\x08' as u8]);
+                                    command[index - 1] = '\0' as u8;
+                                    self.command_index.set(index - 1);
+                                }
+                            } else if index < (command.len() - 1) && read_buf[0] < 128 {
+                                // For some reason, sometimes reads return > 127 but no error,
+                                // which causes utf-8 decoding failure, so check byte is < 128. -pal
 
-                            // Echo the byte and store it
-                            let _ = self.write_byte(read_buf[0]);
-                            command[index] = read_buf[0];
-                            self.command_index.set(index + 1);
-                            command[index + 1] = 0;
+                                // Echo the byte and store it
+                                let _ = self.write_byte(read_buf[0]);
+                                command[index] = read_buf[0];
+                                self.command_index.set(index + 1);
+                                command[index + 1] = 0;
+                            }
                         }
                     });
                 }
