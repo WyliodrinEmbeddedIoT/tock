@@ -26,7 +26,7 @@ use kernel::hil;
 use kernel::hil::uart;
 use kernel::static_init;
 
-// The sum of the output_buf and internal_buf is set to a multiple of 1024 bytes in order to avoid excessive
+// The sum of the output_buf and internal_buf is set to a multiple of 4096 bytes in order to avoid excessive
 // padding between kernel memory and application memory (which often needs to be aligned to at
 // least a 1 KiB boundary). This is not _semantically_ critical, but helps keep buffers on 1 KiB
 // boundaries in some cases. Of course, these definitions are only advisory, and individual boards
@@ -34,7 +34,7 @@ use kernel::static_init;
 const DEBUG_BUFFER_KBYTE: usize = 1;
 
 // Bytes [0, DEBUG_BUFFER_SPLIT) are used for output_buf while bytes
-// [DEBUG_BUFFER_SPLIT, DEBUG_BUFFER_KBYTE * 1024) are used for internal_buf.
+// [DEBUG_BUFFER_SPLIT, DEBUG_BUFFER_KBYTE * 4096) are used for internal_buf.
 const DEBUG_BUFFER_SPLIT: usize = 64;
 
 pub struct DebugWriterComponent {
@@ -56,8 +56,8 @@ impl Component for DebugWriterComponent {
 
     unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let buf = static_init!(
-            [u8; 1024 * DEBUG_BUFFER_KBYTE],
-            [0; 1024 * DEBUG_BUFFER_KBYTE]
+            [u8; 4096 * DEBUG_BUFFER_KBYTE],
+            [0; 4096 * DEBUG_BUFFER_KBYTE]
         );
         let (output_buf, internal_buf) = buf.split_at_mut(DEBUG_BUFFER_SPLIT);
 
@@ -97,8 +97,8 @@ impl<U: uart::Uart<'static> + uart::Transmit<'static> + 'static> Component
 
     unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
         let buf = static_init!(
-            [u8; 1024 * DEBUG_BUFFER_KBYTE],
-            [0; 1024 * DEBUG_BUFFER_KBYTE]
+            [u8; 4096 * DEBUG_BUFFER_KBYTE],
+            [0; 4096 * DEBUG_BUFFER_KBYTE]
         );
         let (output_buf, internal_buf) = buf.split_at_mut(DEBUG_BUFFER_SPLIT);
 
