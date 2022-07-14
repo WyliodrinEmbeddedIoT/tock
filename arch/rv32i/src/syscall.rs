@@ -227,10 +227,13 @@ impl SysCall {
                             if !packed_syscall.did_yield {
                                 // the yield system call has no result, so we can
                                 // safely discard the packed syscall structure
-                                packed_syscall.count_remaining = packed_syscall.count_remaining - 1;
                                 packed_syscall.did_yield = true;
                                 if packed_syscall.count_remaining == 0 {
                                     state.packed_syscall = None;
+                                } else {
+                                    packed_syscall.count_remaining =
+                                        packed_syscall.count_remaining - 1;
+                                    packed_syscall.pointer = packed_syscall.pointer.offset(5);
                                 }
                                 kernel::syscall::ContextSwitchReason::SyscallFired { syscall: s }
                             } else {
