@@ -24,6 +24,7 @@ pub mod crc;
 pub mod ctap;
 pub mod dac;
 pub mod debug_process_restart;
+pub mod digits;
 pub mod driver;
 pub mod fm25cl;
 pub mod ft6x06;

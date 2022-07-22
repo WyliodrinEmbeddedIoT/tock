@@ -47,6 +47,23 @@ const UART_RX_PIN: Pin = Pin::P1_08;
 const LED_MATRIX_COLS: [Pin; 5] = [Pin::P0_28, Pin::P0_11, Pin::P0_31, Pin::P1_05, Pin::P0_30];
 const LED_MATRIX_ROWS: [Pin; 5] = [Pin::P0_21, Pin::P0_22, Pin::P0_15, Pin::P0_24, Pin::P0_19];
 
+/// Display digits
+// Cannot use simultaneously with LED matrix
+// digits: D1, D2, D3, D4
+const DIGITS: [Pin; 4] = [Pin::P1_02, Pin::P0_12, Pin::P0_30, Pin::P0_09];
+// segments: A, B, C, D, E, F, G
+const SEGMENTS: [Pin; 7] = [
+    Pin::P0_02,
+    Pin::P0_03,
+    Pin::P0_04,
+    Pin::P0_31,
+    Pin::P0_28,
+    Pin::P0_10,
+    Pin::P1_05,
+];
+// dot: Dp
+const DOT: Pin = Pin::P0_11;
+
 // Speaker
 
 const SPEAKER_PIN: Pin = Pin::P0_00;
@@ -87,11 +104,11 @@ pub struct MicroBit {
     >,
     console: &'static capsules::console::Console<'static>,
     gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
-    led: &'static capsules::led_matrix::LedMatrixDriver<
-        'static,
-        nrf52::gpio::GPIOPin<'static>,
-        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
-    >,
+    // led: &'static capsules::led_matrix::LedMatrixDriver<
+    //     'static,
+    //     nrf52::gpio::GPIOPin<'static>,
+    //     capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+    // >,
     button: &'static capsules::button::Button<'static, nrf52::gpio::GPIOPin<'static>>,
     rng: &'static capsules::rng::RngDriver<'static>,
     ninedof: &'static capsules::ninedof::NineDof<'static>,
@@ -106,6 +123,11 @@ pub struct MicroBit {
     buzzer: &'static capsules::buzzer_driver::Buzzer<
         'static,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52833::rtc::Rtc<'static>>,
+    >,
+    digit_display: &'static capsules::digits::DigitsDriver<
+        'static,
+        nrf52::gpio::GPIOPin<'static>,
+        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
     >,
     app_flash: &'static capsules::app_flash_driver::AppFlash<'static>,
     sound_pressure: &'static capsules::sound_pressure::SoundPressureSensor<'static>,
@@ -124,7 +146,7 @@ impl SyscallDriverLookup for MicroBit {
             capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules::button::DRIVER_NUM => f(Some(self.button)),
-            capsules::led_matrix::DRIVER_NUM => f(Some(self.led)),
+            //capsules::led_matrix::DRIVER_NUM => f(Some(self.led)),
             capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
             capsules::adc::DRIVER_NUM => f(Some(self.adc)),
             capsules::temperature::DRIVER_NUM => f(Some(self.temperature)),
@@ -132,6 +154,7 @@ impl SyscallDriverLookup for MicroBit {
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::buzzer_driver::DRIVER_NUM => f(Some(self.buzzer)),
+            capsules::digits::DRIVER_NUM => f(Some(self.digit_display)),
             capsules::app_flash_driver::DRIVER_NUM => f(Some(self.app_flash)),
             capsules::sound_pressure::DRIVER_NUM => f(Some(self.sound_pressure)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
@@ -538,29 +561,122 @@ pub unsafe fn main() {
     // LED Matrix
     //--------------------------------------------------------------------------
 
-    let led = components::led_matrix_component_helper!(
-        nrf52833::gpio::GPIOPin,
-        nrf52::rtc::Rtc<'static>,
-        mux_alarm,
-        @fps => 60,
-        @cols => kernel::hil::gpio::ActivationMode::ActiveLow,
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[0]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[1]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[2]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[3]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[4]],
-        @rows => kernel::hil::gpio::ActivationMode::ActiveHigh,
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[0]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[1]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[2]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[3]],
-            &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[4]]
+    // let led = components::led_matrix_component_helper!(
+    //     nrf52833::gpio::GPIOPin,
+    //     nrf52::rtc::Rtc<'static>,
+    //     mux_alarm,
+    //     @fps => 60,
+    //     @cols => kernel::hil::gpio::ActivationMode::ActiveLow,
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[0]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[1]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[2]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[3]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_COLS[4]],
+    //     @rows => kernel::hil::gpio::ActivationMode::ActiveHigh,
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[0]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[1]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[2]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[3]],
+    //         &nrf52833_peripherals.gpio_port[LED_MATRIX_ROWS[4]]
 
-    )
-    .finalize(components::led_matrix_component_buf!(
-        nrf52833::gpio::GPIOPin,
-        nrf52::rtc::Rtc<'static>
-    ));
+    // )
+    // .finalize(components::led_matrix_component_buf!(
+    //     nrf52833::gpio::GPIOPin,
+    //     nrf52::rtc::Rtc<'static>
+    // ));
+
+    //--------------------------------------------------------------------------
+    // Digit Display
+    //--------------------------------------------------------------------------
+
+    let virtual_alarm_digit = static_init!(
+        capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52833::rtc::Rtc>,
+        capsules::virtual_alarm::VirtualMuxAlarm::new(mux_alarm)
+    );
+    virtual_alarm_digit.setup();
+
+    let segment_array = static_init!(
+        [&'static nrf52::gpio::GPIOPin<'static>; 8],
+        [
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[0]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[1]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[2]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[3]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[4]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[5]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[SEGMENTS[6]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[DOT]
+            ),
+        ]
+    );
+
+    let digit_array = static_init!(
+        [&'static nrf52::gpio::GPIOPin<'static>; 4],
+        [
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[DIGITS[0]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[DIGITS[1]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[DIGITS[2]]
+            ),
+            static_init!(
+                &'static nrf52::gpio::GPIOPin<'static>,
+                &nrf52833_peripherals.gpio_port[DIGITS[3]]
+            ),
+        ]
+    );
+
+    let buffer = static_init!([u8; 4], [0; 4]);
+
+    let digit_display = static_init!(
+        capsules::digits::DigitsDriver<
+            'static,
+            nrf52::gpio::GPIOPin<'static>,
+            capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        >,
+        capsules::digits::DigitsDriver::new(
+            segment_array,
+            digit_array,
+            buffer,
+            virtual_alarm_digit,
+            kernel::hil::gpio::ActivationMode::ActiveLow,
+            kernel::hil::gpio::ActivationMode::ActiveHigh,
+            60
+        ),
+    );
+
+    virtual_alarm_digit.set_alarm_client(digit_display);
+
+    digit_display.init();
 
     //--------------------------------------------------------------------------
     // Process Console
@@ -600,7 +716,8 @@ pub unsafe fn main() {
         console,
         gpio,
         button,
-        led,
+        digit_display,
+        //led,
         rng,
         temperature,
         lsm303agr,
