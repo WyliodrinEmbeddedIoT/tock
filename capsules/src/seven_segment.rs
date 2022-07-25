@@ -111,6 +111,10 @@
 //! - `3`: Print a dot at the requested digit position.
 //!   - `data1`: The position of the dot. Starts at 1.
 //!   - Return: `Ok(())` if the index was valid, `INVAL` otherwise.
+//! - `4`: Print a custom pattern for a digit on a certain position.
+//!   - `data1`: The position of the digit. Starts at 1.
+//!   - `data2`: The custom pattern to be represented.
+//!   - Return: `Ok(())` if the index was valid, `INVAL` otherwise.
 
 use core::cell::Cell;
 
@@ -123,7 +127,7 @@ use kernel::ProcessId;
 
 /// Syscall driver number.
 use crate::driver;
-pub const DRIVER_NUM: usize = driver::NUM::Digits as usize;
+pub const DRIVER_NUM: usize = driver::NUM::SevenSegment as usize;
 
 /// Digit patterns
 //
@@ -135,44 +139,43 @@ pub const DRIVER_NUM: usize = driver::NUM::Digits as usize;
 //
 const DIGITS: [u8; 10] = [
     // pattern: 0bDpGFEDCBA
-    // 0
-    0b00111111, // 1
-    0b00000110, // 2
-    0b01011011, // 3
-    0b01001111, // 4
-    0b01100110, // 5
-    0b01101101, // 6
-    0b01111101, // 7
-    0b00100111, // 8
-    0b01111111, // 9
-    0b01101111,
+    0b00111111, // 0
+    0b00000110, // 1
+    0b01011011, // 2
+    0b01001111, // 3
+    0b01100110, // 4
+    0b01101101, // 5
+    0b01111101, // 6
+    0b00100111, // 7
+    0b01111111, // 8
+    0b01101111, // 9
 ];
 
 /// Holds an array of digits and an array of segments for each digit.
 
-pub struct DigitsDriver<'a, P: Pin, A: Alarm<'a>> {
+pub struct SevenSegmentDriver<'a, P: Pin, A: Alarm<'a>, const NUM_DIGITS: usize> {
     /// An array of 8 segments (7 for digit segments and one dot segment)
     segments: &'a [&'a P; 8],
     /// An array of 4 digits
-    digits: &'a [&'a P; 4],
+    digits: &'a [&'a P; NUM_DIGITS],
     /// A buffer which contains the patterns displayed for each digit
     /// Each element of the buffer array represents the pattern for one digit, and
     /// is a sequence of bits that have the value 1 for a lit segment and the value 0 for
     /// an unlit segment.
-    buffer: TakeCell<'a, [u8]>,
+    buffer: TakeCell<'a, [u8; NUM_DIGITS]>,
     alarm: &'a A,
     current_digit: Cell<usize>,
-    /// How fast the driver should switch between digits
+    /// How fast the driver should switch between digits (ms)
     timing: u8,
     segment_activation: ActivationMode,
     digit_activation: ActivationMode,
 }
 
-impl<'a, P: Pin, A: Alarm<'a>> DigitsDriver<'a, P, A> {
+impl<'a, P: Pin, A: Alarm<'a>, const NUM_DIGITS: usize> SevenSegmentDriver<'a, P, A, NUM_DIGITS> {
     pub fn new(
         segments: &'a [&'a P; 8],
-        digits: &'a [&'a P; 4],
-        buffer: &'a mut [u8],
+        digits: &'a [&'a P; NUM_DIGITS],
+        buffer: &'a mut [u8; NUM_DIGITS],
         alarm: &'a A,
         segment_activation: ActivationMode,
         digit_activation: ActivationMode,
@@ -296,15 +299,44 @@ impl<'a, P: Pin, A: Alarm<'a>> DigitsDriver<'a, P, A> {
             Err(ErrorCode::INVAL)
         }
     }
+
+    /// Prints a custom pattern at a requested position.
+    fn print(&self, position: usize, pattern: u8) -> Result<(), ErrorCode> {
+        if position <= self.digits.len() {
+            self.buffer.map(|bits| {
+                bits[position - 1] = pattern;
+            });
+            Ok(())
+        } else {
+            Err(ErrorCode::INVAL)
+        }
+    }
 }
 
-impl<'a, P: Pin, A: Alarm<'a>> AlarmClient for DigitsDriver<'a, P, A> {
+impl<'a, P: Pin, A: Alarm<'a>, const NUM_DIGITS: usize> AlarmClient
+    for SevenSegmentDriver<'a, P, A, NUM_DIGITS>
+{
     fn alarm(&self) {
         self.next_digit();
     }
 }
 
-impl<'a, P: Pin, A: Alarm<'a>> SyscallDriver for DigitsDriver<'a, P, A> {
+impl<'a, P: Pin, A: Alarm<'a>, const NUM_DIGITS: usize> SyscallDriver
+    for SevenSegmentDriver<'a, P, A, NUM_DIGITS>
+{
+    /// Control the digit display.
+    ///
+    /// ### `command_num`
+    ///
+    /// - `0`: Returns the number of digits on the display. This will always be 0 or
+    ///        greater, and therefore also allows for checking for this driver.
+    /// - `1`: Prints one digit at the requested position. Returns `INVAL` if the
+    ///        position is not valid.
+    /// - `2`: Clears all digits currently being displayed.
+    /// - `3`: Print a dot at the requested digit position. Returns
+    ///        `INVAL` if the position is not valid.
+    /// - `4`: Print a custom pattern for a certain digit. Returns
+    ///        `INVAL` if the position is not valid.
     fn command(
         &self,
         command_num: usize,
@@ -312,17 +344,6 @@ impl<'a, P: Pin, A: Alarm<'a>> SyscallDriver for DigitsDriver<'a, P, A> {
         data2: usize,
         _: ProcessId,
     ) -> CommandReturn {
-        /// Control the digit display.
-        ///
-        /// ### `command_num`
-        ///
-        /// - `0`: Returns the number of digits on the display. This will always be 0 or
-        ///        greater, and therefore also allows for checking for this driver.
-        /// - `1`: Prints one digit at the requested position. Returns `INVAL` if the
-        ///        position is not valid.
-        /// - `2`: Clears all digits currently being displayed.
-        /// - `3`: Print a dot at the requested digit position. Returns
-        ///        `INVAL` if the position is not valid.
         match command_num {
             // Return number of digits
             0 => CommandReturn::success_u32(self.digits.len() as u32),
@@ -335,6 +356,9 @@ impl<'a, P: Pin, A: Alarm<'a>> SyscallDriver for DigitsDriver<'a, P, A> {
 
             // Print dot
             3 => CommandReturn::from(self.print_dot(data1)),
+
+            // Print a custom pattern
+            4 => CommandReturn::from(self.print(data1, data2 as u8)),
 
             // default
             _ => CommandReturn::failure(ErrorCode::NOSUPPORT),

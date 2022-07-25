@@ -44,11 +44,13 @@ const UART_TX_PIN: Pin = Pin::P0_06;
 const UART_RX_PIN: Pin = Pin::P1_08;
 
 /// LED matrix
-const LED_MATRIX_COLS: [Pin; 5] = [Pin::P0_28, Pin::P0_11, Pin::P0_31, Pin::P1_05, Pin::P0_30];
-const LED_MATRIX_ROWS: [Pin; 5] = [Pin::P0_21, Pin::P0_22, Pin::P0_15, Pin::P0_24, Pin::P0_19];
+// const LED_MATRIX_COLS: [Pin; 5] = [Pin::P0_28, Pin::P0_11, Pin::P0_31, Pin::P1_05, Pin::P0_30];
+// const LED_MATRIX_ROWS: [Pin; 5] = [Pin::P0_21, Pin::P0_22, Pin::P0_15, Pin::P0_24, Pin::P0_19];
 
 /// Display digits
 // Cannot use simultaneously with LED matrix
+// number of digits on display (change accordingly)
+const NUM_DIGITS: usize = 4;
 // digits: D1, D2, D3, D4
 const DIGITS: [Pin; 4] = [Pin::P1_02, Pin::P0_12, Pin::P0_30, Pin::P0_09];
 // segments: A, B, C, D, E, F, G
@@ -124,10 +126,11 @@ pub struct MicroBit {
         'static,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52833::rtc::Rtc<'static>>,
     >,
-    digit_display: &'static capsules::digits::DigitsDriver<
+    seven_segment_display: &'static capsules::seven_segment::SevenSegmentDriver<
         'static,
         nrf52::gpio::GPIOPin<'static>,
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+        NUM_DIGITS,
     >,
     app_flash: &'static capsules::app_flash_driver::AppFlash<'static>,
     sound_pressure: &'static capsules::sound_pressure::SoundPressureSensor<'static>,
@@ -154,7 +157,7 @@ impl SyscallDriverLookup for MicroBit {
             capsules::rng::DRIVER_NUM => f(Some(self.rng)),
             capsules::ble_advertising_driver::DRIVER_NUM => f(Some(self.ble_radio)),
             capsules::buzzer_driver::DRIVER_NUM => f(Some(self.buzzer)),
-            capsules::digits::DRIVER_NUM => f(Some(self.digit_display)),
+            capsules::seven_segment::DRIVER_NUM => f(Some(self.seven_segment_display)),
             capsules::app_flash_driver::DRIVER_NUM => f(Some(self.app_flash)),
             capsules::sound_pressure::DRIVER_NUM => f(Some(self.sound_pressure)),
             kernel::ipc::DRIVER_NUM => f(Some(&self.ipc)),
@@ -586,14 +589,14 @@ pub unsafe fn main() {
     // ));
 
     //--------------------------------------------------------------------------
-    // Digit Display
+    // Seven Segment Display
     //--------------------------------------------------------------------------
 
-    let virtual_alarm_digit = static_init!(
+    let virtual_alarm_seven_segment = static_init!(
         capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52833::rtc::Rtc>,
         capsules::virtual_alarm::VirtualMuxAlarm::new(mux_alarm)
     );
-    virtual_alarm_digit.setup();
+    virtual_alarm_seven_segment.setup();
 
     let segment_array = static_init!(
         [&'static nrf52::gpio::GPIOPin<'static>; 8],
@@ -634,7 +637,7 @@ pub unsafe fn main() {
     );
 
     let digit_array = static_init!(
-        [&'static nrf52::gpio::GPIOPin<'static>; 4],
+        [&'static nrf52::gpio::GPIOPin<'static>; NUM_DIGITS],
         [
             static_init!(
                 &'static nrf52::gpio::GPIOPin<'static>,
@@ -655,28 +658,29 @@ pub unsafe fn main() {
         ]
     );
 
-    let buffer = static_init!([u8; 4], [0; 4]);
+    let buffer = static_init!([u8; NUM_DIGITS], [0; NUM_DIGITS]);
 
-    let digit_display = static_init!(
-        capsules::digits::DigitsDriver<
+    let seven_segment_display = static_init!(
+        capsules::seven_segment::SevenSegmentDriver<
             'static,
             nrf52::gpio::GPIOPin<'static>,
             capsules::virtual_alarm::VirtualMuxAlarm<'static, nrf52::rtc::Rtc<'static>>,
+            NUM_DIGITS,
         >,
-        capsules::digits::DigitsDriver::new(
+        capsules::seven_segment::SevenSegmentDriver::new(
             segment_array,
             digit_array,
             buffer,
-            virtual_alarm_digit,
+            virtual_alarm_seven_segment,
             kernel::hil::gpio::ActivationMode::ActiveLow,
             kernel::hil::gpio::ActivationMode::ActiveHigh,
             60
         ),
     );
 
-    virtual_alarm_digit.set_alarm_client(digit_display);
+    virtual_alarm_seven_segment.set_alarm_client(seven_segment_display);
 
-    digit_display.init();
+    seven_segment_display.init();
 
     //--------------------------------------------------------------------------
     // Process Console
@@ -716,7 +720,7 @@ pub unsafe fn main() {
         console,
         gpio,
         button,
-        digit_display,
+        seven_segment_display,
         //led,
         rng,
         temperature,
