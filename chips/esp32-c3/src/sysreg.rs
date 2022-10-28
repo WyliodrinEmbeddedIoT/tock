@@ -14,6 +14,8 @@ register_structs! {
         (0x00c => _reserved1),
         (0x010 => perip_clk_en0: ReadWrite<u32, PERIP_CLK_EN0::Register>),
         (0x014 => _reserved3),
+        (0x018 => perip_rst_en0: ReadWrite<u32, PERIP_RST_EN0::Register>),
+        (0x01C => _reserved4),
         (0x058 => sysclk_config: ReadWrite<u32, SYSCLK_CONFIG::Register>),
         (0x05C => _reserved_unimplemented_yet),
         (0x1000 => @END),
@@ -22,7 +24,11 @@ register_structs! {
 
 register_bitfields![u32,
     PERIP_CLK_EN0 [
-        TIMERGROUP0 OFFSET(13) NUMBITS(1) []
+        LEDC OFFSET(11) NUMBITS(1) [],
+        TIMERGROUP0 OFFSET(13) NUMBITS(1) [],
+    ],
+    PERIP_RST_EN0 [
+        LEDC OFFSET(11) NUMBITS(1) []
     ],
     CPU_PER_CONF [
         CPUPERIOD_SEL OFFSET(0) NUMBITS(2) [
@@ -31,7 +37,7 @@ register_bitfields![u32,
         ],
         PLL_FREQ_SEL OFFSET(2) NUMBITS(1) [
             MHz320 = 0,
-            MHz480 = 1
+            MHz480 = 1,
         ],
         CPU_WAIT_MODE_FORCE_ON OFFSET(3) NUMBITS(1) [],
         CPU_WAIT_DELAY_NUM OFFSET(4) NUMBITS(4) [],
@@ -41,10 +47,10 @@ register_bitfields![u32,
         SOC_CLK_SEL OFFSET(10) NUMBITS(2) [
             Xtal = 0,
             Pll = 1,
-            Fosc = 2
+            Fosc = 2,
         ],
         CLK_XTAL_FREQ OFFSET(12) NUMBITS(6) [],
-    ]
+    ],
 ];
 
 #[repr(u32)]
@@ -84,6 +90,31 @@ impl SysReg {
             CPU_PER_CONF::PLL_FREQ_SEL.val(pll_frequency as u32)
                 + CPU_PER_CONF::CPUPERIOD_SEL.val(cpu_frequency as u32),
         );
+    }
+
+    //Enable the APB_CLK signal to LED PWM
+    pub fn enable_ledc(&self) {
+        self.registers
+            .perip_clk_en0
+            .modify(PERIP_CLK_EN0::LEDC::SET);
+    }
+
+    //Disable the APB_CLK signal to LED PWM
+    pub fn disable_ledc(&self) {
+        self.registers
+            .perip_clk_en0
+            .modify(PERIP_CLK_EN0::LEDC::CLEAR);
+    }
+
+    pub fn is_enabled_ledc(&self) -> bool {
+        self.registers.perip_clk_en0.is_set(PERIP_CLK_EN0::LEDC)
+    }
+
+    //Reset the APB_CLK signal for LED PWM
+    pub fn reset_ledc(&self) {
+        self.registers
+            .perip_rst_en0
+            .modify(PERIP_RST_EN0::LEDC::SET);
     }
 
     pub fn enable_timg0(&self) {
