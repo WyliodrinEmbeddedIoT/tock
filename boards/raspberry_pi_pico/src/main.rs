@@ -314,7 +314,7 @@ pub unsafe fn main() {
     let memory_allocation_capability = create_capability!(capabilities::MemoryAllocationCapability);
 
     let dynamic_deferred_call_clients =
-        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+        static_init!([DynamicDeferredCallClientState; 3], Default::default());
     let dynamic_deferred_caller = static_init!(
         DynamicDeferredCall,
         DynamicDeferredCall::new(dynamic_deferred_call_clients)
@@ -358,18 +358,23 @@ pub unsafe fn main() {
 
     // UART
     // Create a shared UART channel for kernel debug.
-    let uart_mux = components::console::UartMuxComponent::new(cdc, 115200, dynamic_deferred_caller)
-        .finalize(());
+    // replace cdc with &peripherals.uart0 for serial debugging
+
+    let uart_mux1 = components::console::UartMuxComponent::new(cdc, 115200, dynamic_deferred_caller)
+        .finalize(components::uart_mux_component_helper!(64));
+
+    let uart_mux2 = components::console::UartMuxComponent::new(&peripherals.uart0, 115200, dynamic_deferred_caller)
+        .finalize(components::uart_mux_component_helper!(64));
 
     // Setup the console.
     let console = components::console::ConsoleComponent::new(
         board_kernel,
         capsules::console::DRIVER_NUM,
-        uart_mux,
+        uart_mux1,
     )
-    .finalize(());
+    .finalize(components::console_component_helper!());
     // Create the debugger object that handles calls to `debug!()`.
-    components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
+    components::debug_writer::DebugWriterComponent::new(uart_mux2).finalize(());
 
     // Configure the USB stack to enable a serial port over CDC-ACM.
     cdc.enable();
@@ -470,7 +475,7 @@ pub unsafe fn main() {
             ));
     // PROCESS CONSOLE
     let process_console =
-        components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
+        components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux1)
             .finalize(());
     let _ = process_console.start();
 
@@ -524,13 +529,13 @@ pub unsafe fn main() {
         sysinfo::Platform::Fpga => "FPGA",
     };
 
-    debug!(
-        "RP2040 Revision {} {}",
-        peripherals.sysinfo.get_revision(),
-        platform_type
-    );
+    // debug!(
+    //     "RP2040 Revision {} {}",
+    //     peripherals.sysinfo.get_revision(),
+    //     platform_type
+    // );
 
-    debug!("Initialization complete. Enter main loop");
+    // debug!("Initialization complete. Enter main loop");
 
     /// These symbols are defined in the linker script.
     extern "C" {

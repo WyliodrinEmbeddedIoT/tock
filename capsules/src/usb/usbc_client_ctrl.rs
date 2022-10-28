@@ -206,12 +206,12 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
 
                         match transfer_direction {
                             TransferDirection::HostToDevice => {
-                                // kernel::debug!("HostToDevice");
+                                //kernel::debug!("HostToDevice");
                                 self.state[endpoint].set(State::CtrlOut);
                                 hil::usb::CtrlSetupResult::Ok
                             }
                             TransferDirection::DeviceToHost => {
-                                // kernel::debug!("DeviceToHost");
+                                //kernel::debug!("DeviceToHost");
                                 // Arrange to send some crap back
                                 let buf = self.descriptor_buf();
                                 buf[0].set(0xa);
@@ -223,7 +223,9 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                         }
                     },
                     |request| match recipient {
-                        Recipient::Device => self.handle_standard_device_request(endpoint, request),
+                        Recipient::Device => {
+                            self.handle_standard_device_request(endpoint, request)
+                        },
                         Recipient::Interface => {
                             self.handle_standard_interface_request(endpoint, request)
                         }
@@ -246,11 +248,11 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                 lang_id,
                 requested_length,
             } => {
-                // kernel::debug!("GET_DESCRIPTOR");
+                //kernel::debug!("GET_DESCRIPTOR");
                 match descriptor_type {
                     DescriptorType::Device => match descriptor_index {
                         0 => {
-                            // kernel::debug!("DEVICE");
+                            //kernel::debug!("DEVICE");
                             let buf = self.descriptor_buf();
                             let len = self.device_descriptor_buffer.write_to(buf);
 
@@ -263,7 +265,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                     },
                     DescriptorType::Configuration => match descriptor_index {
                         0 => {
-                            // kernel::debug!("CONFIG");
+                            //kernel::debug!("CONFIG");
                             let buf = self.descriptor_buf();
                             let len = self.other_descriptor_buffer.write_to(buf);
 
@@ -276,7 +278,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                     DescriptorType::String => {
                         if let Some(len) = match descriptor_index {
                             0 => {
-                                // kernel::debug!("STRING");
+                                //kernel::debug!("STRING");
                                 let buf = self.descriptor_buf();
                                 let d = LanguagesDescriptor {
                                     langs: self.language,
@@ -305,7 +307,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                         }
                     }
                     DescriptorType::DeviceQualifier => {
-                        // kernel::debug!("DEVICE QUALI");
+                        //kernel::debug!("DEVICE QUALI");
                         // We are full-speed only, so we must
                         // respond with a request error
                         hil::usb::CtrlSetupResult::ErrNoDeviceQualifier
@@ -314,7 +316,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                 } // match descriptor_type
             }
             StandardRequest::SetAddress { device_address } => {
-                // kernel::debug!("SET ADDR {}", device_address);
+                //kernel::debug!("SET ADDR {}", device_address);
                 // Load the address we've been assigned ...
                 self.controller.set_address(device_address);
 
@@ -324,7 +326,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                 hil::usb::CtrlSetupResult::OkSetAddress
             }
             StandardRequest::SetConfiguration { .. } => {
-                // kernel::debug!("SET CONFIG");
+                //kernel::debug!("SET CONFIG");
                 // We have been assigned a particular configuration: fine!
                 hil::usb::CtrlSetupResult::Ok
             }
@@ -384,9 +386,11 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                     let packet = &self.descriptor_storage[start..start + packet_bytes];
                     let buf = &self.ctrl_buffer.buf;
 
+                    //kernel::debug!("ctrl_in");
                     // Copy a packet into the endpoint buffer
                     for (i, b) in packet.iter().enumerate() {
                         buf[i].set(b.get());
+                        //kernel::debug!("{} ", buf[i].get());
                     }
 
                     let start = start + packet_bytes;
@@ -408,10 +412,12 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
     pub fn ctrl_out(&'a self, endpoint: usize, _packet_bytes: u32) -> hil::usb::CtrlOutResult {
         match self.state[endpoint].get() {
             State::CtrlOut => {
+                kernel::debug!("ctrl out ok");
                 // Gamely accept the data
                 hil::usb::CtrlOutResult::Ok
             }
             _ => {
+                kernel::debug!("ctrl out bad");
                 // Bad state
                 hil::usb::CtrlOutResult::Halted
             }

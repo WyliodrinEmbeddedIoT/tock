@@ -355,6 +355,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> CdcAcm<'a, U, A> {
     fn set_connecting_state(&self, line_coding: bool, line_state: bool) {
         match self.state.get() {
             State::Enumerated => {
+                kernel::debug!("Enumerated, now connecting");
                 self.state.set(State::Connecting {
                     line_coding: line_coding,
                     line_state: line_state,
@@ -407,6 +408,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
 
     fn bus_reset(&'a self) {
         // We take a bus reset to mean the enumeration has finished.
+        kernel::debug!("Enumerated");
         self.state.set(State::Enumerated);
     }
 
@@ -417,9 +419,9 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
     fn ctrl_setup(&'a self, endpoint: usize) -> hil::usb::CtrlSetupResult {
         descriptors::SetupData::get(&self.client_ctrl.ctrl_buffer.buf).map(|setup_data| {
             let b_request = setup_data.request_code;
-
             match CDCCntrlMessage::from(b_request) {
                 CDCCntrlMessage::SetLineCoding => {
+                    kernel::debug!("set line coding in ctrl_setup");
                     self.ctrl_state.set(CtrlState::SetLineCoding);
                 }
                 CDCCntrlMessage::SetControlLineState => {
@@ -434,6 +436,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
                     // Currently we don't care about the value, just that this
                     // event has occurred. If it has happened, update the flag
                     // in `State::Connecting`.
+                    kernel::debug!("set control line state");
                     self.set_connecting_state(false, true);
 
                     self.ctrl_state.set(CtrlState::SetControlLineState);
@@ -458,17 +461,21 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
     /// Handle a Control Out transaction
     fn ctrl_out(&'a self, endpoint: usize, packet_bytes: u32) -> hil::usb::CtrlOutResult {
         // Check what state our Ctrl endpoint is in.
+        //kernel::debug!("ctrl out");
         match self.ctrl_state.get() {
             CtrlState::SetLineCoding => {
+                kernel::debug!("set line coding");
                 // We got a Ctrl SET_LINE_CODING setup, now we are getting the data.
                 // We can parse the data we got.
                 descriptors::CdcAcmSetLineCodingData::get(&self.client_ctrl.ctrl_buffer.buf).map(
-                    |line_coding| {
+                    |mut line_coding| {
                         // If the device is configuring the baud rate to what we
                         // expect, we continue with the connecting process.
                         kernel::debug!("baud {}", line_coding.baud_rate);
+                        //line_coding.baud_rate = 115200;
                         if line_coding.baud_rate == 115200 {
-                            // panic!("baud {}", line_coding.baud_rate);
+                            //panic!("baud {}", line_coding.baud_rate);
+                            kernel::debug!("set connecting state");
                             self.set_connecting_state(true, false);
                         }
 
@@ -531,6 +538,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
     fn packet_in(&'a self, transfer_type: TransferType, endpoint: usize) -> hil::usb::InResult {
         match transfer_type {
             TransferType::Bulk => {
+                kernel::debug!("bulk");
                 self.tx_buffer
                     .take()
                     .map_or(hil::usb::InResult::Delay, |tx_buf| {
@@ -576,6 +584,7 @@ impl<'a, U: hil::usb::UsbController<'a>, A: 'a + Alarm<'a>> hil::usb::Client<'a>
                     })
             }
             TransferType::Control | TransferType::Isochronous | TransferType::Interrupt => {
+                kernel::debug!("delay");
                 // Nothing to do for CDC ACM.
                 hil::usb::InResult::Delay
             }

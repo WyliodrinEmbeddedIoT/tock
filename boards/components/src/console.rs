@@ -12,34 +12,50 @@
 //! ```rust
 //! let uart_mux = UartMuxComponent::new(&sam4l::usart::USART3,
 //!                                      115200,
-//!                                      deferred_caller).finalize(());
-//! let console = ConsoleComponent::new(board_kernel, uart_mux).finalize(());
+//!                                      deferred_caller).finalize(components::uart_mux_component_helper!(64));
+//! let console = ConsoleComponent::new(board_kernel, uart_mux)
+//!    .finalize(console_component_helper!());
 //! ```
 // Author: Philip Levis <pal@cs.stanford.edu>
 // Last modified: 1/08/2020
 
+use core::mem::MaybeUninit;
+
 use capsules::console;
 use capsules::virtual_uart::{MuxUart, UartDevice};
-use kernel::capabilities;
 use kernel::component::Component;
 use kernel::create_capability;
 use kernel::dynamic_deferred_call::DynamicDeferredCall;
 use kernel::hil;
 use kernel::hil::uart;
-use kernel::static_init;
+use kernel::utilities::static_init::StaticUninitializedBuffer;
+use kernel::{capabilities, static_init_half};
 
-pub struct UartMuxComponent {
+use capsules::console::DEFAULT_BUF_SIZE;
+
+#[macro_export]
+macro_rules! uart_mux_component_helper {
+    ($rx_buffer_len: literal) => {{
+        use capsules::virtual_uart::MuxUart;
+        use core::mem::MaybeUninit;
+        static mut UART_MUX: MaybeUninit<MuxUart<'static>> = MaybeUninit::uninit();
+        static mut RX_BUF: [u8; $rx_buffer_len] = [0; $rx_buffer_len];
+        (&mut UART_MUX, &mut RX_BUF)
+    }};
+}
+
+pub struct UartMuxComponent<const RX_BUF_LEN: usize> {
     uart: &'static dyn uart::Uart<'static>,
     baud_rate: u32,
     deferred_caller: &'static DynamicDeferredCall,
 }
 
-impl UartMuxComponent {
+impl<const RX_BUF_LEN: usize> UartMuxComponent<RX_BUF_LEN> {
     pub fn new(
         uart: &'static dyn uart::Uart<'static>,
         baud_rate: u32,
         deferred_caller: &'static DynamicDeferredCall,
-    ) -> UartMuxComponent {
+    ) -> UartMuxComponent<RX_BUF_LEN> {
         UartMuxComponent {
             uart,
             baud_rate,
@@ -48,24 +64,21 @@ impl UartMuxComponent {
     }
 }
 
-impl Component for UartMuxComponent {
-    type StaticInput = ();
+impl<const RX_BUF_LEN: usize> Component for UartMuxComponent<RX_BUF_LEN> {
+    type StaticInput = (
+        &'static mut MaybeUninit<MuxUart<'static>>,
+        &'static mut [u8; RX_BUF_LEN],
+    );
     type Output = &'static MuxUart<'static>;
 
-    unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
-        let uart_mux = static_init!(
+    unsafe fn finalize(self, s: Self::StaticInput) -> Self::Output {
+        let uart_mux = static_init_half!(
+            s.0,
             MuxUart<'static>,
-            MuxUart::new(
-                self.uart,
-                &mut capsules::virtual_uart::RX_BUF,
-                self.baud_rate,
-                self.deferred_caller,
-            )
+            MuxUart::new(self.uart, s.1, self.baud_rate, self.deferred_caller,)
         );
         uart_mux.initialize_callback_handle(
-            self.deferred_caller
-                .register(uart_mux)
-                .expect("no deferred call slot available for uart mux"),
+            self.deferred_caller.register(uart_mux).unwrap(), // Unwrap fail = no deferred call slot available for uart mux
         );
 
         uart_mux.initialize();
@@ -74,6 +87,21 @@ impl Component for UartMuxComponent {
 
         uart_mux
     }
+}
+
+#[macro_export]
+macro_rules! console_component_helper {
+    () => {{
+        use capsules::console::{Console, DEFAULT_BUF_SIZE};
+        use capsules::virtual_uart::UartDevice;
+        use kernel::static_buf;
+        let read_buf = static_buf!([u8; DEFAULT_BUF_SIZE]);
+        let write_buf = static_buf!([u8; DEFAULT_BUF_SIZE]);
+        // Create virtual device for console.
+        let console_uart = static_buf!(UartDevice);
+        let console = static_buf!(Console<'static>);
+        (write_buf, read_buf, console_uart, console)
+    }};
 }
 
 pub struct ConsoleComponent {
@@ -97,25 +125,30 @@ impl ConsoleComponent {
 }
 
 impl Component for ConsoleComponent {
-    type StaticInput = ();
+    type StaticInput = (
+        StaticUninitializedBuffer<[u8; DEFAULT_BUF_SIZE]>,
+        StaticUninitializedBuffer<[u8; DEFAULT_BUF_SIZE]>,
+        StaticUninitializedBuffer<UartDevice<'static>>,
+        StaticUninitializedBuffer<console::Console<'static>>,
+    );
     type Output = &'static console::Console<'static>;
 
-    unsafe fn finalize(self, _s: Self::StaticInput) -> Self::Output {
+    unsafe fn finalize(self, s: Self::StaticInput) -> Self::Output {
         let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
 
-        // Create virtual device for console.
-        let console_uart = static_init!(UartDevice, UartDevice::new(self.uart_mux, true));
+        let write_buffer = s.0.initialize([0; DEFAULT_BUF_SIZE]);
+
+        let read_buffer = s.1.initialize([0; DEFAULT_BUF_SIZE]);
+
+        let console_uart = s.2.initialize(UartDevice::new(self.uart_mux, true));
         console_uart.setup();
 
-        let console = static_init!(
-            console::Console<'static>,
-            console::Console::new(
-                console_uart,
-                &mut console::WRITE_BUF,
-                &mut console::READ_BUF,
-                self.board_kernel.create_grant(self.driver_num, &grant_cap)
-            )
-        );
+        let console = s.3.initialize(console::Console::new(
+            console_uart,
+            write_buffer,
+            read_buffer,
+            self.board_kernel.create_grant(self.driver_num, &grant_cap),
+        ));
         hil::uart::Transmit::set_transmit_client(console_uart, console);
         hil::uart::Receive::set_receive_client(console_uart, console);
 

@@ -51,6 +51,8 @@ use kernel::{ErrorCode, ProcessId};
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::Console as usize;
 
+pub const DEFAULT_BUF_SIZE: usize = 64;
+
 #[derive(Default)]
 pub struct App {
     write_buffer: ReadOnlyProcessBuffer,

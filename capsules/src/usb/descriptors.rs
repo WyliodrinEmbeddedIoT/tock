@@ -44,6 +44,9 @@ pub struct SetupData {
 impl SetupData {
     /// Create a `SetupData` structure from a packet received from the wire
     pub fn get(p: &[VolatileCell<u8>]) -> Option<Self> {
+        // panic!("request_type: {:?}, request_code: {:?}, value: {:?}, index: {:?}",
+        // DeviceRequestType(p[0].get()), p[1].get(), get_u16(p[2].get(), p[3].get()), get_u16(p[4].get(), p[5].get()));
+        //kernel::debug!("setup data: {} {} {} {} {} {} {} {}", p[0].get(), p[1].get(), p[2].get(), p[3].get(), p[4].get(), p[5].get(), p[6].get(), p[7].get());
         if p.len() < 8 {
             return None;
         }
@@ -873,9 +876,11 @@ impl CdcAcmSetLineCodingData {
     /// Create a `CdcAcmSetLineCodingData` structure from a packet received
     /// after the ctrl endpoint setup.
     pub fn get(p: &[VolatileCell<u8>]) -> Option<Self> {
+        kernel::debug!("set line coding data: {} {} {} {} {} {} {} {}", p[0].get(), p[1].get(), p[2].get(), p[3].get(), p[4].get(), p[5].get(), p[6].get(), p[7].get());
         if p.len() < 7 {
             return None;
         }
+        //panic!("{} {} {} {} = {}", p[0].get(), p[1].get(), p[2].get(), p[3].get(), get_u32(p[0].get(), p[1].get(), p[2].get(), p[3].get()));
         Some(CdcAcmSetLineCodingData {
             baud_rate: get_u32(p[0].get(), p[1].get(), p[2].get(), p[3].get()),
             stop_bits: p[4].get(),
