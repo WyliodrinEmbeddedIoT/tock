@@ -148,6 +148,7 @@ unsafe fn setup() -> (
     peripherals.rtc_cntl.disable_super_wdt();
     peripherals.sysreg.disable_timg0();
     peripherals.sysreg.enable_timg0();
+    peripherals.sysreg.enable_ledc();
 
     peripherals
         .sysreg

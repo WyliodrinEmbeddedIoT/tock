@@ -1,5 +1,3 @@
-use core::convert::From;
-use core::panic;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
 use kernel::utilities::StaticRef;
@@ -51,25 +49,32 @@ register_bitfields! [u32,
         TIMER_SEL_CH OFFSET(0) NUMBITS(2) [],
         //set to enable signal output on channel n
         SIG_OUT_EN_CH OFFSET(2) NUMBITS(1) [],
-        //used to control the output value when channel n is inactive(LEDC_SIG_OUT_EN_CHn == 0)
+        //controls the output value when channel n is inactive(LEDC_SIG_OUT_EN_CHn == 0)
         IDLE_LV_CH OFFSET(3) NUMBITS(1) [],
         //used to update the listed fields below for channel n; is automatically cleared by hardware
         //HPOINT_CHn, DUTY_START_CHn, SIG_OUT_EN_CHn, TIMER_SEL_CHn, DUTY_NUM_CHn, DUTY_CYCLE_CHn,
         //DUTY_SCALE_CHn, DUTY_INC_CHn and OVF_CNT_EN_CHn
         PARA_UP_CH OFFSET(4) NUMBITS(1) [],
-        //used to configure maximum times of overflow - 1
+        //configures maximum times of overflow - 1
         //LEDC_OVF_CNT_CHn_INT will be triggered when channel n overflows for (LEDC_OVF_NUM_CHn + 1) times
         OVF_NUM_CH OFFSET(5) NUMBITS(10) [],
-        //used to count the number of times when the timer selected by channel n overflows
+        //counts the number of times when the timer selected by channel n overflows
         OVF_CNT_EN_CH OFFSET(15) NUMBITS(1) [],
         //set to reset timer-overflow counter of channel n
         OVF_CNT_RESET_CH OFFSET(16) NUMBITS(1) [],
     ],
     LEDC_CH_CONF1 [
+        //configures the step size of the duty cucle change during fading
         DUTY_SCALE_CH OFFSET(0) NUMBITS(10) [],
+        //sets the number of counter overflow cycles for every Lpointn increment/decrement
         DUTY_CYCLE_CH OFFSET(10) NUMBITS(10) [],
+        //controls the number of times the duty cycle will be incremented/decremented
         DUTY_NUM_CH OFFSET(20) NUMBITS(10) [],
+        //determines the monotony of the duty cycle of the output signal on channel n
+        //0: Decreases
+        //1: Increases
         DUTY_INC_CH OFFSET(30) NUMBITS(1) [],
+        //set to enable duty cycle fading on channel n
         DUTY_START_CH OFFSET(31) NUMBITS(1) [],
     ],
     LEDC_CONF [
@@ -84,9 +89,13 @@ register_bitfields! [u32,
         CLK_EN OFFSET(31) NUMBITS(1) [],
     ],
     LEDC_CH_HPOINT [
+        //signal output value changes to high when the selected timer
+        //has reached the value in this field
         HPOINT_CH OFFSET(0) NUMBITS(14) [],
     ],
     LEDC_CH_DUTY [
+        //signal output value changes to low when the selected timer
+        //has reached the value specified in this field
         DUTY_CH OFFSET(0) NUMBITS(19) [],
     ],
     LEDC_CH_DUTY_R [
@@ -161,6 +170,7 @@ register_bitfields! [u32,
     ]
 ];
 
+#[derive(Copy, Clone)]
 pub enum Timer {
     Timer0 = 0,
     Timer1 = 1,
@@ -184,7 +194,7 @@ pub enum ClockSource {
     Xtal = 3,
 }
 
-struct LedPwm {
+pub struct LedPwm {
     registers: StaticRef<LedPwmRegisters>,
     //maybe add an array with the current specs for each timer and pwm ?
 }
@@ -255,10 +265,6 @@ impl LedPwm {
             self.registers.ledc_ch[pwm as usize]
                 .conf0
                 .modify(LEDC_CH_CONF0::TIMER_SEL_CH.val(timer as u32));
-            //update the TIMER_SEL_CH field
-            self.registers.ledc_ch[pwm as usize]
-                .conf0
-                .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
 
             //enable the overflow counter
             self.registers.ledc_ch[pwm as usize]
@@ -276,7 +282,158 @@ impl LedPwm {
             self.registers
                 .ledc_int_ena
                 .set(self.registers.ledc_int_ena.get() | mask);
-            let _ = self.configure_counter_range(timer, timer_range_exponent);
+
+            if let Err(e) = self.configure_counter_range(timer, timer_range_exponent) {
+                return Err(e);
+            };
+
+            //update the new configuration
+            self.registers.ledc_ch[pwm as usize]
+                .conf0
+                .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+            Ok(())
+        }
+    }
+
+    pub fn set_pwm_timer(&self, pwm: Pwm, timer: Timer) {
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::TIMER_SEL_CH.val(timer as u32));
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+    }
+
+    //if Timerx_cnt == high_point => sig_outn = 1
+    //if Timerx_cnt == lowpoint => sig_outn = 0
+    pub fn configure_fixed_duty_cycle(
+        &self,
+        pwm: Pwm,
+        high_point: u32,
+        low_point: u32,
+    ) -> Result<(), ErrorCode> {
+        if high_point >= 16384 || low_point >= 32768 {
+            Err(ErrorCode::SIZE)
+        } else if high_point > low_point {
+            Err(ErrorCode::INVAL)
+        } else {
+            self.registers.ledc_ch[pwm as usize]
+                .hpoint
+                .modify(LEDC_CH_HPOINT::HPOINT_CH.val(high_point));
+            self.registers.ledc_ch[pwm as usize]
+                .duty
+                .modify(LEDC_CH_DUTY::DUTY_CH.val(low_point << 4));
+            self.registers.ledc_ch[pwm as usize]
+                .conf0
+                .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+            Ok(())
+        }
+    }
+
+    pub fn enable_signal_output(&self, pwm: Pwm) {
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::SIG_OUT_EN_CH::SET);
+
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+    }
+
+    pub fn disable_signal_output(&self, pwm: Pwm, idle_level: bool) {
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::SIG_OUT_EN_CH::CLEAR);
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(if idle_level {
+                LEDC_CH_CONF0::IDLE_LV_CH::SET
+            } else {
+                LEDC_CH_CONF0::IDLE_LV_CH::CLEAR
+            });
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+    }
+
+    pub fn set_special_cycles(&self, pwm: Pwm, cycles_number: u32) -> Result<(), ErrorCode> {
+        if cycles_number >= 16 {
+            Err(ErrorCode::SIZE)
+        } else {
+            self.registers.ledc_ch[pwm as usize]
+                .duty
+                .modify(LEDC_CH_DUTY::DUTY_CH.val(cycles_number));
+            self.registers.ledc_ch[pwm as usize]
+                .conf0
+                .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+            Ok(())
+        }
+    }
+
+    pub fn enable_duty_cycle_fading(&self, pwm: Pwm) {
+        self.registers.ledc_ch[pwm as usize]
+            .conf1
+            .modify(LEDC_CH_CONF1::DUTY_START_CH::SET);
+
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+    }
+
+    pub fn disable_duty_cycle_fading(&self, pwm: Pwm) {
+        self.registers.ledc_ch[pwm as usize]
+            .conf1
+            .modify(LEDC_CH_CONF1::DUTY_START_CH::CLEAR);
+
+        self.registers.ledc_ch[pwm as usize]
+            .conf0
+            .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
+    }
+
+    pub fn configure_fading_duty_cycle(
+        &self,
+        pwm: Pwm,
+        high_point: u32,
+        low_point: u32,
+        counter_overflow_cycles: u32,
+        step: u32,
+        steps_number: u32,
+        monotony: i8,
+    ) -> Result<(), ErrorCode> {
+        if counter_overflow_cycles >= 1024 || step >= 1024 || steps_number >= 1024 {
+            Err(ErrorCode::SIZE)
+        } else {
+            //set the high and low point of the soon-to-be fading duty cycle
+            if let Err(e) = self.configure_fixed_duty_cycle(pwm, high_point, low_point) {
+                return Err(e);
+            };
+
+            //Lpointn will be incremented/decremented after DUTY_CYCLE_CHn counter overflows
+            self.registers.ledc_ch[pwm as usize]
+                .conf1
+                .modify(LEDC_CH_CONF1::DUTY_CYCLE_CH.val(counter_overflow_cycles));
+
+            self.registers.ledc_ch[pwm as usize]
+                .conf1
+                .modify(if monotony > 0 {
+                    LEDC_CH_CONF1::DUTY_INC_CH::SET
+                } else {
+                    LEDC_CH_CONF1::DUTY_INC_CH::CLEAR
+                });
+
+            self.enable_duty_cycle_fading(pwm);
+
+            self.registers.ledc_ch[pwm as usize]
+                .conf1
+                .modify(LEDC_CH_CONF1::DUTY_SCALE_CH.val(step));
+
+            self.registers.ledc_ch[pwm as usize]
+                .conf1
+                .modify(LEDC_CH_CONF1::DUTY_NUM_CH.val(steps_number));
+
+            self.registers.ledc_ch[pwm as usize]
+                .conf0
+                .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
             Ok(())
         }
     }

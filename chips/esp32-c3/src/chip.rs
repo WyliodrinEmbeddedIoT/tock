@@ -13,6 +13,7 @@ use rv32i::syscall::SysCall;
 
 use crate::intc::{Intc, IntcRegisters};
 use crate::interrupts;
+use crate::led_pwm;
 use crate::sysreg;
 use crate::timg;
 
@@ -35,6 +36,7 @@ pub struct Esp32C3DefaultPeripherals<'a> {
     pub gpio: esp32::gpio::Port<'a>,
     pub rtc_cntl: esp32::rtc_cntl::RtcCntl,
     pub sysreg: sysreg::SysReg,
+    pub led_pwm: led_pwm::LedPwm,
 }
 
 impl<'a> Esp32C3DefaultPeripherals<'a> {
@@ -46,6 +48,7 @@ impl<'a> Esp32C3DefaultPeripherals<'a> {
             gpio: esp32::gpio::Port::new(),
             rtc_cntl: esp32::rtc_cntl::RtcCntl::new(esp32::rtc_cntl::RTC_CNTL_BASE),
             sysreg: sysreg::SysReg::new(),
+            led_pwm: led_pwm::LedPwm::new(),
         }
     }
 }
