@@ -68,6 +68,11 @@ impl<'a> InterruptService<()> for Esp32C3DefaultPeripherals<'a> {
             interrupts::IRQ_GPIO | interrupts::IRQ_GPIO_NMI => {
                 self.gpio.handle_interrupt();
             }
+            interrupts::IRQ_LEDC => {
+                //handler is unimplemented yet
+                //not sure exactly what to do :)
+                self.led_pwm.handle_interrupt();
+            }
             _ => return false,
         }
         true
