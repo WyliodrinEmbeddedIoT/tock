@@ -197,9 +197,20 @@ pub enum ClockSource {
     Xtal = 3,
 }
 
+//Duty cycles can be of two types
 pub enum DutyCycle {
     Fixed(u32, u32),
+    //with a payload used to store:
+    // - highpoint value
+    // - lowpoint value
     Fading(u32, u32, u32, i32, u32, u32),
+    //with a payload used to store:
+    // - highpoint value
+    // - lowpoint value
+    // - the number of counter overflows after which the lowpoint value will be incremented/decremented
+    // - (+/-)1 value that determines whether the duty cycle output signal increases or decreases
+    // - step size of the duty cycle change
+    // - the number of times the duty cycle will be changed
 }
 
 pub struct LedPwm {
@@ -291,7 +302,7 @@ impl LedPwm {
         Ok(())
     }
 
-    //functions that configure the pwm generator
+    // functions that configure the pwm generator
 
     pub fn set_pwm_timer(&self, pwm: Pwm, timer: Timer) {
         self.registers.ledc_ch[pwm as usize]
