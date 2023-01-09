@@ -1,3 +1,4 @@
+use kernel::hil;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
 use kernel::utilities::StaticRef;
@@ -182,7 +183,7 @@ pub enum Timer {
 }
 
 #[derive(Copy, Clone)]
-pub enum Pwm {
+pub enum PwmChannel {
     Pwm0 = 0,
     Pwm1 = 1,
     Pwm2 = 2,
@@ -193,7 +194,7 @@ pub enum Pwm {
 
 pub enum ClockSource {
     Apb = 1,
-    Fosc = 2,
+    RcFast = 2,
     Xtal = 3,
 }
 
@@ -225,7 +226,7 @@ impl LedPwm {
         }
     }
 
-    //functions that configure the timers
+    // functions that configure the timers
 
     pub fn set_clk_source(&self, clock: ClockSource) {
         self.registers
@@ -304,7 +305,7 @@ impl LedPwm {
 
     // functions that configure the pwm generator
 
-    pub fn set_pwm_timer(&self, pwm: Pwm, timer: Timer) {
+    pub fn set_pwm_timer(&self, pwm: PwmChannel, timer: Timer) {
         self.registers.ledc_ch[pwm as usize]
             .conf0
             .modify(LEDC_CH_CONF0::TIMER_SEL_CH.val(timer as u32));
@@ -314,7 +315,7 @@ impl LedPwm {
         todo!("This will cause the newly configured values to take effect upon the next overflow of the counter.");
     }
 
-    pub fn enable_overflow_counting(&self, pwm: Pwm) {
+    pub fn enable_overflow_counting(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf0
             .modify(LEDC_CH_CONF0::OVF_CNT_EN_CH::SET);
@@ -323,7 +324,7 @@ impl LedPwm {
             .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
     }
 
-    pub fn disable_overflows_counting(&self, pwm: Pwm) {
+    pub fn disable_overflows_counting(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf0
             .modify(LEDC_CH_CONF0::OVF_CNT_EN_CH::CLEAR);
@@ -332,14 +333,18 @@ impl LedPwm {
             .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
     }
 
-    pub fn reset_timer_overflow_counter(&self, pwm: Pwm) {
+    pub fn reset_timer_overflow_counter(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf0
             .modify(LEDC_CH_CONF0::OVF_CNT_RESET_CH::SET);
         todo!("is it cleared by hardware or should i do it manually ?");
     }
 
-    pub fn set_overflows_to_generate_interrupt(&self, pwm: Pwm, nr: u32) -> Result<(), ErrorCode> {
+    pub fn set_overflows_to_generate_interrupt(
+        &self,
+        pwm: PwmChannel,
+        nr: u32,
+    ) -> Result<(), ErrorCode> {
         if nr >= 1024 {
             Err(ErrorCode::SIZE)
         } else {
@@ -350,14 +355,14 @@ impl LedPwm {
         }
     }
 
-    pub fn enable_overflows_interrupt(&self, pwm: Pwm) {
+    pub fn enable_overflows_interrupt(&self, pwm: PwmChannel) {
         let mask: u32 = 0b0000_0000_0000_0000_0000_0100_0000_0000 << (pwm as u32);
         self.registers
             .ledc_int_ena
             .set(self.registers.ledc_int_ena.get() | mask);
     }
 
-    pub fn disable_overflows_interrupt(&self, pwm: Pwm) {
+    pub fn disable_overflows_interrupt(&self, pwm: PwmChannel) {
         let p = pwm as u32;
         let mask: u32 = (!0b0000_0000_0000_0000_0000_0100_0000_0000 << p) + (u32::pow(2, p) - 1);
         self.registers
@@ -367,7 +372,7 @@ impl LedPwm {
 
     pub fn configure_pwm_fixed_duty_cycle(
         &self,
-        pwm: Pwm,
+        pwm: PwmChannel,
         high_point: u32,
         low_point: u32,
     ) -> Result<(), ErrorCode> {
@@ -390,7 +395,7 @@ impl LedPwm {
         }
     }
 
-    pub fn enable_pwm_signal_output(&self, pwm: Pwm) {
+    pub fn enable_pwm_signal_output(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf0
             .modify(LEDC_CH_CONF0::SIG_OUT_EN_CH::SET);
@@ -400,7 +405,7 @@ impl LedPwm {
         todo!("This will cause the newly configured values to take effect upon the next overflow of the counter.");
     }
 
-    pub fn disable_pwm_signal_output(&self, pwm: Pwm, lvl: bool) {
+    pub fn disable_pwm_signal_output(&self, pwm: PwmChannel, lvl: bool) {
         self.registers.ledc_ch[pwm as usize].conf0.modify(
             LEDC_CH_CONF0::SIG_OUT_EN_CH::CLEAR
                 + if lvl {
@@ -414,7 +419,7 @@ impl LedPwm {
             .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
     }
 
-    pub fn dither_pwm_duty_cycles(&self, pwm: Pwm, nr: u32) -> Result<(), ErrorCode> {
+    pub fn dither_pwm_duty_cycles(&self, pwm: PwmChannel, nr: u32) -> Result<(), ErrorCode> {
         if nr >= 16 {
             Err(ErrorCode::SIZE)
         } else {
@@ -425,7 +430,7 @@ impl LedPwm {
         }
     }
 
-    pub fn enable_fading_duty(&self, pwm: Pwm) {
+    pub fn enable_fading_duty(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf1
             .modify(LEDC_CH_CONF1::DUTY_START_CH::SET);
@@ -434,7 +439,7 @@ impl LedPwm {
             .modify(LEDC_CH_CONF0::PARA_UP_CH::SET);
     }
 
-    pub fn disable_fading_duty(&self, pwm: Pwm) {
+    pub fn disable_fading_duty(&self, pwm: PwmChannel) {
         self.registers.ledc_ch[pwm as usize]
             .conf1
             .modify(LEDC_CH_CONF1::DUTY_START_CH::CLEAR);
@@ -445,7 +450,7 @@ impl LedPwm {
 
     pub fn configure_pwm_fading_duty_cycle(
         &self,
-        pwm: Pwm,
+        pwm: PwmChannel,
         high_point: u32,
         low_point: u32,
         counter_overflows: u32,
@@ -476,7 +481,7 @@ impl LedPwm {
         }
     }
 
-    pub fn configure_pwm(&self, pwm: Pwm, duty_cycle: DutyCycle) -> Result<(), ErrorCode> {
+    pub fn configure_pwm(&self, pwm: PwmChannel, duty_cycle: DutyCycle) -> Result<(), ErrorCode> {
         match duty_cycle {
             DutyCycle::Fixed(a, b) => {
                 if let Err(e) = self.configure_pwm_fixed_duty_cycle(pwm, a, b) {
@@ -495,7 +500,7 @@ impl LedPwm {
         }
     }
 
-    //functions regarding interrupts
+    // functions regarding interrupts
 
     pub fn handle_interrupt(&self) {
         //how do i signal which interrupt to handle
@@ -520,9 +525,40 @@ impl LedPwm {
 
     pub fn clear_counter_overflow_interrupt(&self, timer: Timer) {
         let t = timer as u32;
-        let mask: u32 = (!0b0000_0000_0000_0000_0000_0000_0000_0001 << t) + (u32::pow(2, t) - 1);
+        let mask: u32 = (0b1111_1111_1111_1111_1111_1111_1111_1110 << t) + (u32::pow(2, t) - 1);
         self.registers
             .ledc_int_clr
             .set(self.registers.ledc_int_clr.get() & mask);
+    }
+}
+
+impl hil::pwm::Pwm for LedPwm {
+    type Pin = u32;
+
+    fn start(
+        &self,
+        pin: &Self::Pin,
+        frequency_hz: usize,
+        duty_cycle: usize,
+    ) -> Result<(), ErrorCode> {
+        todo!()
+    }
+
+    fn stop(&self, pin: &Self::Pin) -> Result<(), ErrorCode> {
+        todo!()
+    }
+
+    fn get_maximum_frequency_hz(&self) -> usize {
+        //frequency of a PWM generator output signal si given by:
+        //
+        // LEDC_CLKx / (LEDC_CLK_DIV_TIMERx * 2 ^ LEDC_TIMERx_DUTY_RES)
+        //
+        // highest LEDC_CLK freq is 80MHz, given by selecting APB_CLK as timer clock source
+        // when using PLL_CLK as clock source for the CPU
+        80000000
+    }
+
+    fn get_maximum_duty_cycle(&self) -> usize {
+        todo!()
     }
 }
