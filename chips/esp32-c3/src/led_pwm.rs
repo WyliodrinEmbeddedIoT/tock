@@ -549,7 +549,7 @@ impl hil::pwm::Pwm for LedPwm {
     }
 
     fn get_maximum_frequency_hz(&self) -> usize {
-        //frequency of a PWM generator output signal si given by:
+        // frequency of a PWM generator output signal is given by:
         //
         // LEDC_CLKx / (LEDC_CLK_DIV_TIMERx * 2 ^ LEDC_TIMERx_DUTY_RES)
         //
@@ -559,6 +559,8 @@ impl hil::pwm::Pwm for LedPwm {
     }
 
     fn get_maximum_duty_cycle(&self) -> usize {
-        todo!()
+        // the PWM can be set to high for the entire period of the signal,
+        // resulting in a 100% duty cycle
+        80000000
     }
 }
