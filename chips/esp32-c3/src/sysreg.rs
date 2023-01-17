@@ -3,6 +3,7 @@
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
 use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
 use kernel::utilities::StaticRef;
+use kernel::ErrorCode;
 
 pub const SYS_REG_BASE: StaticRef<SysRegRegisters> =
     unsafe { StaticRef::new(0x600C_0000 as *const SysRegRegisters) };
@@ -47,7 +48,7 @@ register_bitfields![u32,
         SOC_CLK_SEL OFFSET(10) NUMBITS(2) [
             Xtal = 0,
             Pll = 1,
-            Fosc = 2,
+            RcFast = 2,
         ],
         CLK_XTAL_FREQ OFFSET(12) NUMBITS(6) [],
     ],
@@ -65,6 +66,23 @@ pub enum CpuFrequency {
     MHz160 = 1,
 }
 
+pub struct ClockPrescaler(u16);
+
+impl ClockPrescaler {
+    pub fn new(prescaler: u16) -> Self {
+        ClockPrescaler(match prescaler >= 1024 {
+            true => 1,
+            false => prescaler,
+        })
+    }
+}
+
+pub enum CpuClock {
+    Xtal(ClockPrescaler),
+    Pll(PllFrequency, CpuFrequency),
+    RcFast(ClockPrescaler),
+}
+
 pub struct SysReg {
     registers: StaticRef<SysRegRegisters>,
 }
@@ -76,20 +94,25 @@ impl SysReg {
         }
     }
 
-    pub fn use_xtal_clock_source(&self) {
-        self.registers
-            .sysclk_config
-            .modify(SYSCLK_CONFIG::SOC_CLK_SEL::Xtal);
-    }
-
-    pub fn use_pll_clock_source(&self, pll_frequency: PllFrequency, cpu_frequency: CpuFrequency) {
-        self.registers
-            .sysclk_config
-            .modify(SYSCLK_CONFIG::SOC_CLK_SEL::Pll);
-        self.registers.cpu_per_conf.modify(
-            CPU_PER_CONF::PLL_FREQ_SEL.val(pll_frequency as u32)
-                + CPU_PER_CONF::CPUPERIOD_SEL.val(cpu_frequency as u32),
-        );
+    pub fn set_clock_source(&self, clock: CpuClock) {
+        match clock {
+            CpuClock::Xtal(ClockPrescaler(prescaler)) => self.registers.sysclk_config.modify(
+                SYSCLK_CONFIG::SOC_CLK_SEL::Xtal + SYSCLK_CONFIG::PRE_DIV_CNT.val(prescaler as u32),
+            ),
+            CpuClock::Pll(pll_frequency, cpu_frequency) => {
+                self.registers
+                    .sysclk_config
+                    .modify(SYSCLK_CONFIG::SOC_CLK_SEL::Pll);
+                self.registers.cpu_per_conf.modify(
+                    CPU_PER_CONF::PLL_FREQ_SEL.val(pll_frequency as u32)
+                        + CPU_PER_CONF::CPUPERIOD_SEL.val(cpu_frequency as u32),
+                );
+            }
+            CpuClock::RcFast(ClockPrescaler(prescaler)) => self.registers.sysclk_config.modify(
+                SYSCLK_CONFIG::SOC_CLK_SEL::RcFast
+                    + SYSCLK_CONFIG::PRE_DIV_CNT.val(prescaler as u32),
+            ),
+        }
     }
 
     //Enable the APB_CLK signal to LED PWM
