@@ -16,16 +16,18 @@ register_structs! {
         (0x048 => _reserved1),
         (0x054 => uart0_intr_map: ReadWrite<u32>),
         (0x058 => _reserved2),
+        (0x05C => ledc_intr_map: ReadWrite<u32>),
+        (0x060 => _reserved3),
         (0x080 => timg0_intr_map: ReadWrite<u32>),
         (0x084 => timg1_intr_map: ReadWrite<u32>),
-        (0x088 => _reserved3),
+        (0x088 => _reserved4),
         (0x0f8 => status: [ReadWrite<u32>; 2]),
         (0x100 => clk_en: ReadWrite<u32>),
         (0x104 => enable: ReadWrite<u32, INT::Register>),
         (0x108 => type_reg: ReadWrite<u32, INT::Register>),
         (0x10C => clear: ReadWrite<u32, INT::Register>),
         (0x110 => eip: ReadWrite<u32, INT::Register>),
-        (0x114 => _reserved4),
+        (0x114 => _reserved5),
         (0x118 => priority: [ReadWrite<u32, PRIORITY::Register>; 31]),
         (0x194 => thresh: ReadWrite<u32, THRESH::Register>),
         (0x198 => @END),
@@ -71,6 +73,7 @@ impl Intc {
     /// In Tock we map them ourselves so we don't need to call into the ROM.
     pub fn map_interrupts(&self) {
         self.registers.uart0_intr_map.set(interrupts::IRQ_UART0);
+        self.registers.ledc_intr_map.set(interrupts::IRQ_LEDC);
         self.registers.timg0_intr_map.set(interrupts::IRQ_TIMER1);
         self.registers.timg1_intr_map.set(interrupts::IRQ_TIMER2);
         self.registers

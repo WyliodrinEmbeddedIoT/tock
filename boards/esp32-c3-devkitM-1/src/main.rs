@@ -11,6 +11,7 @@
 
 use capsules::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use esp32_c3::chip::Esp32C3DefaultPeripherals;
+use esp32_c3::sysreg::{ClockPrescaler, CpuClock};
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
@@ -148,10 +149,11 @@ unsafe fn setup() -> (
     peripherals.rtc_cntl.disable_super_wdt();
     peripherals.sysreg.disable_timg0();
     peripherals.sysreg.enable_timg0();
+    peripherals.sysreg.enable_ledc();
 
     peripherals
         .sysreg
-        .use_pll_clock_source(PllFrequency::MHz320, CpuFrequency::MHz160);
+        .set_clock_source(CpuClock::Pll(PllFrequency::MHz320, CpuFrequency::MHz160));
 
     // initialise capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);

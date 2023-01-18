@@ -8,6 +8,7 @@
 pub mod chip;
 pub mod intc;
 pub mod interrupts;
+pub mod led_pwm;
 pub mod sysreg;
 
 pub mod timg {
