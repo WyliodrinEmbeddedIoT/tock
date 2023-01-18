@@ -60,16 +60,36 @@ pub enum PllFrequency {
     MHz480 = 1,
 }
 
+impl From<u32> for PllFrequency {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => PllFrequency::MHz320,
+            1 => PllFrequency::MHz480,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[repr(u32)]
 pub enum CpuFrequency {
     MHz80 = 0,
     MHz160 = 1,
 }
 
-pub struct ClockPrescaler(u16);
+impl From<u32> for CpuFrequency {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => CpuFrequency::MHz80,
+            1 => CpuFrequency::MHz160,
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub struct ClockPrescaler(u32);
 
 impl ClockPrescaler {
-    pub fn new(prescaler: u16) -> Self {
+    pub fn new(prescaler: u32) -> Self {
         ClockPrescaler(match prescaler >= 1024 {
             true => 1,
             false => prescaler,
@@ -112,6 +132,36 @@ impl SysReg {
                 SYSCLK_CONFIG::SOC_CLK_SEL::RcFast
                     + SYSCLK_CONFIG::PRE_DIV_CNT.val(prescaler as u32),
             ),
+        }
+    }
+
+    pub fn get_clock_source(&self) -> Option<CpuClock> {
+        match self
+            .registers
+            .sysclk_config
+            .read_as_enum(SYSCLK_CONFIG::SOC_CLK_SEL)
+        {
+            Some(SYSCLK_CONFIG::SOC_CLK_SEL::Value::Xtal) => Some(CpuClock::Xtal(ClockPrescaler(
+                self.registers
+                    .sysclk_config
+                    .read(SYSCLK_CONFIG::PRE_DIV_CNT),
+            ))),
+            Some(SYSCLK_CONFIG::SOC_CLK_SEL::Value::Pll) => Some(CpuClock::Pll(
+                PllFrequency::from(self.registers.cpu_per_conf.read(CPU_PER_CONF::PLL_FREQ_SEL)),
+                CpuFrequency::from(
+                    self.registers
+                        .cpu_per_conf
+                        .read(CPU_PER_CONF::CPUPERIOD_SEL),
+                ),
+            )),
+            Some(SYSCLK_CONFIG::SOC_CLK_SEL::Value::RcFast) => {
+                Some(CpuClock::RcFast(ClockPrescaler(
+                    self.registers
+                        .sysclk_config
+                        .read(SYSCLK_CONFIG::PRE_DIV_CNT),
+                )))
+            }
+            None => None,
         }
     }
 
