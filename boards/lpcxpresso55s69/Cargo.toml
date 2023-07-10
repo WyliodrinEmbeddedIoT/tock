@@ -1,0 +1,14 @@
+[package]
+name = "lpcxpresso55s69"
+version.workspace = true
+authors.workspace = true
+build = "build.rs"
+edition.workspace = true
+
+[dependencies]
+components = { path = "../components" }
+cortexm33 = { path = "../../arch/cortex-m33" }
+kernel = { path = "../../kernel" }
+
+capsules-core = { path = "../../capsules/core" }
+capsules-extra = { path = "../../capsules/extra" }
