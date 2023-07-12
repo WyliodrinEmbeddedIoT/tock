@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 # Copyright Tock Contributors 2022.
 
-# Makefile for building the tock kernel for the NUCLEO-429ZI platform
+# Makefile for building the tock kernel for the LPCXpresso55S69 platform
 #
 TARGET=thumbv7em-none-eabi
 PLATFORM=lpcxpresso55s69
@@ -22,11 +22,15 @@ install: flash
 
 .PHONY: flash-debug
 flash-debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
-	$(OPENOCD) $(OPENOCD_OPTIONS) -c "init; reset halt; flash write_image erase $<; verify_image $<; reset; shutdown"
+	$(error Find out what tool the board uses for flashing instead of OpenOCD)
 
 .PHONY: flash
 flash: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf
-	$(OPENOCD) $(OPENOCD_OPTIONS) -c "init; reset halt; flash write_image erase $<; verify_image $<; reset; shutdown"
+	crt_emu_cm_redlink \
+		--flash-load-exec "$(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf" \
+		-p MIMXRT1052xxxxB --ConnectScript RT1050_connect.scp \
+		--flash-driver= -x . --flash-dir $(MCUX_IDE_BIN)/Flash --flash-hashing
+
 
 .PHONY: program
 program: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf

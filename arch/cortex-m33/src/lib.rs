@@ -18,14 +18,15 @@ pub use cortexm::nvic;
 pub use cortexm::scb;
 pub use cortexm::support;
 pub use cortexm::systick;
+pub use cortexm::unhandled_interrupt;
 pub use cortexm::CortexMVariant;
 
 // Enum with no variants to ensure that this type is not instantiable. It is
 // only used to pass architecture-specific constants and functions via the
 // `CortexMVariant` trait.
-pub enum CortexM3 {}
+pub enum CortexM33 {}
 
-impl cortexm::CortexMVariant for CortexM3 {
+impl cortexm::CortexMVariant for CortexM33 {
     const GENERIC_ISR: unsafe extern "C" fn() = cortexm::generic_isr_arm_v7m;
     const SYSTICK_HANDLER: unsafe extern "C" fn() = cortexm::systick_handler_arm_v7m;
     const SVC_HANDLER: unsafe extern "C" fn() = cortexm::svc_handler_arm_v7m;
