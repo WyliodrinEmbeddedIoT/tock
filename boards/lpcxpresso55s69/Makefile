@@ -27,10 +27,13 @@ flash-debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
 .PHONY: flash
 flash: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf
 	crt_emu_cm_redlink \
-		--flash-load-exec "$(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf" \
-		-p MIMXRT1052xxxxB --ConnectScript RT1050_connect.scp \
-		--flash-driver= -x . --flash-dir $(MCUX_IDE_BIN)/Flash --flash-hashing
+-p LPC55S69, --reset=,  \
+-cache=disable, --flash-driver= -x, --flash-load-exec "$(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf", \
 
+
+		# --flash-load-exec "$(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf" \
+		# -p LPC55S69 \
+		# --flash-driver= -x . --flash-dir $(MCUX_IDE_BIN)/Flash --flash-hashing
 
 .PHONY: program
 program: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
