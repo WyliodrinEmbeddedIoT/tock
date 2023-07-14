@@ -46,6 +46,7 @@ pub static mut STACK_MEMORY: [u8; 0x1000] = [0; 0x1000];
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform.
+#[allow(dead_code)]
 struct LPCXpresso55S69 {
     scheduler : &'static PrioritySched,
     systick: cortexm33::systick::SysTick,
@@ -121,6 +122,7 @@ unsafe fn create_peripherals() -> &'static mut chip::LPC55S69DefaultPeripherals 
 /// and RAM setup.
 #[no_mangle]
 pub unsafe fn main() {
+    hprintln!("Hello there, it would seem the board is working");
     let peripherals = create_peripherals();
 
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);
@@ -138,7 +140,6 @@ pub unsafe fn main() {
         systick: cortexm33::systick::SysTick::new_with_calibration(792_000_000),
     };
 
-    hprintln!("Hello there, it would seem the board is working");
 
     // debug!("Initialization complete. Entering main loop.");
 

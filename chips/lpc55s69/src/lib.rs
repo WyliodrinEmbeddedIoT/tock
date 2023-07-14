@@ -8,6 +8,8 @@ use cortexm33::{CortexM33, CortexMVariant, unhandled_interrupt};
 
 pub mod gpio;
 pub mod chip;
+pub mod iocon;
+pub mod syscon;
 
 // LPC55S6x has a total of 59 interrupts, but the SDK declares 64 as 59 - 64 might be manual
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), link_section = ".irqs")]
