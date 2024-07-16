@@ -5,8 +5,8 @@ TARGET=thumbv6m-none-eabi
 PLATFORM=nano_rp2040_connect
 
 include ../Makefile.common
-
-APP=../../../Wylio-libtock/libtock-c/examples/wifinina/build/cortex-m0/cortex-m0.tbf
+# Either use `APP="<path to app's tbf file>" make flash-app` or modify the next line to match your file path
+# APP=../../../Wylio-libtock/libtock-c/examples/wifinina/build/cortex-m0/cortex-m0.tbf
 KERNEL=$(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf
 KERNEL_WITH_APP=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)-app.elf
 
@@ -18,7 +18,7 @@ install: flash
 
 .PHONY: flash-debug
 flash-debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
-	elf2uf2 $< $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).uf2
+	elf2uf2-rs $< $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).uf2
 	if [ -d $(BOOTSEL_FOLDER) ];
 	then
 		cp $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM)-app.uf2 $(BOOTSEL_FOLDER)"
@@ -28,7 +28,7 @@ flash-debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
 
 .PHONY: flash
 flash: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf
-	elf2uf2 $< $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).uf2
+	elf2uf2-rs $< $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).uf2
 	@if [ -d $(BOOTSEL_FOLDER) ]; then cp $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).uf2 "$(BOOTSEL_FOLDER)"; else echo; echo Please edit the BOOTSEL_FOLDER variable to point to you Nano RP2040 Flash Drive Folder; fi
 
 .PHONY: flash-app
@@ -37,7 +37,7 @@ ifeq ($(APP),)
 	$(error Please define the APP variable with the TBF file to flash an application) 
 endif 
 	arm-none-eabi-objcopy --update-section .apps=$(APP) $(KERNEL) $(KERNEL_WITH_APP)
-	elf2uf2 $(KERNEL_WITH_APP) $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM)-app.uf2
+	elf2uf2-rs $(KERNEL_WITH_APP) $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM)-app.uf2
 	@if [ -d $(BOOTSEL_FOLDER) ]; then cp $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM)-app.uf2 "$(BOOTSEL_FOLDER)"; else echo; echo Please edit the BOOTSEL_FOLDER variable to point to you Nano RP2040 Flash Drive Folder; fi
 
 
