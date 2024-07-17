@@ -1,14 +1,14 @@
 use core::cell::Cell;
 
 use kernel::debug;
-use kernel::ErrorCode;
 use kernel::hil::gpio::Pin;
 use kernel::hil::spi::{SpiMaster, SpiMasterClient};
-use kernel::hil::time::{Alarm, ConvertTicks};
 use kernel::hil::time::AlarmClient;
+use kernel::hil::time::{Alarm, ConvertTicks};
 use kernel::hil::wifinina::{self, Psk, Ssid, Station, StationClient, StationStatus};
 use kernel::hil::wifinina::{Network, Scanner, ScannerClient};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
+use kernel::ErrorCode;
 
 const START_CMD: u8 = 0xe0;
 const END_CMD: u8 = 0xee;
@@ -99,7 +99,7 @@ pub enum ConnectionStatus {
     NoConnection,
 }
 
-pub struct NinaW102<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> {
+pub struct NinaW102<'a, S: SpiMaster<'a>, P: Pin, A: Alarm<'a>> {
     spi: &'a S,
     write_buffer: TakeCell<'static, [u8]>,
     read_buffer: TakeCell<'static, [u8]>,
@@ -117,7 +117,7 @@ pub struct NinaW102<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> {
     second_time: Cell<u8>,
 }
 
-impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
+impl<'a, S: SpiMaster<'a>, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
     pub fn new(
         spi: &'a S,
         write_buffer: &'static mut [u8],
@@ -548,8 +548,7 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                             let pos = POS_PARAM + current_position;
 
                             if pos < read_buffer.len() {
-                                current_position =
-                                    current_position + read_buffer[pos] as usize;
+                                current_position = current_position + read_buffer[pos] as usize;
                             } else {
                                 break;
                             }
@@ -633,8 +632,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                     .zip(
                                                         read_buffer[pos + 1
                                                             ..pos
-                                                            + (read_buffer[pos] as usize)
-                                                            + 1]
+                                                                + (read_buffer[pos] as usize)
+                                                                + 1]
                                                             .iter(),
                                                     )
                                                 {
@@ -645,8 +644,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 networks[parameter_index as usize].security = None;
                                                 networks[parameter_index as usize].rssi = 0;
 
-                                                current_position = current_position
-                                                    + read_buffer[pos] as usize;
+                                                current_position =
+                                                    current_position + read_buffer[pos] as usize;
                                             } else {
                                                 break;
                                             }
@@ -703,8 +702,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 buf[i as usize] = read_buffer[pos + i as usize + 1];
                                             }
                                             debug!("Array nr {}: {:?}", count, buf);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -737,8 +736,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 "MAC Address {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
                                                 buf[5], buf[4], buf[3], buf[2], buf[1], buf[0],
                                             );
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -759,8 +758,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 buf[i as usize] = read_buffer[pos + i as usize + 1];
                                                 debug!("Element {}: {:x}", i, buf[i as usize]);
                                             }
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -794,8 +793,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 self.alarm.ticks_from_ms(1000),
                                             );
                                             // self.start_tcp_client(read_buffer[pos + 1]);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -828,8 +827,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 debug!("Element {}: {:x}", i, buf[i as usize]);
                                             }
                                             // self.start_tcp_client(read_buffer[pos + 1]);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                             debug!(
                                                 "StartTcpClient end, status: {:?}",
@@ -869,8 +868,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 debug!("Element {}: {:x}", i, buf[i as usize]);
                                             }
                                             // self.start_tcp_client(read_buffer[pos + 1]);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                             debug!(
                                                 "StartTcpServer end, status: {:?}",
@@ -965,8 +964,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 }
                                             }
                                             // self.start_tcp_client(read_buffer[pos + 1]);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                             // self.status.set(Status::Send(Command::InsertDataBuf));
                                             // self.alarm.set_alarm(
@@ -1000,8 +999,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 self.alarm.ticks_from_ms(10),
                                             );
                                             // self.send_udp_packet(0);
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -1016,6 +1015,7 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                         let mut buf: [u8; 20] = [0; 20];
                                         // debug!("buffer: {:?}", read_buffer);
                                         if pos < read_buffer.len() {
+                                            debug!("Socket: {:x?}", self.get_socket());
                                             debug!(
                                                 "SendUdpPacket: Num elements: {:x}",
                                                 read_buffer[pos]
@@ -1032,8 +1032,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 )
                                                 // }
                                             }
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -1061,8 +1061,8 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
                                                 //     self.alarm.ticks_from_ms(100),
                                                 // )
                                             }
-                                            current_position = current_position
-                                                + read_buffer[pos] as usize;
+                                            current_position =
+                                                current_position + read_buffer[pos] as usize;
                                             current_position = current_position + 1;
                                         }
                                     }
@@ -1094,7 +1094,7 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> NinaW102<'a, S, P, A> {
     }
 }
 
-impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S, P, A> {
+impl<'a, S: SpiMaster<'a>, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S, P, A> {
     fn read_write_done(
         &self,
         write_buffer: &'static mut [u8],
@@ -1239,7 +1239,7 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> SpiMasterClient for NinaW102<'a, S,
         }
     }
 }
-impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> AlarmClient for NinaW102<'a, S, P, A> {
+impl<'a, S: SpiMaster<'a>, P: Pin, A: Alarm<'a>> AlarmClient for NinaW102<'a, S, P, A> {
     fn alarm(&self) {
         match self.status.get() {
             Status::Init(init_status) => match init_status {
@@ -1322,7 +1322,9 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'a>> AlarmClient for NinaW102<'a, S, P, 
     }
 }
 
-impl<'a, S: SpiMaster, P: Pin, A: Alarm<'static>> Scanner<'static> for NinaW102<'static, S, P, A> {
+impl<'a, S: SpiMaster<'static>, P: Pin, A: Alarm<'static>> Scanner<'static>
+    for NinaW102<'static, S, P, A>
+{
     fn scan(&self) -> Result<(), ErrorCode> {
         debug!("Nina starts scanning");
         self.start_scan_networks()
@@ -1333,7 +1335,9 @@ impl<'a, S: SpiMaster, P: Pin, A: Alarm<'static>> Scanner<'static> for NinaW102<
     }
 }
 
-impl<'a, S: SpiMaster, P: Pin, A: Alarm<'static>> Station<'static> for NinaW102<'static, S, P, A> {
+impl<'a, S: SpiMaster<'static>, P: Pin, A: Alarm<'static>> Station<'static>
+    for NinaW102<'static, S, P, A>
+{
     // try to initiate a connection to the `Network`
     fn connect(&self, ssid: Ssid, psk: Option<Psk>) -> Result<(), ErrorCode> {
         //if let Some(psk) = psk.unwrap() {}
