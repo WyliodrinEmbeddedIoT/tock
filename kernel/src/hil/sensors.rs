@@ -233,3 +233,24 @@ pub trait PressureClient {
     /// Returns the value in hPa.
     fn callback(&self, pressure: Result<u32, ErrorCode>);
 }
+
+/// A basic interface for distance sensor.
+pub trait Distance<'a> {
+    /// Set the client
+    fn set_client(&self, client: &'a dyn DistanceClient);
+    /// Read the distance from the sensor
+    fn read_distance(&self) -> Result<(), ErrorCode>;
+    /// Get the maximum distance the sensor can measure in mm
+    fn get_maximum_distance_mm(&self) -> u32;
+    /// Get the minimum distance the sensor can measure in mm
+    fn get_minimum_distance_mm(&self) -> u32;
+}
+
+/// Client for receiving distance readings.
+pub trait DistanceClient {
+    /// Called when a distance measurement has completed.
+    ///
+    /// - `distance`: the most recently measured distance in millimeters.
+    ///                If there was an error, this will be `Err(ErrorCode)`.
+    fn callback(&self, distance: Result<u32, ErrorCode>);
+}

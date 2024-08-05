@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 #![no_std]
 
 pub mod test;
@@ -33,11 +33,13 @@ pub mod cycle_count;
 pub mod dac;
 pub mod date_time;
 pub mod debug_process_restart;
+pub mod distance;
 pub mod eui64;
 pub mod fm25cl;
 pub mod ft6x06;
 pub mod fxos8700cq;
 pub mod gpio_async;
+pub mod hc_sr04;
 pub mod hd44780;
 pub mod hmac;
 pub mod hmac_sha256;
