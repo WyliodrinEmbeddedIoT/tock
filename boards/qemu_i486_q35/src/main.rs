@@ -205,18 +205,6 @@ unsafe extern "cdecl" fn main() {
             core::ptr::write_volatile(fb.add(i), (attr as u16) << 8 | ch as u16);
         }
     }
-
-    // Scrolling test
-
-    #[cfg(feature = "vga_text_80x25")]
-    unsafe {
-        VGA_TEXT.clear();
-        for i in 0..200 {
-            use core::fmt::Write;
-            writeln!(VGA_TEXT, "line {:03}", i).unwrap();
-        }
-    }
-
     // ---------- QEMU-SYSTEM-I386 "Q35" MACHINE PERIPHERALS ----------
 
     // Create a shared UART channel for the console and for kernel
