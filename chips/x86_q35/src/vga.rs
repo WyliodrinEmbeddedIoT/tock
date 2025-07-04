@@ -88,27 +88,81 @@ fn outw(port: u16, val: u16) {
 
 // Simple text-mode VGA console. Provides "core::fmt::Write" so it can be
 // plugged into Tock's `Console` and `ProcessConsole` components.
-pub struct VgaText;
+pub struct VgaText {
+    // Current colum (0 - 79)
+    col: usize,
+    // Current row (0 - 24)
+    row: usize,
+    // Current  attribute byte (fg | bg<<4).
+    attr: u8,
+}
 
 impl VgaText {
     // Create a new instance and optionally clear the screen
     pub const fn new() -> Self {
-        VgaText
+        Self {
+            col: 0,
+            row: 0,
+            attr: 0x0F,
+        }
+    }
+
+    const fn buffer_ptr() -> *mut u16 {
+        TEXT_BUFFER_ADDR as *mut u16
+    }
+
+    // Index -> pointer into 0xB8000.
+    #[inline(always)]
+    fn cell_at(index: usize) -> *mut u16 {
+        unsafe { Self::buffer_ptr().add(index) }
+    }
+
+    // Update the hardware cursor to (self.row, self.col)
+    fn update_hw_cursor(&self) {
+        let pos = (self.row * BUFFER_WIDTH + self.col) as u16;
+        unsafe {
+            outb(0x3D4, 0x0F);
+            outb(0x3D5, (pos & 0xFF) as u8);
+            outb(0x3D4, 0x0E);
+            outb(0x3D5, (pos >> 8) as u8);
+        }
+    }
+
+    fn scroll_up(&mut self) {
+        //copy rows 1-24 -> 0-23 (4 KiB total)
+        for row in 1..BUFFER_HEIGHT {
+            let dst = Self::cell_at((row - 1) * BUFFER_WIDTH);
+            let src = Self::cell_at(row * BUFFER_WIDTH);
+            unsafe {
+                core::ptr::copy(src, dst, BUFFER_WIDTH);
+            }
+        }
+        //clear last row
+        let blank = ((self.attr as u16) << 8) | b' ' as u16;
+        unsafe {
+            for col in 0..BUFFER_WIDTH {
+                core::ptr::write_volatile(
+                    Self::cell_at((BUFFER_HEIGHT - 1) * BUFFER_WIDTH + col),
+                    blank,
+                );
+            }
+        }
+        self.row = BUFFER_HEIGHT - 1;
     }
 
     // Clear the entire text buffer with blank spaces in attribute 0x07
     // light gray on black
 
-    pub fn clear(&self) {
-        unsafe {
-            let buffer = TEXT_BUFFER_ADDR as *mut u16;
-            for i in 0..(BUFFER_WIDTH * BUFFER_HEIGHT) {
-                write_volatile(buffer.add(i), 0x0700u16 | b' ' as u16);
+    /*    pub fn clear(&self) {
+            unsafe {
+                let buffer = TEXT_BUFFER_ADDR as *mut u16;
+                for i in 0..(BUFFER_WIDTH * BUFFER_HEIGHT) {
+                    write_volatile(buffer.add(i), 0x0700u16 | b' ' as u16);
+                }
             }
+            self.set_cursor(0, 0);
         }
-        self.set_cursor(0, 0);
-    }
-
+    */
     // Move the hardware cursor to `col`, `row`.
     pub fn set_cursor(&self, col: usize, row: usize) {
         let pos = (row * BUFFER_WIDTH + col) as u16;
@@ -121,7 +175,52 @@ impl VgaText {
     }
 }
 
-impl Write for VgaText {
+impl fmt::Write for VgaText {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for byte in s.bytes() {
+            self.write_byte(byte);
+        }
+        Ok(())
+    }
+}
+
+impl VgaText {
+    pub fn clear(&mut self) {
+        let blank = ((self.attr as u16) << 8) | b' ' as u16;
+        unsafe {
+            for i in 0..BUFFER_WIDTH * BUFFER_HEIGHT {
+                core::ptr::write_volatile(Self::cell_at(i), blank)
+            }
+        }
+        self.col = 0;
+        self.row = 0;
+        self.update_hw_cursor();
+    }
+    fn write_byte(&mut self, byte: u8) {
+        match byte {
+            b'\n' => {
+                self.col = 0;
+                self.row += 1;
+            }
+            byte => {
+                let val = ((self.attr as u16) << 8) | byte as u16;
+                unsafe {
+                    core::ptr::write_volatile(Self::cell_at(self.row * BUFFER_WIDTH + self.col), val);
+                }
+                self.col += 1;
+                if self.col == BUFFER_WIDTH {
+                    self.col = 0;
+                    self.row += 1;
+                }
+            }
+        }
+        if self.row == BUFFER_HEIGHT {
+            self.scroll_up();
+        }
+        self.update_hw_cursor();
+    }
+}
+/*impl Write for VgaText {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         // Very small, non-scrolling, no-wrap renderer: only prints within
         // Current line limits for boot messages.
@@ -160,7 +259,7 @@ impl Write for VgaText {
         Ok(())
     }
 }
-
+*/
 fn init_text_mode() {
     // Standard BIOS mode 03h – easiest: call into BIOS via 0x10 int if we
     // wanted, but we can also just rely on the firmware default.  Here we
