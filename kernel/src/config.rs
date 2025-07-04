@@ -35,6 +35,11 @@
 ///
 /// To change the configuration, modify the relevant values in the `CONFIG`
 /// constant object defined at the end of this file.
+pub enum VgaMode {
+    Text80x25,
+    Graphics640x480x16,
+    Graphics800x600x16,
+}
 pub struct Config {
     /// Whether the kernel should trace syscalls to the debug output.
     ///
@@ -96,42 +101,26 @@ pub const CONFIG: Config = Config {
     debug_process_credentials: cfg!(feature = "debug_process_credentials"),
 
     vga_mode: {
-        #[cfg(feature = "vga_text_80x25")]
-        {
+        if cfg!(feature = "vga_text_80x25") {
             Some(VgaMode::Text80x25)
-        }
-
-        #[cfg(feature = "vga_640x480_16")]
-        {
-            Some(VgaMode::G640x480x16)
-        }
-
-        #[cfg(feature = "vga_800x600_16")]
-        {
-            Some(VgaMode::G800x600x16)
-        }
-
-        #[cfg(not(any(
-            feature = "vga_text_80x25",
-            feature = "vga_640x480_16",
-            feature = "vga_800x600_16"
-        )))]
-        {
+        } else if cfg!(feature = "vga_text_640x480_16") {
+            Some(VgaMode::Graphics640x480x16)
+        } else if cfg!(feature = "vga_800x600_16") {
+            Some(VgaMode::Graphics800x600x16)
+        } else {
             None
         }
     },
 };
 
+
+
 const _: () = assert!(
     (cfg!(feature = "vga_text_80x25") as u8
         + cfg!(feature = "vga_640x480_16") as u8
         + cfg!(feature = "vga_800x600_16") as u8)
-        <= 1,
+        == 1,
     "Select at most one VGA mode feature"
 );
 
-pub enum VgaMode {
-    Text80x25,
-    G640x480x16,
-    G800x600x16,
-}
+

@@ -23,7 +23,6 @@
 // mode via `kernel::config::CONFIG.vga_mode` and decide whether to route the
 // `ProcessConsole` to this driver or to the legacy serial mux.
 
-#![allow(dead_code)]
 
 use core::fmt::{self, Write};
 use core::ptr::write_volatile;
@@ -118,13 +117,32 @@ impl VgaText {
     }
 
     // Update the hardware cursor to (self.row, self.col)
+
+    // VGA hardware keeps the cursor position as an offset measured in chars
+    // in two separate byte registers
+    // Port        Write Value     meaning
+    //
+    // Ox3D4       0x0F            select cursor LOW
+    // 0x3D5       bits 7-0        low 8 bits of offset
+    // 0x3D4       0x03            select cursor HIGH
+    // 0x3D5       bits 8-15       high 8 bits of offset
+
+    // Basically the sequence is as follows:
+    // choose which internal VGA register we're writing to
+    // by sending its index to 0x3D4, then send data byte to 0x3D5
+
+    //0x3D4 = VGA CRT Controller index port
+    //0x3D5 = VGA CRTC data port
+    //0x0F  = CRTC register index 15 => Cursor Location Low
+    //0x0E  = CRTC register index 14 => Cursor Location High
     fn update_hw_cursor(&self) {
         let pos = (self.row * BUFFER_WIDTH + self.col) as u16;
         unsafe {
-            outb(0x3D4, 0x0F);
+            // write low byte
+            outb(0x3D4, 0x0F);  //index 0x0F -> cursor LOW
             outb(0x3D5, (pos & 0xFF) as u8);
-            outb(0x3D4, 0x0E);
-            outb(0x3D5, (pos >> 8) as u8);
+            outb(0x3D4, 0x0E); // index 0x0E -> cursor HIGH
+            outb(0x3D5, (pos >> 8) as u8); // upper 8 bits
         }
     }
 
@@ -149,20 +167,6 @@ impl VgaText {
         }
         self.row = BUFFER_HEIGHT - 1;
     }
-
-    // Clear the entire text buffer with blank spaces in attribute 0x07
-    // light gray on black
-
-    /*    pub fn clear(&self) {
-            unsafe {
-                let buffer = TEXT_BUFFER_ADDR as *mut u16;
-                for i in 0..(BUFFER_WIDTH * BUFFER_HEIGHT) {
-                    write_volatile(buffer.add(i), 0x0700u16 | b' ' as u16);
-                }
-            }
-            self.set_cursor(0, 0);
-        }
-    */
     // Move the hardware cursor to `col`, `row`.
     pub fn set_cursor(&self, col: usize, row: usize) {
         let pos = (row * BUFFER_WIDTH + col) as u16;
@@ -297,13 +301,15 @@ fn init_text_mode() {
         outb(0x3C0, idx);
         outb(0x3C0, val);
     }
+    inb(0x3DA);        // reset flip-flop once more
+    outb(0x3C0, 0x20); // bit 5 = 1 → video enabled
 }
 
 pub fn init(mode: VgaMode) {
     match mode {
         VgaMode::Text80x25 => init_text_mode(),
-        VgaMode::G640x480x16 => init_mode_0x12(),
-        VgaMode::G800x600x16 => init_mode_0x102(),
+        VgaMode::Graphics640x480x16 => init_mode_0x12(),
+        VgaMode::Graphics800x600x16 => init_mode_0x102(),
     }
 }
 fn init_mode_0x12() {
@@ -360,7 +366,7 @@ fn init_mode_0x102() {
 
 pub fn framebuffer() -> Option<(*mut u8, usize)> {
     match kernel::config::CONFIG.vga_mode {
-        Some(VgaMode::G800x600x16) => Some((0xE000_0000 as *mut u8, 800 * 2)),
+        Some(VgaMode::Graphics800x600x16) => Some((0xE000_0000 as *mut u8, 800 * 2)),
         _ => None,
     }
 }

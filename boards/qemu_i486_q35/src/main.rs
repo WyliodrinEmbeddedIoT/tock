@@ -28,8 +28,8 @@ use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::process::Process;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
-use kernel::{create_capability, static_init};
 use kernel::Kernel;
+use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::vga::{self};
@@ -153,6 +153,8 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
         &()
     }
 }
+#[cfg(feature = "vga_text_80x25")]
+static mut VGA_TEXT: x86_q35::vga::VgaText = x86_q35::vga::VgaText::new();
 
 #[no_mangle]
 unsafe extern "cdecl" fn main() {
@@ -201,6 +203,17 @@ unsafe extern "cdecl" fn main() {
             let ch = b'A' + i as u8; // ASCII A, B, C …
             let attr = (0 << 4) | i; // black bg | colour fg
             core::ptr::write_volatile(fb.add(i), (attr as u16) << 8 | ch as u16);
+        }
+    }
+
+    // Scrolling test
+
+    #[cfg(feature = "vga_text_80x25")]
+    unsafe {
+        VGA_TEXT.clear();
+        for i in 0..200 {
+            use core::fmt::Write;
+            writeln!(VGA_TEXT, "line {:03}", i).unwrap();
         }
     }
 
