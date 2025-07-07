@@ -50,8 +50,8 @@ pub enum VgaMode {
 
 const TEXT_BUFFER_ADDR: usize = 0xB8000;
 // Buffer dimensions
-const BUFFER_WIDTH: usize = 80;
-const BUFFER_HEIGHT: usize = 25;
+const TEXT_BUFFER_WIDTH: usize = 80;
+const TEXT_BUFFER_HEIGHT: usize = 25;
 
 // Low-level port I/O helpers
 // inb/outb wrappers
