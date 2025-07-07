@@ -11,7 +11,7 @@
 // This file is an initial skeleton.  It compiles and provides working text‑
 // mode console support so the board can swap from the UART mux to a VGA
 // console.  Graphical modes are *disabled at runtime* until a framebuffer
-// capsule lands.  The low‑level register writes for 640×480 and 800×600 are
+// capsule implementation lands.  The low‑level register writes for 640×480 and 800×600 are
 // nonetheless laid out so they can be enabled by flipping a constant.
 //
 // VGA peripheral driver for the x86_q35 chip.
