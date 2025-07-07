@@ -64,7 +64,7 @@ fn outb(port: u16, val: u8) {
     }
 }
 
-// Read an 8-bit value from an I/O port.
+/// Read an 8-bit value from an I/O port.
 #[inline(always)]
 fn inb(port: u16) -> u8 {
     let val: u8;
