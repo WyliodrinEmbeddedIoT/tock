@@ -120,7 +120,7 @@ const _: () = assert!(
         + cfg!(feature = "vga_640x480_16") as u8
         + cfg!(feature = "vga_800x600_16") as u8)
         == 1,
-    "Select at most one VGA mode feature"
+    "Only at most one of the VGA mode features can be selected."
 );
 
 
