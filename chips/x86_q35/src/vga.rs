@@ -75,7 +75,7 @@ fn inb(port: u16) -> u8 {
     val
 }
 
-// 16-bit helper
+/// Write a 16-bit value to an I/O Port
 #[inline(always)]
 fn outw(port: u16, val: u16) {
     unsafe {
