@@ -84,8 +84,8 @@ fn outw(port: u16, val: u16) {
 }
 // Public API - the VGA struct providing fmt::Write implementation
 
-// Simple text-mode VGA console. Provides "core::fmt::Write" so it can be
-// plugged into Tock's `Console` and `ProcessConsole` components.
+/// Simple text-mode VGA console. Provides "core::fmt::Write" so it can be
+/// plugged into Tock's `Console` and `ProcessConsole` components.
 pub struct VgaText {
     // Current colum (0 - 79)
     col: usize,
