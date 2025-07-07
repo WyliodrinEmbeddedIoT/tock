@@ -26,3 +26,5 @@ pub mod pit;
 pub mod serial;
 
 pub mod vga;
+#[cfg(feature = "vga_text_80x25")]
+pub mod vga_uart_driver;

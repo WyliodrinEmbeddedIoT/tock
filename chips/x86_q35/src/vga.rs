@@ -196,6 +196,9 @@ impl VgaText {
                 self.col = 0;
                 self.row += 1;
             }
+            b'\r' => {
+                self.col = 0;
+            }
             byte => {
                 let val = ((self.attr as u16) << 8) | byte as u16;
                 unsafe {

@@ -33,9 +33,10 @@ use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::vga::{self};
-
-use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::{Pc, PcComponent};
+use x86_q35::pit::{Pit, RELOAD_1KHZ};
+#[cfg(feature = "vga_text_80x25")]
+use x86_q35::vga_uart_driver::VgaUart;
 
 mod multiboot;
 use multiboot::MultibootV1Header;
@@ -194,7 +195,7 @@ unsafe extern "cdecl" fn main() {
         vga::init(mode);
     }
     // Small Test
-    unsafe {
+   unsafe {
         // Pointer to VGA text buffer
         let fb = 0xB8000 as *mut u16;
 
@@ -205,12 +206,28 @@ unsafe extern "cdecl" fn main() {
             core::ptr::write_volatile(fb.add(i), (attr as u16) << 8 | ch as u16);
         }
     }
-    // ---------- QEMU-SYSTEM-I386 "Q35" MACHINE PERIPHERALS ----------
+
+    // VGA UART + mux (only when the feature is on)
+    #[cfg(feature = "vga_text_80x25")]
+    let vga_uart = static_init!(VgaUart, unsafe { VgaUart::new(&mut VGA_TEXT) });
+
+    #[cfg(feature = "vga_text_80x25")]
+    let vga_mux = components::console::UartMuxComponent::new(
+        vga_uart,
+        /* dummy baudrate, unused */ 115200,
+    )
+        .finalize(components::uart_mux_component_static!());
 
     // Create a shared UART channel for the console and for kernel
     // debug over the provided 8250-compatible UART.
     let uart_mux = components::console::UartMuxComponent::new(chip.com1, 115200)
         .finalize(components::uart_mux_component_static!());
+
+    // Choose which UART to feed into the console
+    #[cfg(feature = "vga_text_80x25")]
+    let console_uart = vga_mux;
+    #[cfg(not(feature = "vga_text_80x25"))]
+    let console_uart = uart_mux;
 
     // Create a shared virtualization mux layer on top of a single hardware
     // alarm.
@@ -263,10 +280,10 @@ unsafe extern "cdecl" fn main() {
     // Initialize the kernel's process console.
     let pconsole = components::process_console::ProcessConsoleComponent::new(
         board_kernel,
-        uart_mux,
+        console_uart,   // VGA or serial
         mux_alarm,
         process_printer,
-        None,
+        None
     )
     .finalize(components::process_console_component_static!(
         Pit<'static, RELOAD_1KHZ>
@@ -352,6 +369,19 @@ unsafe extern "cdecl" fn main() {
         debug!("Error loading processes!");
         debug!("{:?}", err);
     });
-
+    #[cfg(feature = "vga_text_80x25")]
+    {
+        debug!("Running VGA scroll stress-test…");
+        use core::fmt::Write;
+        unsafe {
+            VGA_TEXT.clear();
+            for i in 0..200 {
+                (&mut VGA_TEXT)
+                    .write_fmt(format_args!("line {:03}\r\n", i))
+                    .unwrap();
+            }
+        }
+        debug!("VGA test completed.");
+    }
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_cap);
 }
