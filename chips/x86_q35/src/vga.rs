@@ -56,8 +56,7 @@ const TEXT_BUFFER_HEIGHT: usize = 25;
 // Low-level port I/O helpers
 // inb/outb wrappers
 
-// Write an 8-bit value to an I/O Port.
-
+/// Write an 8-bit value to an I/O Port.
 #[inline(always)]
 fn outb(port: u16, val: u8) {
     unsafe {
