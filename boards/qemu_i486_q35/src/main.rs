@@ -18,7 +18,7 @@ use core::fmt::Write;
 use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
-use kernel::config::{VgaMode, CONFIG};
+use x86_q35::vga::VGA_MODE;
 use kernel::debug;
 use kernel::hil;
 use kernel::ipc::IPC;
@@ -190,7 +190,7 @@ unsafe extern "cdecl" fn main() {
     let board_kernel = static_init!(Kernel, Kernel::new(&*ptr::addr_of!(PROCESSES)));
 
     // VGA init
-    if let Some(mode) = CONFIG.vga_mode {
+    if let Some(mode) = VGA_MODE {
         vga::init(mode);
     }
     // Small Test

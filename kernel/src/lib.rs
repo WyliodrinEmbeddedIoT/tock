@@ -124,8 +124,7 @@ pub mod storage_permissions;
 pub mod syscall;
 pub mod upcall;
 pub mod utilities;
-
-pub mod config;
+mod config;
 mod kernel;
 mod memop;
 mod process_binary;
@@ -140,3 +139,4 @@ pub use crate::errorcode::ErrorCode;
 pub use crate::kernel::Kernel;
 pub use crate::process::ProcessId;
 pub use crate::scheduler::Scheduler;
+
