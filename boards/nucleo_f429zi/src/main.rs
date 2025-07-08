@@ -70,7 +70,7 @@ struct NucleoF429ZI {
     led: &'static capsules_core::led::LedDriver<
         'static,
         LedHigh<'static, stm32f429zi::gpio::Pin<'static>>,
-        4,
+        3,
     >,
     button: &'static capsules_core::button::Button<'static, stm32f429zi::gpio::Pin<'static>>,
     adc: &'static capsules_core::adc::AdcVirtualized<'static>,
@@ -410,7 +410,6 @@ unsafe fn start() -> (
         LedHigh::new(gpio_ports.get_pin(stm32f429zi::gpio::PinId::PB00).unwrap()),
         LedHigh::new(gpio_ports.get_pin(stm32f429zi::gpio::PinId::PB07).unwrap()),
         LedHigh::new(gpio_ports.get_pin(stm32f429zi::gpio::PinId::PB14).unwrap()),
-        LedHigh::new(gpio_ports.get_pin(stm32f429zi::gpio::PinId::PF13).unwrap()),
     ));
 
     // BUTTONs
