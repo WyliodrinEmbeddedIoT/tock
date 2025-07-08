@@ -14,7 +14,6 @@ use capsules_core::console::{self, Console};
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use components::console::ConsoleComponent;
 use components::debug_writer::DebugWriterComponent;
-use core::fmt::Write;
 use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;

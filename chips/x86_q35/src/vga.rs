@@ -24,8 +24,7 @@
 // `ProcessConsole` to this driver or to the legacy serial mux.
 
 
-use core::fmt::{self, Write};
-use core::ptr::write_volatile;
+use core::fmt::{self};
 /// All VGA modes supported by the x86_q35 chip crate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VgaMode {
@@ -127,13 +126,13 @@ impl VgaText {
     //0x0E  = CRTC register index 14 => Cursor Location High
     fn update_hw_cursor(&self) {
         let pos = (self.row * TEXT_BUFFER_WIDTH + self.col) as u16;
-        unsafe {
+
             // write low byte
             outb(0x3D4, 0x0F);  //index 0x0F -> cursor LOW
             outb(0x3D5, (pos & 0xFF) as u8);
             outb(0x3D4, 0x0E); // index 0x0E -> cursor HIGH
             outb(0x3D5, (pos >> 8) as u8); // upper 8 bits
-        }
+
     }
 
     fn scroll_up(&mut self) {
@@ -147,9 +146,9 @@ impl VgaText {
         }
         //clear last row
         let blank = ((self.attr as u16) << 8) | b' ' as u16;
+        for col in 0..TEXT_BUFFER_WIDTH {
         unsafe {
-            for col in 0..TEXT_BUFFER_WIDTH {
-                core::ptr::write_volatile(
+                    core::ptr::write_volatile(
                     Self::cell_at((TEXT_BUFFER_HEIGHT - 1) * TEXT_BUFFER_WIDTH + col),
                     blank,
                 );
@@ -160,12 +159,12 @@ impl VgaText {
     // Move the hardware cursor to `col`, `row`.
     pub fn set_cursor(&self, col: usize, row: usize) {
         let pos = (row * TEXT_BUFFER_WIDTH + col) as u16;
-        unsafe {
+
             outb(0x3D4, 0x0F);
             outb(0x3D5, (pos & 0xFF) as u8);
             outb(0x3D4, 0x0E);
             outb(0x3D5, (pos >> 8) as u8);
-        }
+
     }
 }
 

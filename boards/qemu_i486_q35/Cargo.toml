@@ -25,10 +25,7 @@ tock_build_scripts = { path = "../build_scripts" }
 [lints]
 workspace = true
 
-
-
 [features]
 vga_text_80x25 = ["x86_q35/vga_text_80x25"]
 vga_640x480_16  = []
 vga_800x600_16  = []
-
