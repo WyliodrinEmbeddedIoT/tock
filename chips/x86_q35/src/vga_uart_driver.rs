@@ -25,12 +25,9 @@ use core::fmt::Write as FmtWrite;
 use kernel::hil::uart::{Configure, Parameters, Receive, ReceiveClient, Transmit, TransmitClient};
 use kernel::ErrorCode;
 use kernel::hil::uart;
+use x86::support::atomic;
 use crate::vga::VgaText;
 
-/// Global VGA writer allocated in `chips/x86_q35/vga.rs`.
-extern "Rust" {
-    static mut VGA_TEXT: VgaText;
-}
 
 /// UART‑compatible wrapper around the VGA text writer.
 pub struct VgaUart {
@@ -71,13 +68,15 @@ impl<'a> Transmit<'a> for VgaUart {
         len: usize,
     ) -> Result<(), (ErrorCode, &'static mut [u8])> {
         // Write synchronously.
-        unsafe {
-            let writer = &mut *self.writer_ptr;
-            let write_len = cmp::min(len, buffer.len());
-            for &byte in &buffer[..write_len] {
-                let _ = writer.write_char(byte as char);
+        atomic (|| {
+            unsafe {
+                let writer = &mut *self.writer_ptr;
+                let write_len = cmp::min(len, buffer.len());
+                for &byte in &buffer[..write_len] {
+                    let _ = writer.write_char(byte as char);
+                }
             }
-        }
+        });
         self.fire_tx_callback(buffer, len);
         Ok(())
     }

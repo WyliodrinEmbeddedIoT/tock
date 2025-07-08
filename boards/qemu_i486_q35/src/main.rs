@@ -39,6 +39,7 @@ use x86_q35::vga_uart_driver::VgaUart;
 
 mod multiboot;
 use multiboot::MultibootV1Header;
+use x86::support::atomic;
 
 mod io;
 
@@ -208,7 +209,9 @@ unsafe extern "cdecl" fn main() {
 
     // VGA UART + mux (only when the feature is on)
     #[cfg(feature = "vga_text_80x25")]
-    let vga_uart = static_init!(VgaUart, unsafe { VgaUart::new(&mut VGA_TEXT) });
+    let vga_uart = static_init!(VgaUart,
+    unsafe { VgaUart::new(&raw mut VGA_TEXT) });
+
 
     #[cfg(feature = "vga_text_80x25")]
     let vga_mux = components::console::UartMuxComponent::new(
@@ -372,14 +375,18 @@ unsafe extern "cdecl" fn main() {
     {
         debug!("Running VGA scroll stress-test…");
         use core::fmt::Write;
-        unsafe {
-            VGA_TEXT.clear();
-            for i in 0..200 {
-                (&mut VGA_TEXT)
-                    .write_fmt(format_args!("line {:03}\r\n", i))
+        for i in 0..200 {
+        // kernel::debug!("stress {i}");
+        atomic(|| {
+            // `VGA_TEXT` is a mutable static, so we still need `unsafe`, but now
+            // no interrupt can pre-empt this critical section.
+            unsafe {
+                VGA_TEXT
+                    .write_fmt(format_args!("line {i:03}\n"))
                     .unwrap();
             }
-        }
+        });
+    }
         debug!("VGA test completed.");
     }
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_cap);

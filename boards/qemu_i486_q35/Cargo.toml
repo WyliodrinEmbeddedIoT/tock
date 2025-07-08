@@ -27,5 +27,7 @@ workspace = true
 
 [features]
 vga_text_80x25 = ["x86_q35/vga_text_80x25"]
-vga_640x480_16  = []
-vga_800x600_16  = []
+vga_640x480_16 = ["x86_q35/vga_640x480_16"]
+vga_800x600_16 = ["x86_q35/vga_800x600_16"]
+
+default = ["vga_text_80x25"]
