@@ -25,6 +25,11 @@
 
 
 use core::fmt::{self};
+use spin::Mutex;
+
+/// The single global VGA text writer guarded by a spin-lock.
+pub static VGA_TEXT: Mutex<VgaText> = Mutex::new(VgaText::new());
+
 /// All VGA modes supported by the x86_q35 chip crate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VgaMode {

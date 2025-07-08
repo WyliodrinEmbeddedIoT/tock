@@ -34,12 +34,13 @@ use x86::registers::irq;
 use x86_q35::vga::{self};
 use x86_q35::{Pc, PcComponent};
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::vga::VGA_TEXT;
 #[cfg(feature = "vga_text_80x25")]
 use x86_q35::vga_uart_driver::VgaUart;
 
 mod multiboot;
 use multiboot::MultibootV1Header;
-use x86::support::atomic;
+
 
 mod io;
 
@@ -154,9 +155,6 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
         &()
     }
 }
-#[cfg(feature = "vga_text_80x25")]
-static mut VGA_TEXT: x86_q35::vga::VgaText = x86_q35::vga::VgaText::new();
-
 #[no_mangle]
 unsafe extern "cdecl" fn main() {
     // ---------- BASIC INITIALIZATION -----------
@@ -209,8 +207,7 @@ unsafe extern "cdecl" fn main() {
 
     // VGA UART + mux (only when the feature is on)
     #[cfg(feature = "vga_text_80x25")]
-    let vga_uart = static_init!(VgaUart,
-    unsafe { VgaUart::new(&raw mut VGA_TEXT) });
+    let vga_uart = static_init!(VgaUart, VgaUart::new(&VGA_TEXT));
 
 
     #[cfg(feature = "vga_text_80x25")]
@@ -374,20 +371,18 @@ unsafe extern "cdecl" fn main() {
     #[cfg(feature = "vga_text_80x25")]
     {
         debug!("Running VGA scroll stress-test…");
-        use core::fmt::Write;
+        use core::fmt::Write;        // bring the trait into scope
+
         for i in 0..200 {
-        // kernel::debug!("stress {i}");
-        atomic(|| {
-            // `VGA_TEXT` is a mutable static, so we still need `unsafe`, but now
-            // no interrupt can pre-empt this critical section.
-            unsafe {
-                VGA_TEXT
-                    .write_fmt(format_args!("line {i:03}\n"))
-                    .unwrap();
-            }
-        });
-    }
+            // lock the mutex and get a &mut VgaText
+            let mut vga = VGA_TEXT.lock();
+            // now write through the VgaText API
+            vga.write_fmt(format_args!("line {i:03}\n")).unwrap();
+            // lock is released at end of this scope
+        }
+
         debug!("VGA test completed.");
     }
+
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_cap);
 }

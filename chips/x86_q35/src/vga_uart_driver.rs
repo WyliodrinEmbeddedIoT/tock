@@ -18,20 +18,19 @@
 
 #![cfg(feature = "vga_text_80x25")]
 
-use core::cell::Cell;
-use core::cmp;
 use core::fmt::Write as FmtWrite;
+use core::{cell::Cell, cmp, fmt::Write as _};
+use spin::Mutex;
 
 use kernel::hil::uart::{Configure, Parameters, Receive, ReceiveClient, Transmit, TransmitClient};
 use kernel::ErrorCode;
 use kernel::hil::uart;
-use x86::support::atomic;
-use crate::vga::VgaText;
+use crate::vga::{VgaText, VGA_TEXT};
 
 
 /// UART‑compatible wrapper around the VGA text writer.
 pub struct VgaUart {
-    writer_ptr: *mut VgaText,
+    writer: &'static Mutex<VgaText>,
     tx_client: Cell<Option<&'static dyn TransmitClient>>,  // no lifetime param
     rx_client: Cell<Option<&'static dyn ReceiveClient>>,   // no lifetime param
 }
@@ -40,9 +39,9 @@ impl VgaUart {
     /// # Safety
     /// `writer_ptr` must point to the **static** `VGA_TEXT` for the kernel's
     /// lifetime.
-    pub const unsafe fn new(writer_ptr: *mut VgaText) -> Self {
+    pub const unsafe fn new(writer: &'static Mutex<VgaText>) -> Self {
         Self {
-            writer_ptr,
+            writer,
             tx_client: Cell::new(None),
             rx_client: Cell::new(None),
         }
@@ -67,16 +66,13 @@ impl<'a> Transmit<'a> for VgaUart {
         buffer: &'static mut [u8],
         len: usize,
     ) -> Result<(), (ErrorCode, &'static mut [u8])> {
-        // Write synchronously.
-        atomic (|| {
-            unsafe {
-                let writer = &mut *self.writer_ptr;
-                let write_len = cmp::min(len, buffer.len());
-                for &byte in &buffer[..write_len] {
-                    let _ = writer.write_char(byte as char);
-                }
+        let write_len = cmp::min(len, buffer.len());
+        {
+            let mut vga = self.writer.lock();
+            for &byte in &buffer[..write_len] {
+                let _ = vga.write_char(byte as char);
             }
-        });
+        }
         self.fire_tx_callback(buffer, len);
         Ok(())
     }
