@@ -17,30 +17,27 @@ use components::debug_writer::DebugWriterComponent;
 use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
-use x86_q35::vga::VGA_MODE;
 use kernel::debug;
 use kernel::hil;
 use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
-use kernel::process::Process;
+use kernel::process::ProcessArray;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
-use kernel::Kernel;
 use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
-use x86_q35::vga::{self};
-use x86_q35::{Pc, PcComponent};
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::vga::VGA_TEXT;
-#[cfg(feature = "vga_text_80x25")]
+use x86_q35::vga::{self};
+use x86_q35::vga::{VgaMode, VGA_MODE};
 use x86_q35::vga_uart_driver::VgaUart;
+use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
 use multiboot::MultibootV1Header;
-
 
 mod io;
 
@@ -51,9 +48,8 @@ static MULTIBOOT_V1_HEADER: MultibootV1Header = MultibootV1Header::new(0);
 
 const NUM_PROCS: usize = 4;
 
-// Actual memory for holding the active process structures. Need an empty list
-// at least.
-static mut PROCESSES: [Option<&'static dyn Process>; NUM_PROCS] = [None; NUM_PROCS];
+/// Static variables used by io.rs.
+static mut PROCESSES: Option<&'static ProcessArray<NUM_PROCS>> = None;
 
 // Reference to the chip for panic dumps
 static mut CHIP: Option<&'static Pc> = None;
@@ -167,17 +163,19 @@ unsafe extern "cdecl" fn main() {
     .finalize(x86_q35::x86_q35_component_static!());
 
     // Map the Bochs/QEMU linear-framebuffer BAR (0xE000_0000 - 0xE03F_FFFF)
-    unsafe {
-        //RW = true, Supervisor = true
-        //constants for a 4 Mib PDE
-        const PRESENT: u32 = 1 << 0;
-        const RW: u32 = 1 << 1;
-        const PS_4MIB: u32 = 1 << 7;
+    if VGA_MODE.is_some() {
+        unsafe {
+            //RW = true, Supervisor = true
+            //constants for a 4 Mib PDE
+            const PRESENT: u32 = 1 << 0;
+            const RW: u32 = 1 << 1;
+            const PS_4MIB: u32 = 1 << 7;
 
-        let pde_index = (0xE000_0000u32 >> 22) as usize;
-        let pde_value = (0xE000_0000u32 & 0xFFC0_0000) | PS_4MIB | RW | PRESENT;
+            let pde_index = (0xE000_0000u32 >> 22) as usize;
+            let pde_value = (0xE000_0000u32 & 0xFFC0_0000) | PS_4MIB | RW | PRESENT;
 
-        PAGE_DIR[pde_index] = PDEntry(pde_value);
+            PAGE_DIR[pde_index] = PDEntry(pde_value);
+        }
     }
 
     // Acquire required capabilities
@@ -185,48 +183,43 @@ unsafe extern "cdecl" fn main() {
     let memory_allocation_cap = create_capability!(capabilities::MemoryAllocationCapability);
     let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
 
-    // Create a board kernel instance
-    let board_kernel = static_init!(Kernel, Kernel::new(&*ptr::addr_of!(PROCESSES)));
+    // Create an array to hold process references.
+    let processes = components::process_array::ProcessArrayComponent::new()
+        .finalize(components::process_array_component_static!(NUM_PROCS));
+    PROCESSES = Some(processes);
+
+    // Setup space to store the core kernel data structure.
+    let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(processes.as_slice()));
 
     // VGA init
     if let Some(mode) = VGA_MODE {
         vga::init(mode);
     }
-    // Small Test
-   unsafe {
-        // Pointer to VGA text buffer
-        let fb = 0xB8000 as *mut u16;
 
-        // Write one coloured line: A..P with foreground cycling 0..15
-        for i in 0..16 {
-            let ch = b'A' + i as u8; // ASCII A, B, C …
-            let attr = (0 << 4) | i; // black bg | colour fg
-            core::ptr::write_volatile(fb.add(i), (attr as u16) << 8 | ch as u16);
-        }
-    }
+    // Returns Some(&'static UartMux) when the VGA text feature is chosen,
+    // otherwise None. We can later pick the actual console UART based on this.
+    let vga_mux_opt = if VGA_MODE == Some(VgaMode::Text80x25) {
+        // SAFETY: static_init! allocates once and returns a &'static.
+        let vga_uart = static_init!(VgaUart, VgaUart::new(&VGA_TEXT));
 
-    // VGA UART + mux (only when the feature is on)
-    #[cfg(feature = "vga_text_80x25")]
-    let vga_uart = static_init!(VgaUart, VgaUart::new(&VGA_TEXT));
-
-
-    #[cfg(feature = "vga_text_80x25")]
-    let vga_mux = components::console::UartMuxComponent::new(
-        vga_uart,
-        /* dummy baudrate, unused */ 115200,
-    )
-        .finalize(components::uart_mux_component_static!());
+        Some(
+            components::console::UartMuxComponent::new(
+                vga_uart, /* dummy baudrate, unused by VgaUart */
+                115_200,
+            )
+            .finalize(components::uart_mux_component_static!()),
+        )
+    } else {
+        None
+    };
 
     // Create a shared UART channel for the console and for kernel
     // debug over the provided 8250-compatible UART.
     let uart_mux = components::console::UartMuxComponent::new(chip.com1, 115200)
         .finalize(components::uart_mux_component_static!());
 
-    // Choose which UART to feed into the console
-    #[cfg(feature = "vga_text_80x25")]
-    let console_uart = vga_mux;
-    #[cfg(not(feature = "vga_text_80x25"))]
-    let console_uart = uart_mux;
+    // Choose which UART the console should use: VGA when present, otherwise COM1.
+    let console_uart = vga_mux_opt.unwrap_or(uart_mux);
 
     // Create a shared virtualization mux layer on top of a single hardware
     // alarm.
@@ -279,10 +272,10 @@ unsafe extern "cdecl" fn main() {
     // Initialize the kernel's process console.
     let pconsole = components::process_console::ProcessConsoleComponent::new(
         board_kernel,
-        console_uart,   // VGA or serial
+        console_uart, // VGA or serial, write here which one you want to boot
         mux_alarm,
         process_printer,
-        None
+        None,
     )
     .finalize(components::process_console_component_static!(
         Pit<'static, RELOAD_1KHZ>
@@ -306,9 +299,8 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(components::low_level_debug_component_static!());
 
-    let scheduler =
-        components::sched::cooperative::CooperativeComponent::new(&*ptr::addr_of!(PROCESSES))
-            .finalize(components::cooperative_component_static!(NUM_PROCS));
+    let scheduler = components::sched::cooperative::CooperativeComponent::new(processes)
+        .finalize(components::cooperative_component_static!(NUM_PROCS));
 
     let scheduler_timer = static_init!(
         VirtualSchedulerTimer<VirtualMuxAlarm<'static, Pit<'static, RELOAD_1KHZ>>>,
@@ -329,7 +321,7 @@ unsafe extern "cdecl" fn main() {
         ),
     };
 
-    // Start the process console:
+    //Start the process console:
     let _ = platform.pconsole.start();
 
     debug!("QEMU i486 \"Q35\" machine, initialization complete.");
@@ -360,7 +352,6 @@ unsafe extern "cdecl" fn main() {
             ptr::addr_of_mut!(_sappmem),
             ptr::addr_of!(_eappmem) as usize - ptr::addr_of!(_sappmem) as usize,
         ),
-        &mut *ptr::addr_of_mut!(PROCESSES),
         &FAULT_RESPONSE,
         &process_mgmt_cap,
     )
@@ -368,21 +359,6 @@ unsafe extern "cdecl" fn main() {
         debug!("Error loading processes!");
         debug!("{:?}", err);
     });
-    #[cfg(feature = "vga_text_80x25")]
-    {
-        debug!("Running VGA scroll stress-test…");
-        use core::fmt::Write;        // bring the trait into scope
-
-        for i in 0..200 {
-            // lock the mutex and get a &mut VgaText
-            let mut vga = VGA_TEXT.lock();
-            // now write through the VgaText API
-            vga.write_fmt(format_args!("line {i:03}\n")).unwrap();
-            // lock is released at end of this scope
-        }
-
-        debug!("VGA test completed.");
-    }
 
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_cap);
 }

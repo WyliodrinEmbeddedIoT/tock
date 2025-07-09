@@ -1,7 +1,14 @@
-//! `VgaUart` — a **synchronous, write‑only** façade that lets capsules
-//! expecting a `hil::uart::Uart` talk to the VGA text buffer instead of a
-//! serial port.  Lives solely in the x86 board crate; no core‑kernel changes.
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2024.
+
+//! VgaUart` — a **synchronous, write-only** façade that lets capsules
+//! use a `hil::uart::Uart`-style interface while we actually write to
+//! the VGA text buffer, not a serial port.
 //!
+//! The type lives only in te x86 Q35 board crate; the core kernel
+//! remains untouched
+
 //! Key design points
 //!
 //! • Implements the *minimum subset* of `Transmit` required by `MuxUart`.
@@ -16,23 +23,20 @@
 //! This file is compiled **only** when the `vga_text_80x25` feature is on, so
 //! normal serial‑only builds stay unaffected.
 
-#![cfg(feature = "vga_text_80x25")]
-
 use core::fmt::Write as FmtWrite;
-use core::{cell::Cell, cmp, fmt::Write as _};
+use core::{cell::Cell, cmp};
 use spin::Mutex;
 
+use crate::vga::VgaText;
+use kernel::hil::uart;
 use kernel::hil::uart::{Configure, Parameters, Receive, ReceiveClient, Transmit, TransmitClient};
 use kernel::ErrorCode;
-use kernel::hil::uart;
-use crate::vga::{VgaText, VGA_TEXT};
-
 
 /// UART‑compatible wrapper around the VGA text writer.
 pub struct VgaUart {
     writer: &'static Mutex<VgaText>,
-    tx_client: Cell<Option<&'static dyn TransmitClient>>,  // no lifetime param
-    rx_client: Cell<Option<&'static dyn ReceiveClient>>,   // no lifetime param
+    tx_client: Cell<Option<&'static dyn TransmitClient>>, // no lifetime param
+    rx_client: Cell<Option<&'static dyn ReceiveClient>>,  // no lifetime param
 }
 
 impl VgaUart {
@@ -58,7 +62,9 @@ impl VgaUart {
 impl<'a> Transmit<'a> for VgaUart {
     fn set_transmit_client(&self, client: &'a dyn TransmitClient) {
         // Extend lifetime to 'static — safe: client lives for entire kernel run.
-        self.tx_client.set(Some(unsafe { core::mem::transmute::<&'a dyn TransmitClient, &'static dyn TransmitClient>(client) }));
+        self.tx_client.set(Some(unsafe {
+            core::mem::transmute::<&'a dyn TransmitClient, &'static dyn TransmitClient>(client)
+        }));
     }
 
     fn transmit_buffer(
@@ -89,7 +95,9 @@ impl<'a> Transmit<'a> for VgaUart {
 // Receive, all blueprints
 impl<'a> Receive<'a> for VgaUart {
     fn set_receive_client(&self, client: &'a dyn ReceiveClient) {
-        self.rx_client.set(Some(unsafe { core::mem::transmute::<&'a dyn ReceiveClient, &'static dyn ReceiveClient>(client) }));
+        self.rx_client.set(Some(unsafe {
+            core::mem::transmute::<&'a dyn ReceiveClient, &'static dyn ReceiveClient>(client)
+        }));
     }
 
     fn receive_buffer(
@@ -103,8 +111,6 @@ impl<'a> Receive<'a> for VgaUart {
         }
         Ok(())
     }
-
-
 
     fn receive_word(&self) -> Result<(), ErrorCode> {
         Err(ErrorCode::NOSUPPORT)

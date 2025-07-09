@@ -11,7 +11,7 @@ build = "../build.rs"
 
 [dependencies]
 components = { path = "../components" }
-kernel = { path = "../../kernel"}
+kernel = { path = "../../kernel" }
 x86_q35 = { path = "../../chips/x86_q35" }
 x86 = { path = "../../arch/x86" }
 
@@ -26,8 +26,10 @@ tock_build_scripts = { path = "../build_scripts" }
 workspace = true
 
 [features]
+# Define in which mode qemu will boot, give the name of the feature
+# plus the path of the respective feature, check example below
+# Text-mode VGA console (80×25). Enable with
+#     --features vga_text_80x25
+#
+# Additional graphics-mode features will be added later.
 vga_text_80x25 = ["x86_q35/vga_text_80x25"]
-vga_640x480_16 = ["x86_q35/vga_640x480_16"]
-vga_800x600_16 = ["x86_q35/vga_800x600_16"]
-
-default = ["vga_text_80x25"]

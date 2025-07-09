@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-#
+
+# Licensed under the Apache License, Version 2.0 or the MIT License.
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+# Copyright Tock Contributors 2025.
+
 # qemu-run.sh – wrapper around qemu-system-i386
 #
 #  If a VGA-mode feature was enabled at build time, open a graphics
@@ -17,9 +21,7 @@ FEATURES="${2:-}"      # optional: feature list the Makefile knows
 vga_enabled=false
 
 # Look at the Cargo feature string passed in by the Makefile
-if [[ "$FEATURES" == *vga_text_80x25* ]] \
-  || [[ "$FEATURES" == *vga_640x480_16* ]] \
-  || [[ "$FEATURES" == *vga_800x600_16* ]]; then
+if [[ "$FEATURES" == *vga_text_80x25* ]]; then
     vga_enabled=true
 fi
 

@@ -80,7 +80,6 @@ pub(crate) struct Config {
     // credentials checking, e.g., whether elf2tab and tockloader are generating
     // properly formatted footers.
     pub(crate) debug_process_credentials: bool,
-
 }
 
 /// A unique instance of `Config` where compile-time configuration options are
@@ -88,15 +87,9 @@ pub(crate) struct Config {
 /// relevant configuration. Notably, this is the only location in the Tock
 /// kernel where we permit `#[cfg(x)]` to be used to configure code based on
 /// Cargo features.
-pub (crate)const CONFIG: Config = Config {
+pub(crate) const CONFIG: Config = Config {
     trace_syscalls: cfg!(feature = "trace_syscalls"),
     debug_load_processes: cfg!(feature = "debug_load_processes"),
     debug_panics: !cfg!(feature = "no_debug_panics"),
     debug_process_credentials: cfg!(feature = "debug_process_credentials"),
 };
-
-
-
-
-
-

@@ -1,3 +1,7 @@
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2024.
+
 // Minimal VGA peripheral implementation for the Tock x86_q35 chip crate.
 // Supports classic 80×25 text mode out‑of‑the‑box and exposes a stub for
 // setting planar 16‑colour graphics modes (640×480 and 800×600).  These
@@ -23,7 +27,6 @@
 // mode via `kernel::config::CONFIG.vga_mode` and decide whether to route the
 // `ProcessConsole` to this driver or to the legacy serial mux.
 
-
 use core::fmt::{self};
 use spin::Mutex;
 
@@ -37,7 +40,6 @@ pub enum VgaMode {
     Graphics640x480x16,
     Graphics800x600x16,
 }
-
 
 // Constants for memory-mapped text mode buffer
 
@@ -132,44 +134,46 @@ impl VgaText {
     fn update_hw_cursor(&self) {
         let pos = (self.row * TEXT_BUFFER_WIDTH + self.col) as u16;
 
-            // write low byte
-            outb(0x3D4, 0x0F);  //index 0x0F -> cursor LOW
-            outb(0x3D5, (pos & 0xFF) as u8);
-            outb(0x3D4, 0x0E); // index 0x0E -> cursor HIGH
-            outb(0x3D5, (pos >> 8) as u8); // upper 8 bits
-
+        // write low byte
+        outb(0x3D4, 0x0F); //index 0x0F -> cursor LOW
+        outb(0x3D5, (pos & 0xFF) as u8);
+        outb(0x3D4, 0x0E); // index 0x0E -> cursor HIGH
+        outb(0x3D5, (pos >> 8) as u8); // upper 8 bits
     }
 
     fn scroll_up(&mut self) {
-        //copy rows 1-24 -> 0-23 (4 KiB total)
-        for row in 1..TEXT_BUFFER_HEIGHT {
-            let dst = Self::cell_at((row - 1) * TEXT_BUFFER_WIDTH);
-            let src = Self::cell_at(row * TEXT_BUFFER_WIDTH);
-            unsafe {
-                core::ptr::copy(src, dst, TEXT_BUFFER_WIDTH);
-            }
-        }
-        //clear last row
         let blank = ((self.attr as u16) << 8) | b' ' as u16;
-        for col in 0..TEXT_BUFFER_WIDTH {
-        unsafe {
-                    core::ptr::write_volatile(
-                    Self::cell_at((TEXT_BUFFER_HEIGHT - 1) * TEXT_BUFFER_WIDTH + col),
-                    blank,
-                );
+
+        for row in 1..TEXT_BUFFER_HEIGHT {
+            for col in 0..TEXT_BUFFER_WIDTH {
+                let src = Self::cell_at(row * TEXT_BUFFER_WIDTH + col);
+                let dst = Self::cell_at((row - 1) * TEXT_BUFFER_WIDTH + col);
+                let val = unsafe { core::ptr::read_volatile(src) };
+                unsafe { core::ptr::write_volatile(dst, val) };
             }
         }
+
+        // blank bottom row
+        for col in 0..TEXT_BUFFER_WIDTH {
+            let idx = (TEXT_BUFFER_HEIGHT - 1) * TEXT_BUFFER_WIDTH + col;
+            unsafe { core::ptr::write_volatile(Self::cell_at(idx), blank) };
+        }
+
         self.row = TEXT_BUFFER_HEIGHT - 1;
+        self.col = 0;
     }
+
     // Move the hardware cursor to `col`, `row`.
     pub fn set_cursor(&self, col: usize, row: usize) {
         let pos = (row * TEXT_BUFFER_WIDTH + col) as u16;
 
-            outb(0x3D4, 0x0F);
-            outb(0x3D5, (pos & 0xFF) as u8);
-            outb(0x3D4, 0x0E);
-            outb(0x3D5, (pos >> 8) as u8);
-
+        outb(0x3D4, 0x0F);
+        outb(0x3D5, (pos & 0xFF) as u8);
+        outb(0x3D4, 0x0E);
+        outb(0x3D5, (pos >> 8) as u8);
+    }
+    pub fn set_attr(&mut self, attr: u8) {
+        self.attr = attr;
     }
 }
 
@@ -206,7 +210,10 @@ impl VgaText {
             byte => {
                 let val = ((self.attr as u16) << 8) | byte as u16;
                 unsafe {
-                    core::ptr::write_volatile(Self::cell_at(self.row * TEXT_BUFFER_WIDTH + self.col), val);
+                    core::ptr::write_volatile(
+                        Self::cell_at(self.row * TEXT_BUFFER_WIDTH + self.col),
+                        val,
+                    );
                 }
                 self.col += 1;
                 if self.col == TEXT_BUFFER_WIDTH {
@@ -258,7 +265,7 @@ fn init_text_mode() {
         outb(0x3C0, idx);
         outb(0x3C0, val);
     }
-    inb(0x3DA);        // reset flip-flop once more
+    inb(0x3DA); // reset flip-flop once more
     outb(0x3C0, 0x20); // bit 5 = 1 → video enabled
 }
 
@@ -273,24 +280,25 @@ pub fn init(mode: VgaMode) {
 /// VGA mode selected for this build (None ⇒ use serial console).
 pub const VGA_MODE: Option<VgaMode> = if cfg!(feature = "vga_text_80x25") {
     Some(VgaMode::Text80x25)
-
 } else if cfg!(feature = "vga_640x480_16") {
     Some(VgaMode::Graphics640x480x16)
-
 } else if cfg!(feature = "vga_800x600_16") {
     Some(VgaMode::Graphics800x600x16)
-
 } else {
     None
 };
 
-const _: () = assert!(
-    (cfg!(feature = "vga_text_80x25") as u8
-        + cfg!(feature = "vga_640x480_16") as u8
-        + cfg!(feature = "vga_800x600_16") as u8)
-        <= 1, // DEBUG temporary, must be changed to == 1 when process-console works fully
-    "Only at most one of the VGA mode features can be selected."
-);
+#[cfg(feature = "require_vga_mode")]
+const _: () = {
+    const COUNT: u8 = (cfg!(feature = "vga_text_80x25") as u8)
+        + (cfg!(feature = "vga_640x480_16") as u8)
+        + (cfg!(feature = "vga_800x600_16") as u8);
+
+    assert!(
+        COUNT == 1,
+        "Only at most one of the VGA mode features can be selected."
+    );
+};
 
 fn init_mode_0x12() {
     // 640×480×16‑colour – VGA BIOS mode 0x12, 4‑plane planar.
@@ -362,4 +370,3 @@ pub fn framebuffer() -> Option<(*mut u8, usize)> {
         _ => None, // Text mode or serial-only build
     }
 }
-
