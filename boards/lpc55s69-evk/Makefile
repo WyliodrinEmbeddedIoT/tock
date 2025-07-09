@@ -13,10 +13,13 @@ PROBE_RS=probe-rs
 # probe-rs needs this to know what it's flashing.
 iCHIP=LPC55S69JBD100
 
+<<<<<<< HEAD
 APP=/home/pc1/Projects/libtock-c/examples/blink/build/cortex-m7/cortex-m7.tbf
 KERNEL=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM).elf
 KERNEL_WITH_APP=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)-app.elf
 
+=======
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
 # Default target for installing the kernel.
 .PHONY: install
 install: flash
@@ -39,7 +42,11 @@ debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
 
 # An alias for the default `install` target.
 .PHONY: program
+<<<<<<< HEAD
 program: release
 	arm-none-eabi-objcopy --set-section-flags .apps=LOAD,ALLOC $(KERNEL) $(KERNEL_WITH_APP)
 	arm-none-eabi-objcopy --update-section .apps=$(APP) $(KERNEL_WITH_APP)
 	$(PROBE_RS) run --chip $(iCHIP) $(KERNEL_WITH_APP)
+=======
+program: install
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)

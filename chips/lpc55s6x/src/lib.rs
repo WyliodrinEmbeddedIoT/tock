@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #![no_std]
 #![recursion_limit = "512"]
 
@@ -14,6 +15,16 @@ pub mod pint;
 // pub mod rtc;
 pub mod syscon;
 
+=======
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2025.
+
+#![no_std]
+
+use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, CortexMVariant};
+
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
 extern "C" {
     fn _estack();
 }
@@ -41,6 +52,7 @@ pub static BASE_VECTORS: [unsafe extern "C" fn(); 16] = [
     unhandled_interrupt,
     CortexM33::SYSTICK_HANDLER,
 ];
+<<<<<<< HEAD
 
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), link_section = ".irqs")]
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), used)]
@@ -115,3 +127,5 @@ pub unsafe fn init() {
 
     cortexm33::nvic::enable_all();
 }
+=======
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
