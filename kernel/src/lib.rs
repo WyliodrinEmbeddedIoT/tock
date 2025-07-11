@@ -134,7 +134,6 @@ pub mod syscall;
 mod syscall_driver;
 pub mod upcall;
 pub mod utilities;
-
 // Core resources exposed as `kernel::Type`.
 pub use crate::errorcode::ErrorCode;
 pub use crate::kernel::Kernel;
