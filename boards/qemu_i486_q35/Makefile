@@ -20,7 +20,6 @@ QEMU_BASE_CMDLINE := \
     -cpu 486 \
     -machine q35 \
     -net none \
-    -nographic \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Run the kernel inside a qemu-system-i386 "q35" machine type simulation
@@ -36,17 +35,24 @@ QEMU_BASE_CMDLINE := \
 # If tock fails to boot with the following error: "qemu_i486_q35: cannot execute binary file",
 # replace objcopy with the full path to GNU objcopy.
 .PHONY: run
-run: $(TARGET_PATH)/release/$(PLATFORM).elf
+ELF := $(TARGET_PATH)/release/$(PLATFORM).elf
+
+run: $(ELF)
 	@echo
 	@echo Reordering ELF file sections
 	@$(OBJCOPY)  $<
 	@echo
-	@echo -e "Running $$(qemu-system-i386 --version | head -n1)"\
-	  "(tested: $(WORKING_QEMU_VERSION)) with\n"\
-          " - kernel $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf"
+	@echo -e "Running $$(qemu-system-i386 --version | head -n1)" \
+	  "(tested: $(WORKING_QEMU_VERSION)) with\n" \
+	  " - kernel $(ELF)"
 	@echo "To exit type C-a x"
 	@echo
-	$(QEMU_BASE_CMDLINE) \
-	  -kernel $<
 
-# todo: add run-app target
+	@if [ -x "$(CURDIR)/qemu-run.sh" ]; then \
+		 "$(CURDIR)/qemu-run.sh" "$<" "$(BOARD_CARGO_FEATURES)"; \
+	else \
+		$(QEMU_BASE_CMDLINE) -serial stdio -kernel "$<"; \
+	fi
+
+
+
