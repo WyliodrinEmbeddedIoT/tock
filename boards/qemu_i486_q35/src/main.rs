@@ -9,13 +9,12 @@
 // https://github.com/rust-lang/rust/issues/62184.
 #![cfg_attr(not(doc), no_main)]
 
-use core::ptr;
-
 use capsules_core::alarm;
 use capsules_core::console::{self, Console};
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use components::console::ConsoleComponent;
 use components::debug_writer::DebugWriterComponent;
+use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug;
@@ -24,15 +23,17 @@ use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
-use kernel::process::Process;
+use kernel::process::ProcessArray;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
-use kernel::{create_capability, static_init, Kernel};
-
+use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
-
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::vga::VGA_TEXT;
+use x86_q35::vga::{self};
+use x86_q35::vga::{VgaMode, VGA_MODE};
+use x86_q35::vga_uart_driver::VgaUart;
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
@@ -47,9 +48,8 @@ static MULTIBOOT_V1_HEADER: MultibootV1Header = MultibootV1Header::new(0);
 
 const NUM_PROCS: usize = 4;
 
-// Actual memory for holding the active process structures. Need an empty list
-// at least.
-static mut PROCESSES: [Option<&'static dyn Process>; NUM_PROCS] = [None; NUM_PROCS];
+/// Static variables used by io.rs.
+static mut PROCESSES: Option<&'static ProcessArray<NUM_PROCS>> = None;
 
 // Reference to the chip for panic dumps
 static mut CHIP: Option<&'static Pc> = None;
@@ -151,7 +151,6 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
         &()
     }
 }
-
 #[no_mangle]
 unsafe extern "cdecl" fn main() {
     // ---------- BASIC INITIALIZATION -----------
@@ -163,20 +162,64 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(x86_q35::x86_q35_component_static!());
 
+    // Map the Bochs/QEMU linear-framebuffer BAR (0xE000_0000 - 0xE03F_FFFF)
+    if VGA_MODE.is_some() {
+        unsafe {
+            //RW = true, Supervisor = true
+            //constants for a 4 Mib PDE
+            const PRESENT: u32 = 1 << 0;
+            const RW: u32 = 1 << 1;
+            const PS_4MIB: u32 = 1 << 7;
+
+            let pde_index = (0xE000_0000u32 >> 22) as usize;
+            let pde_value = (0xE000_0000u32 & 0xFFC0_0000) | PS_4MIB | RW | PRESENT;
+
+            PAGE_DIR[pde_index] = PDEntry(pde_value);
+        }
+    }
+
     // Acquire required capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);
     let memory_allocation_cap = create_capability!(capabilities::MemoryAllocationCapability);
     let main_loop_cap = create_capability!(capabilities::MainLoopCapability);
 
-    // Create a board kernel instance
-    let board_kernel = static_init!(Kernel, Kernel::new(&*ptr::addr_of!(PROCESSES)));
+    // Create an array to hold process references.
+    let processes = components::process_array::ProcessArrayComponent::new()
+        .finalize(components::process_array_component_static!(NUM_PROCS));
+    PROCESSES = Some(processes);
 
-    // ---------- QEMU-SYSTEM-I386 "Q35" MACHINE PERIPHERALS ----------
+    // Setup space to store the core kernel data structure.
+    let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(processes.as_slice()));
+
+    // VGA init
+    if let Some(mode) = VGA_MODE {
+        vga::init(mode);
+    }
+
+    // Returns Some(&'static UartMux) when the VGA text feature is chosen,
+    // otherwise None. We can later pick the actual console UART based on this.
+    let vga_mux_opt = if VGA_MODE == Some(VgaMode::Text80x25) {
+        // SAFETY: static_init! allocates once and returns a &'static.
+        let vga_uart = static_init!(VgaUart, VgaUart::new(&VGA_TEXT));
+
+        Some(
+            components::console::UartMuxComponent::new(
+                vga_uart, /* dummy baudrate, unused by VgaUart */
+                115_200,
+            )
+            .finalize(components::uart_mux_component_static!()),
+        )
+    } else {
+        None
+    };
 
     // Create a shared UART channel for the console and for kernel
     // debug over the provided 8250-compatible UART.
     let uart_mux = components::console::UartMuxComponent::new(chip.com1, 115200)
         .finalize(components::uart_mux_component_static!());
+
+    // Choose which UART the console should use: VGA when present, otherwise COM1.
+    let console_uart = vga_mux_opt.unwrap_or(uart_mux);
 
     // Create a shared virtualization mux layer on top of a single hardware
     // alarm.
@@ -221,7 +264,6 @@ unsafe extern "cdecl" fn main() {
     irq::enable();
 
     // ---------- FINAL SYSTEM INITIALIZATION ----------
-
     // Create the process printer used in panic prints, etc.
     let process_printer = components::process_printer::ProcessPrinterTextComponent::new()
         .finalize(components::process_printer_text_component_static!());
@@ -230,7 +272,7 @@ unsafe extern "cdecl" fn main() {
     // Initialize the kernel's process console.
     let pconsole = components::process_console::ProcessConsoleComponent::new(
         board_kernel,
-        uart_mux,
+        console_uart, // VGA or serial, write here which one you want to boot
         mux_alarm,
         process_printer,
         None,
@@ -257,9 +299,8 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(components::low_level_debug_component_static!());
 
-    let scheduler =
-        components::sched::cooperative::CooperativeComponent::new(&*ptr::addr_of!(PROCESSES))
-            .finalize(components::cooperative_component_static!(NUM_PROCS));
+    let scheduler = components::sched::cooperative::CooperativeComponent::new(processes)
+        .finalize(components::cooperative_component_static!(NUM_PROCS));
 
     let scheduler_timer = static_init!(
         VirtualSchedulerTimer<VirtualMuxAlarm<'static, Pit<'static, RELOAD_1KHZ>>>,
@@ -280,7 +321,7 @@ unsafe extern "cdecl" fn main() {
         ),
     };
 
-    // Start the process console:
+    //Start the process console:
     let _ = platform.pconsole.start();
 
     debug!("QEMU i486 \"Q35\" machine, initialization complete.");
@@ -311,7 +352,6 @@ unsafe extern "cdecl" fn main() {
             ptr::addr_of_mut!(_sappmem),
             ptr::addr_of!(_eappmem) as usize - ptr::addr_of!(_sappmem) as usize,
         ),
-        &mut *ptr::addr_of_mut!(PROCESSES),
         &FAULT_RESPONSE,
         &process_mgmt_cap,
     )
