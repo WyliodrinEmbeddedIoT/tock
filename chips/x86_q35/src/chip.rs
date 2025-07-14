@@ -4,10 +4,8 @@
 
 use core::fmt::Write;
 use core::mem::MaybeUninit;
-
 use kernel::component::Component;
 use kernel::platform::chip::Chip;
-
 use x86::mpu::PagingMPU;
 use x86::registers::bits32::paging::{PD, PT};
 use x86::support;
@@ -28,6 +26,9 @@ mod interrupt {
 
     /// Interrupt number shared by COM1 and COM3 serial devices
     pub(super) const COM1_COM3: u32 = (PIC1_OFFSET as u32) + 4;
+
+    /// Interrupt number for PS/2 keyboard (IRQ1)
+    pub(super) const KEYBOARD: u32 = (PIC1_OFFSET as u32) + 1;
 }
 
 /// Representation of a generic PC platform.
@@ -52,6 +53,9 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
 
     /// Legacy PIT timer
     pub pit: Pit<'a, PR>,
+
+    /// PS/2 controller (keyboard/mouse)
+    pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// System call context
     syscall: Boundary,
@@ -81,6 +85,9 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                     interrupt::COM1_COM3 => {
                         self.com1.handle_interrupt();
                         self.com3.handle_interrupt();
+                    }
+                    interrupt::KEYBOARD => {
+                        self.ps2.handle_interrupt();
                     }
                     _ => unimplemented!("interrupt {num}"),
                 }
@@ -163,6 +170,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
 pub struct PcComponent<'a> {
     pd: &'a mut PD,
     pt: &'a mut PT,
+    ps2: Option<&'a crate::ps2::Ps2Controller>,
 }
 
 impl<'a> PcComponent<'a> {
@@ -178,7 +186,13 @@ impl<'a> PcComponent<'a> {
     ///
     /// See [`x86::init`] for further details.
     pub unsafe fn new(pd: &'a mut PD, pt: &'a mut PT) -> Self {
-        Self { pd, pt }
+        Self { pd, pt, ps2: None }
+    }
+
+    /// Provide the PS/2 controller instance so `Pc` can dispatch IRQ1.
+    pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller) -> Self {
+        self.ps2 = Some(ps2);
+        self
     }
 }
 
@@ -217,12 +231,15 @@ impl Component for PcComponent<'static> {
 
         let syscall = Boundary::new();
 
+        let ps2 = self.ps2.expect("PcComponent.with_ps2 not called");
+
         let pc = s.4.write(Pc {
             com1,
             com2,
             com3,
             com4,
             pit,
+            ps2,
             syscall,
             paging,
         });
