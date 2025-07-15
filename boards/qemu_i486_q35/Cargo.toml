@@ -29,7 +29,8 @@ workspace = true
 # Define in which mode qemu will boot, give the name of the feature
 # plus the path of the respective feature, check example below
 # Text-mode VGA console (80×25). Enable with
+#
 #     --features vga_text_80x25
 #
 # Additional graphics-mode features will be added later.
-vga_text_80x25 = ["x86_q35/vga_text_80x25"]
+vga_text_80x25 = []

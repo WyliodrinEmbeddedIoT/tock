@@ -29,6 +29,8 @@
 
 use core::fmt::{self};
 use spin::Mutex;
+use crate::mmu;
+use x86::registers::bits32::paging::PD;
 
 /// The single global VGA text writer guarded by a spin-lock.
 pub static VGA_TEXT: Mutex<VgaText> = Mutex::new(VgaText::new());
@@ -369,4 +371,10 @@ pub fn framebuffer() -> Option<(*mut u8, usize)> {
 
         _ => None, // Text mode or serial-only build
     }
+}
+pub unsafe fn init_and_map_lfb(mode: VgaMode, page_dir: &mut PD) {
+    // 1) do the usual register setup
+    init(mode);
+    // 2) then map the LFB
+    unsafe {mmu::map_linear_framebuffer(page_dir);}
 }

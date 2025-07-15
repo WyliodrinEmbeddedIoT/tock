@@ -31,7 +31,6 @@ use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::vga::VGA_TEXT;
-use x86_q35::vga::{self};
 use x86_q35::vga::{VgaMode, VGA_MODE};
 use x86_q35::vga_uart_driver::VgaUart;
 use x86_q35::{Pc, PcComponent};
@@ -163,18 +162,12 @@ unsafe extern "cdecl" fn main() {
     .finalize(x86_q35::x86_q35_component_static!());
 
     // Map the Bochs/QEMU linear-framebuffer BAR (0xE000_0000 - 0xE03F_FFFF)
-    if VGA_MODE.is_some() {
+    if let Some(mode) = VGA_MODE {
         unsafe {
-            //RW = true, Supervisor = true
-            //constants for a 4 Mib PDE
-            const PRESENT: u32 = 1 << 0;
-            const RW: u32 = 1 << 1;
-            const PS_4MIB: u32 = 1 << 7;
-
-            let pde_index = (0xE000_0000u32 >> 22) as usize;
-            let pde_value = (0xE000_0000u32 & 0xFFC0_0000) | PS_4MIB | RW | PRESENT;
-
-            PAGE_DIR[pde_index] = PDEntry(pde_value);
+            // Create a raw mutable pointer to the static without ever producing a `&mut PAGE_DIR`
+            let pd_ptr: *mut PD = &raw mut PAGE_DIR;
+            // Readd a &mut PD from that raw pointer and call your init fn
+            x86_q35::vga::init_and_map_lfb(mode, &mut *pd_ptr);
         }
     }
 
@@ -190,11 +183,6 @@ unsafe extern "cdecl" fn main() {
 
     // Setup space to store the core kernel data structure.
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(processes.as_slice()));
-
-    // VGA init
-    if let Some(mode) = VGA_MODE {
-        vga::init(mode);
-    }
 
     // Returns Some(&'static UartMux) when the VGA text feature is chosen,
     // otherwise None. We can later pick the actual console UART based on this.

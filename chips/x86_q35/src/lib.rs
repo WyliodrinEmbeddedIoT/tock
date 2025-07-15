@@ -27,3 +27,4 @@ pub mod serial;
 
 pub mod vga;
 pub mod vga_uart_driver;
+mod mmu;
