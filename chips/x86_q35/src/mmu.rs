@@ -1,3 +1,7 @@
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2024.
+
 //! Small helpers for 32-bit paging on the Q35 machine.
 
 // First–level page-directory and entry types that the board already uses.
