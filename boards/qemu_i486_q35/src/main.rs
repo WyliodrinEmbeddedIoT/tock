@@ -187,7 +187,6 @@ unsafe extern "cdecl" fn main() {
     // Returns Some(&'static UartMux) when the VGA text feature is chosen,
     // otherwise None. We can later pick the actual console UART based on this.
     let vga_mux_opt = if VGA_MODE == Some(VgaMode::Text80x25) {
-        // SAFETY: static_init! allocates once and returns a &'static.
         let vga_uart = static_init!(VgaUart, VgaUart::new(&VGA_TEXT));
 
         Some(

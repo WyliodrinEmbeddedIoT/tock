@@ -27,9 +27,9 @@
 // mode via `kernel::config::CONFIG.vga_mode` and decide whether to route the
 // `ProcessConsole` to this driver or to the legacy serial mux.
 
+use crate::mmu;
 use core::fmt::{self};
 use spin::Mutex;
-use crate::mmu;
 use x86::registers::bits32::paging::PD;
 
 /// The single global VGA text writer guarded by a spin-lock.
@@ -282,10 +282,6 @@ pub fn init(mode: VgaMode) {
 /// VGA mode selected for this build (None ⇒ use serial console).
 pub const VGA_MODE: Option<VgaMode> = if cfg!(feature = "vga_text_80x25") {
     Some(VgaMode::Text80x25)
-} else if cfg!(feature = "vga_640x480_16") {
-    Some(VgaMode::Graphics640x480x16)
-} else if cfg!(feature = "vga_800x600_16") {
-    Some(VgaMode::Graphics800x600x16)
 } else {
     None
 };
@@ -376,5 +372,7 @@ pub unsafe fn init_and_map_lfb(mode: VgaMode, page_dir: &mut PD) {
     // 1) do the usual register setup
     init(mode);
     // 2) then map the LFB
-    unsafe {mmu::map_linear_framebuffer(page_dir);}
+    unsafe {
+        mmu::map_linear_framebuffer(page_dir);
+    }
 }
