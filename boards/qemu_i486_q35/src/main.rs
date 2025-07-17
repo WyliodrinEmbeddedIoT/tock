@@ -31,7 +31,7 @@ use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::vga::VGA_TEXT;
-use x86_q35::vga::{VgaMode, VGA_MODE};
+use x86_q35::vga::{init_and_map_lfb, VgaMode, VGA_MODE};
 use x86_q35::vga_uart_driver::VgaUart;
 use x86_q35::{Pc, PcComponent};
 
@@ -161,13 +161,9 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(x86_q35::x86_q35_component_static!());
 
-    // Map the Bochs/QEMU linear-framebuffer BAR (0xE000_0000 - 0xE03F_FFFF)
     if let Some(mode) = VGA_MODE {
         unsafe {
-            // Create a raw mutable pointer to the static without ever producing a `&mut PAGE_DIR`
-            let pd_ptr: *mut PD = &raw mut PAGE_DIR;
-            // Readd a &mut PD from that raw pointer and call your init fn
-            x86_q35::vga::init_and_map_lfb(mode, &mut *pd_ptr);
+            init_and_map_lfb(mode, &raw mut PAGE_DIR);
         }
     }
 

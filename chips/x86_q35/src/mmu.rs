@@ -5,7 +5,8 @@
 //! Small helpers for 32-bit paging on the Q35 machine.
 
 // First–level page-directory and entry types that the board already uses.
-use x86::registers::bits32::paging::{PDEntry, PD};
+use x86::registers::bits32::paging::PDEntry;
+pub use x86::registers::bits32::paging::PD;
 
 /// Physical address where Bochs/QEMU exposes the linear-frame-buffer BAR.
 pub const LFB_PHYS_BASE: u32 = 0xE0_00_0000;
