@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2024.
 
-use x86::InterruptPoller;
-
 use super::pic;
+use x86::InterruptPoller;
 
 /// Handler for external interrupts.
 ///

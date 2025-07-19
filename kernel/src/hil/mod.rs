@@ -27,6 +27,8 @@ pub mod kv;
 pub mod led;
 pub mod log;
 pub mod nonvolatile_storage;
+
+pub mod ps2_traits;
 pub mod public_key_crypto;
 pub mod pwm;
 pub mod radio;
@@ -42,7 +44,6 @@ pub mod touch;
 pub mod uart;
 pub mod usb;
 pub mod usb_hid;
-
 /// Shared interface for configuring components.
 pub trait Controller {
     type Config;
