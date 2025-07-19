@@ -20,6 +20,7 @@ use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug;
 use kernel::hil;
+use kernel::hil::ps2_traits::PS2Traits;
 use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
@@ -28,11 +29,11 @@ use kernel::process::ProcessArray;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
 use kernel::{create_capability, static_init};
-
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::ps2::Ps2Controller;
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
@@ -153,6 +154,10 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
 
 #[no_mangle]
 unsafe extern "cdecl" fn main() {
+    // 1) Instantiate and init the PS/2 controller:
+
+    let ps2 = static_init!(Ps2Controller<'static>, Ps2Controller::new());
+    ps2.init();
     // ---------- BASIC INITIALIZATION -----------
 
     // Basic setup of the i486 platform
@@ -160,7 +165,11 @@ unsafe extern "cdecl" fn main() {
         &mut *ptr::addr_of_mut!(PAGE_DIR),
         &mut *ptr::addr_of_mut!(PAGE_TABLE),
     )
+    // PS/2
+    .with_ps2(ps2)
     .finalize(x86_q35::x86_q35_component_static!());
+
+    // Smoke-test PS/2 primitives: read & write the config byte
 
     // Acquire required capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);
