@@ -76,13 +76,14 @@ pub static mut PAGE_DIR: PD = [PDEntry(0); 1024];
 pub static mut PAGE_TABLE: PT = [PTEntry(0); 1024];
 
 #[no_mangle]
-pub static mut PS2: core::mem::MaybeUninit<Ps2Controller<'static>> =
-    core::mem::MaybeUninit::uninit();
+pub static mut PS2: core::mem::MaybeUninit<Ps2Controller> = core::mem::MaybeUninit::uninit();
+
 
 /// Keyboard object used by chip.rs
 #[no_mangle]
-pub static mut KEYBOARD: core::mem::MaybeUninit<Keyboard<'static, Ps2Controller<'static>>> =
-    core::mem::MaybeUninit::uninit();
+pub static mut KEYBOARD: core::mem::MaybeUninit<
+    Keyboard<'static, Ps2Controller>
+> = core::mem::MaybeUninit::uninit();
 
 pub struct QemuI386Q35Platform {
     pconsole: &'static capsules_core::process_console::ProcessConsole<
@@ -163,9 +164,11 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
 unsafe extern "cdecl" fn main() {
     // -------- PS/2 controller & keyboard --------
     let ps2_ctrl: &'static Ps2Controller = {
-        let ctrl_mut: &'static mut Ps2Controller =
-            static_init!(Ps2Controller<'static>, Ps2Controller::new());
-        x86_q35::ps2_ctl::init_controller::<Ps2Controller<'static>>()
+        let ctrl_mut: &'static mut Ps2Controller = static_init!(
+    Ps2Controller,
+    Ps2Controller::new()
+);
+        x86_q35::ps2_ctl::init_controller()
             .expect("PS/2 controller init failed");
         ctrl_mut
     };
@@ -175,8 +178,9 @@ unsafe extern "cdecl" fn main() {
         kb.init().expect("Keyboard init failed");
         kb
     };
-    let slot: *mut Keyboard<'static, Ps2Controller> = core::ptr::addr_of_mut!(KEYBOARD).cast();
-    ptr::write(slot, kb_val);
+    let slot = core::ptr::addr_of_mut!(KEYBOARD).cast::<Keyboard<Ps2Controller>>();
+
+    core::ptr::write(slot, kb_val);
 
     // -------- Chip initialisation --------
     let chip = PcComponent::new(

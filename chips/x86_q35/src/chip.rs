@@ -5,7 +5,6 @@
 use core::fmt::Write;
 use core::mem::MaybeUninit;
 use kernel::component::Component;
-use kernel::hil::ps2_traits::PS2Traits;
 use kernel::platform::chip::Chip;
 use x86::mpu::PagingMPU;
 use x86::registers::bits32::paging::{PD, PT};
@@ -17,7 +16,7 @@ use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 extern "Rust" {
     /// Global keyboard object instantiated in the board setup
-    static KEYBOARD: Keyboard<'static, crate::ps2::Ps2Controller<'static>>;
+    static KEYBOARD: Keyboard<'static, crate::ps2::Ps2Controller>;
 }
 
 /// Interrupt constants for legacy PC peripherals
@@ -61,7 +60,7 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
     pub pit: Pit<'a, PR>,
 
     /// PS/2 controller (keyboard/mouse)
-    pub ps2: &'a crate::ps2::Ps2Controller<'a>,
+    pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// System call context
     syscall: Boundary,
@@ -93,7 +92,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                         self.com3.handle_interrupt();
                     }
                     interrupt::KEYBOARD => {
-                        let _ = self.ps2.handle_interrupt();
+                        self.ps2.handle_interrupt();
                         // decode + queue KeyEvent
                         unsafe {
                             KEYBOARD.poll();
@@ -180,7 +179,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
 pub struct PcComponent<'a> {
     pd: &'a mut PD,
     pt: &'a mut PT,
-    ps2: Option<&'a crate::ps2::Ps2Controller<'a>>,
+    ps2: Option<&'a crate::ps2::Ps2Controller>,
 }
 
 impl<'a> PcComponent<'a> {
@@ -200,7 +199,7 @@ impl<'a> PcComponent<'a> {
     }
 
     /// Provide the PS/2 controller instance so `Pc` can dispatch IRQ1.
-    pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller<'a>) -> Self {
+    pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller) -> Self {
         self.ps2 = Some(ps2);
         self
     }
