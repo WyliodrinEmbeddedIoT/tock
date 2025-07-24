@@ -5,9 +5,8 @@
 //! Low-level 8042 (i8042) controller bring-up.
 //! Does not touch keyboard protocol settings.
 
-use crate::ps2::{write_command, write_data, read_data, wait_output_ready};
+use crate::ps2::{read_data, wait_output_ready, write_command, write_data};
 use kernel::errorcode::ErrorCode;
-
 
 /// Run once, before any device-level init
 

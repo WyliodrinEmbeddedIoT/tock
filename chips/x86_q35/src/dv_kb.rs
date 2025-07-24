@@ -5,12 +5,12 @@
 //! PS/2 keyboard wrapper and Set‑2 decoder for the 8042 controller
 
 // will remove in prod dw
+use crate::ps2::Ps2Controller;
 #[cfg(not(test))]
 use crate::ps2_cmd;
 use core::cell::RefCell;
 use core::marker::PhantomData;
 use kernel::errorcode::ErrorCode;
-use crate::ps2::Ps2Controller;
 
 /// Public key‑event types
 
@@ -104,7 +104,6 @@ impl ScanSource for Ps2Controller {
         Ok(())
     }
 }
-
 
 /// Internal decoder state.  Only make codes generate output.
 pub struct DecoderState {
@@ -344,9 +343,8 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
     /// Full device bring-up
     /// Controller must already be init
     pub fn init(&self) -> Result<(), ErrorCode> {
-
         // Reset & self-test (0xFF → expect 0xAA)
-        let r = ps2_cmd::send( &[0xFF], 1)?;
+        let r = ps2_cmd::send(&[0xFF], 1)?;
         if r.as_slice() != [0xAA] {
             return Err(ErrorCode::FAIL);
         }
@@ -358,11 +356,10 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
         ps2_cmd::send(&[0xF6], 0)?;
 
         // Typematic: 10.9 cps / 250 ms (0x20)
-        ps2_cmd::send( &[0xF3, 0x20], 0)?;
+        ps2_cmd::send(&[0xF3, 0x20], 0)?;
 
         // Enable scanning
-        ps2_cmd::send( &[0xF4], 0)?;
-
+        ps2_cmd::send(&[0xF4], 0)?;
 
         Ok(())
     }
@@ -384,18 +381,18 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
         self.events.borrow_mut().pop()
     }
 
-   pub fn set_leds(&self, mask: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xED, mask & 0x07], 0).map(|_| ())
+    pub fn set_leds(&self, mask: u8) -> Result<(), ErrorCode> {
+        ps2_cmd::send(&[0xED, mask & 0x07], 0).map(|_| ())
     }
 
     pub fn probe_echo(&self) -> Result<(), ErrorCode> {
-        let r = ps2_cmd::send( &[0xEE], 1)?;
+        let r = ps2_cmd::send(&[0xEE], 1)?;
         (r.as_slice() == [0xEE])
             .then_some(())
             .ok_or(ErrorCode::FAIL)
     }
 
-   pub fn identify(&self) -> Result<([u8; 3], usize), ErrorCode> {
+    pub fn identify(&self) -> Result<([u8; 3], usize), ErrorCode> {
         let r = ps2_cmd::send(&[0xF2], 3)?;
         let mut ids = [0u8; 3];
         ids[..r.len()].copy_from_slice(r.as_slice());
@@ -408,16 +405,16 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
         Ok(if resp_len == 1 { r.as_slice()[0] } else { cmd })
     }
 
-   pub fn set_typematic(&self, rate: u8) -> Result<(), ErrorCode> {
+    pub fn set_typematic(&self, rate: u8) -> Result<(), ErrorCode> {
         ps2_cmd::send(&[0xF3, rate & 0x7F], 0).map(|_| ())
     }
 
-   pub fn enable_scanning(&self) -> Result<(), ErrorCode> {
+    pub fn enable_scanning(&self) -> Result<(), ErrorCode> {
         ps2_cmd::send(&[0xF4], 0).map(|_| ())
     }
 
     pub fn disable_scanning(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xF5], 0).map(|_| ())
+        ps2_cmd::send(&[0xF5], 0).map(|_| ())
     }
 
     pub fn set_defaults(&self) -> Result<(), ErrorCode> {
@@ -425,31 +422,31 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
     }
 
     pub fn set_typematic_only(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xF7], 0).map(|_| ())
+        ps2_cmd::send(&[0xF7], 0).map(|_| ())
     }
 
     pub fn set_make_release(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xF8], 0).map(|_| ())
+        ps2_cmd::send(&[0xF8], 0).map(|_| ())
     }
 
     pub fn set_make_only(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xF9], 0).map(|_| ())
+        ps2_cmd::send(&[0xF9], 0).map(|_| ())
     }
 
     pub fn set_full_mode(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xFA], 0).map(|_| ())
+        ps2_cmd::send(&[0xFA], 0).map(|_| ())
     }
 
     pub fn set_key_typematic_only(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xFB, sc], 0).map(|_| ())
+        ps2_cmd::send(&[0xFB, sc], 0).map(|_| ())
     }
 
     pub fn set_key_make_release(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xFC, sc], 0).map(|_| ())
+        ps2_cmd::send(&[0xFC, sc], 0).map(|_| ())
     }
 
     pub fn set_key_make_only(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send( &[0xFD, sc], 0).map(|_| ())
+        ps2_cmd::send(&[0xFD, sc], 0).map(|_| ())
     }
 
     pub fn is_present(&self) -> bool {
@@ -462,7 +459,7 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
     }
 
     pub fn reset_and_self_test(&self) -> Result<(), ErrorCode> {
-        let r = ps2_cmd::send( &[0xFF], 1)?;
+        let r = ps2_cmd::send(&[0xFF], 1)?;
         match r.as_slice()[0] {
             0xAA => Ok(()),
             _ => Err(ErrorCode::FAIL),
@@ -506,11 +503,14 @@ mod tests {
     /* --- dummy scan-code source ---*/
     struct DummySrc {
         bytes: &'static [u8],
-        idx:   Cell<usize>,
+        idx: Cell<usize>,
     }
     impl DummySrc {
         const fn new(bytes: &'static [u8]) -> Self {
-            Self { bytes, idx: Cell::new(0) }
+            Self {
+                bytes,
+                idx: Cell::new(0),
+            }
         }
     }
     impl ScanSource for DummySrc {
@@ -519,7 +519,9 @@ mod tests {
             self.idx.set(i + 1);
             self.bytes.get(i).copied()
         }
-        fn handle_interrupt(&self) -> Result<(), ErrorCode> { Ok(()) }
+        fn handle_interrupt(&self) -> Result<(), ErrorCode> {
+            Ok(())
+        }
     }
 
     /* --- Pump path ---*/
@@ -527,7 +529,7 @@ mod tests {
     fn pump_basic() {
         static BYTES: &[u8] = &[0x1C, 0xF0, 0x1C];
         let src = DummySrc::new(BYTES);
-        let kb  = Keyboard::new(&src);
+        let kb = Keyboard::new(&src);
 
         kb.poll();
         assert_eq!(kb.next_event(), Some(KeyEvent::Ascii(b'a')));
@@ -540,20 +542,22 @@ mod tests {
         const N: usize = 70;
         static BYTES: [u8; N] = [0x1C; N];
         let src = DummySrc::new(&BYTES);
-        let kb  = Keyboard::new(&src);
+        let kb = Keyboard::new(&src);
 
         kb.poll();
 
         let mut count = 0;
-        while kb.next_event().is_some() { count += 1; }
-        assert_eq!(count, EVT_CAP);                              // capped at 64
+        while kb.next_event().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, EVT_CAP); // capped at 64
     }
 
     /* --- Keyboard::init uses the mock ps2_cmd ---*/
     #[test]
     fn init_ok() {
         let src = DummySrc::new(&[]);
-        let kb  = Keyboard::new(&src);
+        let kb = Keyboard::new(&src);
         assert!(kb.init().is_ok());
     }
 }

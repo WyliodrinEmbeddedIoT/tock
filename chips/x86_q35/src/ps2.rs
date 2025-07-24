@@ -13,7 +13,7 @@ const PS2_STATUS_PORT: u16 = 0x64;
 
 /// Status-register bits
 const STATUS_OUTPUT_FULL: u8 = 1 << 0; // data ready
-const STATUS_INPUT_FULL: u8 = 1 << 1;  // input buffer full
+const STATUS_INPUT_FULL: u8 = 1 << 1; // input buffer full
 
 /// Timeout limit for spin loops
 const TIMEOUT_LIMIT: usize = 1_000_000;
@@ -66,8 +66,8 @@ pub fn write_data(data: u8) {
 /// PS/2 controller driver (the “8042” peripheral)
 pub struct Ps2Controller {
     buffer: RefCell<[u8; BUFFER_SIZE]>,
-    head:   Cell<usize>,
-    tail:   Cell<usize>,
+    head: Cell<usize>,
+    tail: Cell<usize>,
     _marker: PhantomData<()>,
 }
 
@@ -76,8 +76,8 @@ impl Ps2Controller {
     pub fn new() -> Self {
         Ps2Controller {
             buffer: RefCell::new([0; BUFFER_SIZE]),
-            head:   Cell::new(0),
-            tail:   Cell::new(0),
+            head: Cell::new(0),
+            tail: Cell::new(0),
             _marker: PhantomData,
         }
     }
