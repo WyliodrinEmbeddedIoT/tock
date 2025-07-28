@@ -29,6 +29,8 @@ mod interrupt {
 
     /// Interrupt number shared by COM1 and COM3 serial devices
     pub(super) const COM1_COM3: u32 = (PIC1_OFFSET as u32) + 4;
+
+    pub(super) const KEYBOARD: u32 = (PIC1_OFFSET as u32) + 1;
 }
 
 /// Representation of a generic PC platform.
@@ -56,6 +58,9 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
 
     /// Vga
     pub vga: &'a VgaText<'a>,
+
+    /// PS/2
+    pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// System call context
     syscall: Boundary,
@@ -86,6 +91,12 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                         self.com1.handle_interrupt();
                         self.com3.handle_interrupt();
                     }
+
+                    // new PS/2 keyboard interrupt handler
+                    interrupt::KEYBOARD => {
+                        self.ps2.handle_interrupt();
+                    }
+
                     _ => unimplemented!("interrupt {num}"),
                 }
 
@@ -167,6 +178,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
 pub struct PcComponent<'a> {
     pd: &'a mut PD,
     pt: &'a mut PT,
+    ps2: Option<&'a crate::ps2::Ps2Controller>,
 }
 
 impl<'a> PcComponent<'a> {
@@ -182,7 +194,11 @@ impl<'a> PcComponent<'a> {
     ///
     /// See [`x86::init`] for further details.
     pub unsafe fn new(pd: &'a mut PD, pt: &'a mut PT) -> Self {
-        Self { pd, pt }
+        Self { pd, pt, ps2: None }
+    }
+    pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller) -> Self {
+        self.ps2 = Some(ps2);
+        self
     }
 }
 
@@ -236,6 +252,9 @@ impl Component for PcComponent<'static> {
 
         let syscall = Boundary::new();
 
+        // debug
+        let ps2 = self.ps2.expect("PcComponent::with_ps2 was not called");
+
         let pc = s.4.write(Pc {
             com1,
             com2,
@@ -243,6 +262,7 @@ impl Component for PcComponent<'static> {
             com4,
             pit,
             vga,
+            ps2,
             syscall,
             paging,
         });
