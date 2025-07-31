@@ -9,13 +9,12 @@
 // https://github.com/rust-lang/rust/issues/62184.
 #![cfg_attr(not(doc), no_main)]
 
-use core::ptr;
-
 use capsules_core::alarm;
 use capsules_core::console::{self, Console};
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use components::console::ConsoleComponent;
 use components::debug_writer::DebugWriterComponent;
+use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug;
@@ -28,11 +27,11 @@ use kernel::process::ProcessArray;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
 use kernel::{create_capability, static_init};
-
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
-
+use x86_q35::dv_kb::Keyboard;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::ps2::Ps2Controller;
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
@@ -75,6 +74,15 @@ pub static mut PAGE_DIR: PD = [PDEntry(0); 1024];
 #[no_mangle]
 #[link_section = ".pte"]
 pub static mut PAGE_TABLE: PT = [PTEntry(0); 1024];
+
+#[no_mangle]
+pub static mut PS2: core::mem::MaybeUninit<Ps2Controller<'static>> =
+    core::mem::MaybeUninit::uninit();
+
+/// Keyboard object used by chip.rs
+#[no_mangle]
+pub static mut KEYBOARD: core::mem::MaybeUninit<Keyboard<'static, Ps2Controller<'static>>> =
+    core::mem::MaybeUninit::uninit();
 
 pub struct QemuI386Q35Platform {
     pconsole: &'static capsules_core::process_console::ProcessConsole<
@@ -153,13 +161,29 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
 
 #[no_mangle]
 unsafe extern "cdecl" fn main() {
-    // ---------- BASIC INITIALIZATION -----------
+    // -------- PS/2 controller & keyboard --------
+    let ps2_ctrl: &'static Ps2Controller = {
+        let ctrl_mut: &'static mut Ps2Controller =
+            static_init!(Ps2Controller<'static>, Ps2Controller::new());
+        x86_q35::ps2_ctl::init_controller::<Ps2Controller<'static>>()
+            .expect("PS/2 controller init failed");
+        ctrl_mut
+    };
 
-    // Basic setup of the i486 platform
+    let kb_val: Keyboard<'static, Ps2Controller> = {
+        let kb = Keyboard::new(ps2_ctrl);
+        kb.init().expect("Keyboard init failed");
+        kb
+    };
+    let slot: *mut Keyboard<'static, Ps2Controller> = core::ptr::addr_of_mut!(KEYBOARD).cast();
+    ptr::write(slot, kb_val);
+
+    // -------- Chip initialisation --------
     let chip = PcComponent::new(
         &mut *ptr::addr_of_mut!(PAGE_DIR),
         &mut *ptr::addr_of_mut!(PAGE_TABLE),
     )
+    .with_ps2(ps2_ctrl)
     .finalize(x86_q35::x86_q35_component_static!());
 
     // Acquire required capabilities
