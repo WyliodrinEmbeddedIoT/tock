@@ -468,14 +468,24 @@ pub enum Edge {
     Both,
 }
 
+<<<<<<< HEAD
 pub struct Pint<'a> {
     registers: StaticRef<PintRegisters>,
     clients: [OptionalCell<&'a dyn kernel::hil::gpio::Client>; 8],
+=======
+pub struct Pint {
+    registers: StaticRef<PintRegisters>,
+    clients: [OptionalCell<&'static dyn kernel::hil::gpio::Client>; 8],
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }
 
 // pub static PINT: Pint = Pint::new();
 
+<<<<<<< HEAD
 impl<'a> Pint<'a> {
+=======
+impl Pint {
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     pub const fn new() -> Self {
         Self {
             registers: PINT_BASE,
@@ -509,11 +519,19 @@ impl<'a> Pint<'a> {
     //     }
     // }
 
+<<<<<<< HEAD
     pub fn set_client(&self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
         if channel < 8 {
             self.clients[channel as usize].replace(client);
         }
     }
+=======
+    // pub fn set_client(&mut self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
+    //     if channel < 8 {
+    //     self.clients[channel as usize].replace(client);
+    //     }
+    // }
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 
     pub fn configure_interrupt(&self, channel: usize, edge: Edge) {
         if channel < 8 {
@@ -567,7 +585,11 @@ impl<'a> Pint<'a> {
 
         // self.registers.ist.get();
 
+<<<<<<< HEAD
         // let blue_led = GpioPin::new(LPCPin::P1_6);
+=======
+        let blue_led = GpioPin::new(LPCPin::P1_4);
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 
         for i in 0..8 {
             if (status & (1 << i)) != 0 {
@@ -578,11 +600,19 @@ impl<'a> Pint<'a> {
             }
         }
 
+<<<<<<< HEAD
         // blue_led.toggle();
         // Self::delay_ms(1000);
         // blue_led.toggle();
 
         // self.configure_interrupt(0, Edge::Rising);
+=======
+        blue_led.toggle();
+        Self::delay_ms(1000);
+        blue_led.toggle();
+
+        self.configure_interrupt(0, Edge::Rising);
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     }
 
     pub fn disable_interrupt(&self, channel: usize) {
@@ -597,4 +627,15 @@ impl<'a> Pint<'a> {
     pub fn read_interrupt(&self) -> u32 {
         self.registers.rise.get()
     }
+<<<<<<< HEAD
+=======
+
+    fn delay_ms(ms: u32) {
+        for _ in 0..ms {
+            for _ in 0..3000 {
+                cortexm33::support::nop();
+            }
+        }
+    }
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }

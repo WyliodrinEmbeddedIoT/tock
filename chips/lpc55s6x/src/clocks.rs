@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 use crate::syscon::CTIMERCLKSEL0::SEL::CLEAR;
 use crate::syscon::{self, SysconRegisters, *};
 use cortex_m_semihosting::hprintln;
+=======
+use crate::syscon::{self, SysconRegisters, *};
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 use kernel::utilities::{
     registers::interfaces::{ReadWriteable, Writeable},
     StaticRef,
@@ -53,8 +57,12 @@ impl Clock {
     }
 
     pub fn start_gpio_clocks(&self) {
+<<<<<<< HEAD
         // hprintln!("Starting GPIO clocks");
         self.syscon.ahbclkctrl0.modify(
+=======
+        self.syscon.ahbclkctrl0.write(
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
             syscon::AHBCLKCTRL0::SRAM_CTRL1::SET
                 + syscon::AHBCLKCTRL0::SRAM_CTRL2::SET
                 + syscon::AHBCLKCTRL0::SRAM_CTRL3::SET
@@ -69,6 +77,7 @@ impl Clock {
         );
     }
 
+<<<<<<< HEAD
     pub fn start_timer_clocks(&self) {
         self.syscon
             .ctimerclksel0
@@ -81,6 +90,8 @@ impl Clock {
         self.syscon.clkoutsel.modify(syscon::CLKOUTSEL::SEL::SET);
     }
 
+=======
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     pub fn set_frg_clock_source(&self, frg_id: u32, source: FrgClockSource) {
         let sel_val = match source {
             FrgClockSource::MainClock => syscon::FCCLKSEL::SEL::MainClock,

@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 MEMORY
 {
   rom(rx) : ORIGIN = 0x00000000, LENGTH = 64K
@@ -9,6 +10,8 @@ MEMORY
 /* SPDX-License-Identifier: Apache-2.0 OR MIT                         */
 /* Copyright Tock Contributors 2025. */
 
+=======
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 MEMORY
 {
   rom(rx) : ORIGIN = 0x00000000, LENGTH = 630K
@@ -20,6 +23,10 @@ MEMORY
 PAGE_SIZE = 4K;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ENTRY(initialize_ram_jump_to_main)
 =======
 >>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
+=======
+ENTRY(initialize_ram_jump_to_main)
+>>>>>>> 2cc808484 (Add initial code for the GPIO)

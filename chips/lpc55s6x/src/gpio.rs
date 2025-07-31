@@ -58,6 +58,7 @@ pub(crate) const GPIO_BASE: StaticRef<GpioRegisters> =
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum LPCPin {
+<<<<<<< HEAD
     P0_0 = 0,
     P0_1 = 1,
     P0_2 = 2,
@@ -251,6 +252,72 @@ impl<'a> Pins<'a> {
         self.set_iocon();
         self.set_pint();
     }
+=======
+    P0_0,
+    P0_1,
+    P0_2,
+    P0_3,
+    P0_4,
+    P0_5,
+    P0_6,
+    P0_7,
+    P0_8,
+    P0_9,
+    P0_10,
+    P0_11,
+    P0_12,
+    P0_13,
+    P0_14,
+    P0_15,
+    P0_16,
+    P0_17,
+    P0_18,
+    P0_19,
+    P0_20,
+    P0_21,
+    P0_22,
+    P0_23,
+    P0_24,
+    P0_25,
+    P0_26,
+    P0_27,
+    P0_28,
+    P0_29,
+    P0_30,
+    P0_31,
+    P1_0,
+    P1_1,
+    P1_2,
+    P1_3,
+    P1_4,
+    P1_5,
+    P1_6,
+    P1_7,
+    P1_8,
+    P1_9,
+    P1_10,
+    P1_11,
+    P1_12,
+    P1_13,
+    P1_14,
+    P1_15,
+    P1_16,
+    P1_17,
+    P1_18,
+    P1_19,
+    P1_20,
+    P1_21,
+    P1_22,
+    P1_23,
+    P1_24,
+    P1_25,
+    P1_26,
+    P1_27,
+    P1_28,
+    P1_29,
+    P1_30,
+    P1_31,
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }
 
 pub struct GpioPin<'a> {
@@ -259,18 +326,32 @@ pub struct GpioPin<'a> {
     pin: u8,
     pint_channel: OptionalCell<u8>,
     client: OptionalCell<&'a dyn gpio::Client>,
+<<<<<<< HEAD
     inputmux: OptionalCell<&'a Inputmux>,
     iocon: OptionalCell<&'a Iocon>,
     pint: OptionalCell<&'a Pint<'a>>,
+=======
+    inputmux: Inputmux,
+    iocon: Iocon,
+    pint: Pint,
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }
 
 pub use kernel::hil::gpio::{Configure, Input, Interrupt, Output, Pin};
 
+<<<<<<< HEAD
 use crate::inputmux::{self, Inputmux};
 use crate::iocon::Iocon;
 use crate::pint::{self, Edge, Pint};
 
 impl<'a> GpioPin<'a> {
+=======
+use crate::inputmux::Inputmux;
+use crate::iocon::Iocon;
+use crate::pint::{self, Edge, Pint};
+
+impl GpioPin<'_> {
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     pub const fn new(pin_name: LPCPin) -> Self {
         let pin_num = pin_name as u8;
         Self {
@@ -279,9 +360,15 @@ impl<'a> GpioPin<'a> {
             pin: pin_num % 32,
             pint_channel: OptionalCell::empty(),
             client: OptionalCell::empty(),
+<<<<<<< HEAD
             inputmux: OptionalCell::empty(),
             iocon: OptionalCell::empty(),
             pint: OptionalCell::empty(),
+=======
+            inputmux: Inputmux::new(),
+            iocon: Iocon::new(),
+            pint: Pint::new(),
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
         }
     }
 
@@ -300,6 +387,7 @@ impl<'a> GpioPin<'a> {
     pub fn get_pin_num(&self) -> usize {
         (self.port as usize * 32) + self.pin as usize
     }
+<<<<<<< HEAD
 
     pub fn handle_interrupt(&self) {
         self.pint.map(|pint| {
@@ -316,6 +404,8 @@ impl<'a> GpioPin<'a> {
     pub fn set_pint(&self, pint: &'a Pint<'a>) {
         self.pint.set(pint);
     }
+=======
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }
 
 impl gpio::Output for GpioPin<'_> {
@@ -395,6 +485,7 @@ impl gpio::Configure for GpioPin<'_> {
         }
     }
 
+<<<<<<< HEAD
     fn set_floating_state(&self, state: kernel::hil::gpio::FloatingState) {
         let pins = [
             LPCPin::P0_0,
@@ -483,6 +574,9 @@ impl gpio::Configure for GpioPin<'_> {
             }
         }
     }
+=======
+    fn set_floating_state(&self, _state: gpio::FloatingState) {}
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     fn floating_state(&self) -> gpio::FloatingState {
         gpio::FloatingState::PullNone
     }
@@ -501,14 +595,18 @@ impl gpio::Configure for GpioPin<'_> {
 impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
     fn set_client(&self, client: &'a dyn gpio::Client) {
         self.client.set(client);
+<<<<<<< HEAD
         self.pint.map(|pint| {
             pint.set_client(0, client);
         });
+=======
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     }
 
     fn enable_interrupts(&self, mode: gpio::InterruptEdge) {
         match mode {
             gpio::InterruptEdge::RisingEdge => {
+<<<<<<< HEAD
                 self.pint.map(|pint| {
                     pint.configure_interrupt(0, Edge::Rising);
                 });
@@ -522,14 +620,27 @@ impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
                 self.pint.map(|pint| {
                     pint.configure_interrupt(0, Edge::Both);
                 });
+=======
+                self.pint.configure_interrupt(0, Edge::Rising);
+            }
+            gpio::InterruptEdge::FallingEdge => {
+                self.pint.configure_interrupt(0, Edge::Falling);
+            }
+            gpio::InterruptEdge::EitherEdge => {
+                self.pint.configure_interrupt(0, Edge::Both);
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
             }
         }
     }
 
     fn disable_interrupts(&self) {
+<<<<<<< HEAD
         self.pint.map(|pint| {
             pint.disable_interrupt(0);
         });
+=======
+        self.pint.disable_interrupt(0);
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
     }
 
     fn is_pending(&self) -> bool {

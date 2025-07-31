@@ -4219,6 +4219,7 @@ impl Iocon {
         match pin {
             LPCPin::P0_0 => self.registers.pio0_0.set(standard_value.into()),
             LPCPin::P0_1 => self.registers.pio0_1.set(standard_value.into()),
+<<<<<<< HEAD
             // LPCPin::P0_2 => self.registers.pio0_2.set(standard_value.into()),
             // LPCPin::P0_3 => self.registers.pio0_3.set(standard_value.into()),
             // LPCPin::P0_4 => self.registers.pio0_4.set(standard_value.into()),
@@ -4320,4 +4321,12 @@ impl Iocon {
         };
         self.configure_pin(pin, config);
     }
+=======
+            LPCPin::P1_4 => self.registers.pio1_4.set(standard_value.into()), //BLUE LED ON THE BOARD
+            LPCPin::P1_9 => self.registers.pio1_9.set(standard_value.into()),
+            LPCPin::P1_6 => self.registers.pio1_9.set(standard_value.into()),
+            _ => {}
+        }
+    }
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
 }
