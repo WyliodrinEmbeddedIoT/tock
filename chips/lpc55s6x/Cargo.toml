@@ -12,6 +12,9 @@ edition.workspace = true
 cortexm33 = { path = "../../arch/cortex-m33" }
 kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
+bitflags = "2.9.1"
+cortex-m = "0.7.7"
+cortex-m-semihosting = "0.5.0"
 
 [lints]
 workspace = true

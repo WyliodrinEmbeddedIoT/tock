@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start probe-rs DAP Server",
+      "type": "process",
+      "command": "probe-rs",
+      "args": [
+        "dap-server", // The command to start the DAP server
+        // You can try removing the --probe line if you only have one probe
+        //"--probe", "VID:PID" 
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "close": true
+      }
+    }
+  ]
+}

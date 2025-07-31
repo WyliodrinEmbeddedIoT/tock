@@ -18,9 +18,15 @@ enum_primitive = { path = "../../libraries/enum_primitive" }
 
 capsules-core = { path = "../../capsules/core" }
 capsules-system = { path = "../../capsules/system" }
+cortex-m-semihosting = "0.5.0"
+cortex-m = "0.7.7"
+
 
 [build-dependencies]
 tock_build_scripts = { path = "../build_scripts" }
 
 [lints]
 workspace = true
+
+
+
