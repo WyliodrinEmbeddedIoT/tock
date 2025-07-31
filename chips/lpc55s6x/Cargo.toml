@@ -1,7 +1,3 @@
-# Licensed under the Apache License, Version 2.0 or the MIT License.
-# SPDX-License-Identifier: Apache-2.0 OR MIT
-# Copyright Tock Contributors 2025.
-
 [package]
 name = "lpc55s6x"
 version.workspace = true
@@ -12,6 +8,8 @@ edition.workspace = true
 cortexm33 = { path = "../../arch/cortex-m33" }
 kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
+cortex-m = "0.7.7"
+cortex-m-semihosting = "0.5.0"
 
 [lints]
 workspace = true
