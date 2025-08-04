@@ -121,14 +121,14 @@ pub(crate) fn wait_output_ready() {
 
 /// Read one byte from the data port (0x60).
 #[inline(always)]
-pub(crate)  fn read_data() -> u8 {
+pub(crate) fn read_data() -> u8 {
     wait_output_ready();
     unsafe { io::inb(PS2_DATA_PORT) }
 }
 
 /// Send a command byte to the controller (port 0x64).
 #[inline(always)]
-pub(crate)  fn write_command(c: u8) {
+pub(crate) fn write_command(c: u8) {
     wait_input_ready();
     unsafe { io::outb(PS2_STATUS_PORT, c) }
 }

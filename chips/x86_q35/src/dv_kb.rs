@@ -6,7 +6,7 @@
 // this will be removed, only available for this milestone
 #![allow(dead_code, unused_imports)]
 // will remove in prod dw
-use crate::ps2::{ScanSource};
+use crate::ps2::ScanSource;
 #[cfg(not(test))]
 use crate::ps2_cmd;
 use core::cell::RefCell;
@@ -340,8 +340,7 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
     }
 
     /// Thin top‑half: simply forward to the controller.
-    pub fn handle_interrupt(&self) {
-    }
+    pub fn handle_interrupt(&self) {}
     /// Bottom-half: drain raw bytes and queue KeyEvents
     pub fn poll(&self) {
         while let Some(raw) = self.ps2.pop_scan_code() {
@@ -472,7 +471,6 @@ pub(super) mod ps2_cmd {
 mod tests {
     use super::*;
     use core::cell::Cell;
-
 
     /* --- dummy scan-code source ---*/
     struct DummySrc {
