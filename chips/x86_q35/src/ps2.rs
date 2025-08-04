@@ -266,6 +266,19 @@ impl Ps2Controller {
     }
 }
 
+/// Minimal source of raw PS/2 scan-codes.
+pub trait ScanSource {
+    /// Returns the next byte from the controller’s FIFO, or `None` if empty.
+    fn pop_scan_code(&self) -> Option<u8>;
+}
+
+impl ScanSource for Ps2Controller {
+    #[inline(always)]
+    fn pop_scan_code(&self) -> Option<u8> {
+        self.pop_scan_code()
+    }
+}
+
 // ---------- Unit tests for ring buffer only ----------
 
 #[cfg(test)]
@@ -297,6 +310,15 @@ mod tests {
             assert_eq!(dev.pop_scan_code(), Some(expected as u8));
         }
         assert_eq!(dev.pop_scan_code(), Some(0xFF));
+        assert_eq!(dev.pop_scan_code(), None);
+    }
+
+    #[test]
+    fn trait_works() {
+        use super::{Ps2Controller, ScanSource};
+        let dev = Ps2Controller::new();
+        dev.push_code(0x1C); // simulate ‘A’
+        assert_eq!(dev.pop_scan_code(), Some(0x1C));
         assert_eq!(dev.pop_scan_code(), None);
     }
 }
