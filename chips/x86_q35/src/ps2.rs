@@ -81,7 +81,7 @@ register_bitfields![u8,
 /// See OSDev documentation:
 /// https://wiki.osdev.org/I8042_PS/2_Controller#Status_Register
 #[inline(always)]
-fn wait_input_ready() {
+pub(crate) fn wait_input_ready() {
     let mut s = LocalRegisterCopy::<u8, STATUS::Register>::new(0);
     let mut n = 0;
     while {
@@ -102,7 +102,7 @@ fn wait_input_ready() {
 /// See OSDev documentation:
 /// https://wiki.osdev.org/I8042_PS/2_Controller#Status_Register
 #[inline(always)]
-fn wait_output_ready() {
+pub(crate) fn wait_output_ready() {
     let mut s = LocalRegisterCopy::<u8, STATUS::Register>::new(0);
     let mut n = 0;
     while {
@@ -121,20 +121,20 @@ fn wait_output_ready() {
 
 /// Read one byte from the data port (0x60).
 #[inline(always)]
-fn read_data() -> u8 {
+pub(crate)  fn read_data() -> u8 {
     wait_output_ready();
     unsafe { io::inb(PS2_DATA_PORT) }
 }
 
 /// Send a command byte to the controller (port 0x64).
 #[inline(always)]
-fn write_command(c: u8) {
+pub(crate)  fn write_command(c: u8) {
     wait_input_ready();
     unsafe { io::outb(PS2_STATUS_PORT, c) }
 }
 /// Write a data byte to the data port (0x60).
 #[inline(always)]
-fn write_data(d: u8) {
+pub(crate) fn write_data(d: u8) {
     wait_input_ready();
     unsafe { io::outb(PS2_DATA_PORT, d) }
 }
