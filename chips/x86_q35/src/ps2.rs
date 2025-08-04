@@ -9,6 +9,55 @@ use kernel::utilities::registers::register_bitfields;
 use tock_registers::LocalRegisterCopy;
 use x86::registers::io;
 
+/// Run `f` with interrupts disabled, then restore the previous IF state.
+///
+/// `pop_scan_code()` executes in thread context while scan-codes are pushed
+/// from IRQ 1.  Masking interrupts around the head/tail/count mutations keeps
+/// the ring buffer coherent even if a keystroke arrives in the middle of the
+/// read-modify-write sequence.
+#[cfg(not(test))]
+#[inline(always)]
+fn with<R, F: FnOnce() -> R>(f: F) -> R {
+    // Read EFLAGS to see whether IF was set.
+    let mut flags: usize;
+    unsafe {
+        core::arch::asm!(
+        "pushf",
+        "pop {flags}",
+        flags = lateout(reg) flags,
+        options(nomem, preserves_flags)
+        );
+    }
+    let were_enabled = flags & (1 << 9) != 0; // bit 9 = IF
+
+    // Disable interrupts if they were enabled.
+    if were_enabled {
+        unsafe {
+            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
+        }
+    }
+
+    // Critical section
+    let ret = f();
+
+    // Restore IF to its previous state.
+    if were_enabled {
+        unsafe {
+            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
+        }
+    }
+    ret
+}
+
+// stub version: compiled when `cargo test` runs on the host
+// will be removed once tests are gone before prod.
+#[cfg(test)]
+#[inline(always)]
+fn with<R, F: FnOnce() -> R>(f: F) -> R {
+    // Host tests don’t need interrupt masking and can’t execute CLI/STI.
+    f()
+}
+
 /// PS/2 controller ports
 const PS2_DATA_PORT: u16 = 0x60;
 const PS2_STATUS_PORT: u16 = 0x64;
@@ -91,9 +140,10 @@ fn write_data(d: u8) {
 }
 
 /// Send a byte to the keyboard and wait for ACK (`0xFA`).
-/// If the device replies RESEND (`0xFE`) we retry **once**.
+/// If the device replies RESEND (`0xFE`) we retry **three times**.
+const MAX_RETIRES: usize = 3;
 fn send_with_ack(byte: u8) -> bool {
-    for _ in 0..=1 {
+    for _ in 0..=MAX_RETIRES {
         write_data(byte);
         let resp = read_data();
         match resp {
@@ -147,6 +197,7 @@ impl Ps2Controller {
             wait_output_ready();
             let mut cfg = read_data();
             cfg |= 1 << 0; // set bit0 = IRQ1 enable
+            cfg &= !(1 << 6); // set bit 6 = translation OFF... for now
             write_command(0x60); // tell controller we’ll write it
             write_data(cfg);
 
@@ -170,37 +221,48 @@ impl Ps2Controller {
             if unsafe { io::inb(PS2_STATUS_PORT) } & 0x01 == 0 {
                 break;
             }
-            let byte = unsafe { io::inb(PS2_DATA_PORT) };
-            self.push_code(byte);
-            debug!("ps2 irq 0x{:02X}", byte);
+            self.push_code(unsafe { io::inb(PS2_DATA_PORT) });
         }
     }
 
     /// Pop the next scan-code, or None if buffer is empty.
     pub fn pop_scan_code(&self) -> Option<u8> {
-        if self.count.get() == 0 {
-            return None;
-        }
-        let t = self.tail.get();
-        let b = self.buffer.borrow()[t];
-        self.tail.set((t + 1) % BUFFER_SIZE);
-        self.count.set(self.count.get() - 1);
-        Some(b)
+        // Disable interrupts for the whole read-modify-write window so an IRQ
+        // can’t change `count`, `tail`, or the buffer between our reads.
+        with(|| {
+            if self.count.get() == 0 {
+                return None;
+            }
+
+            let t = self.tail.get();
+            let byte = self.buffer.borrow()[t];
+
+            self.tail.set((t + 1) % BUFFER_SIZE);
+            self.count.set(self.count.get() - 1);
+
+            Some(byte)
+        })
     }
 
     /// Internal: push a scan-code into the ring buffer, dropping oldest if full.
-    fn push_code(&self, b: u8) {
-        let h = self.head.get();
-        self.buffer.borrow_mut()[h] = b;
-        let nh = (h + 1) % BUFFER_SIZE;
-        self.head.set(nh);
+    fn push_code(&self, byte: u8) {
+        // Runs in IRQ context, but `with()` is re-entrant-safe: if `IF` is already
+        // clear it leaves it that way.
+        with(|| {
+            let head = self.head.get();
+            self.buffer.borrow_mut()[head] = byte;
 
-        // track count and drop oldest if full:
-        if self.count.get() < BUFFER_SIZE {
-            self.count.set(self.count.get() + 1);
-        } else {
-            self.tail.set((self.tail.get() + 1) % BUFFER_SIZE);
-        }
+            let next_head = (head + 1) % BUFFER_SIZE;
+            self.head.set(next_head);
+
+            if self.count.get() < BUFFER_SIZE {
+                // Still space – just bump the valid-byte count.
+                self.count.set(self.count.get() + 1);
+            } else {
+                // Buffer was full – advance tail to drop the oldest byte.
+                self.tail.set((self.tail.get() + 1) % BUFFER_SIZE);
+            }
+        });
     }
 }
 
