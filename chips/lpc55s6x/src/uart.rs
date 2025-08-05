@@ -542,6 +542,15 @@ enum UARTStateRX {
     AbortRequested,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+enum DeferredReason {
+    None,
+    TransmitComplete,
+    ReceiveComplete,
+    Error,
+    Abort,
+}
+
 
 const USART0_BASE: StaticRef<UsartRegisters> =
     unsafe { StaticRef::new(0x40086000 as *const UsartRegisters) };
@@ -570,7 +579,8 @@ pub struct Uart<'a> {
     rx_len: Cell<usize>,
     rx_status: Cell<UARTStateRX>,
 
-    //deferred_call: DeferredCall,
+    deferred_call: DeferredCall,
+    deferred_reason: Cell<DeferredReason>,
 }
 
 impl<'a> Uart<'a> {
@@ -596,7 +606,8 @@ impl<'a> Uart<'a> {
             rx_len: Cell::new(0),
             rx_status: Cell::new(UARTStateRX::Idle),
 
-            //deferred_call: DeferredCall::new(),
+            deferred_call: DeferredCall::new(),
+            deferred_reason: Cell::new(DeferredReason::None),
         }
     }
 
@@ -622,7 +633,8 @@ impl<'a> Uart<'a> {
             rx_len: Cell::new(0),
             rx_status: Cell::new(UARTStateRX::Idle),
 
-            //deferred_call: DeferredCall::new(),
+            deferred_call: DeferredCall::new(),
+            deferred_reason: Cell::new(DeferredReason::None),
         }
     }
 
@@ -713,100 +725,86 @@ impl<'a> Uart<'a> {
         (self.registers.fiford.get() & 0xFF) as u8
     }
 
-pub fn handle_interrupt(&self) {
-    // --- Gracefully handle any error conditions first ---
-    let main_stat = self.registers.stat.get();
-    let fifo_stat = self.registers.fifostat.get();
-
-    // Check for Framing, Parity, or RX FIFO errors
-    let framing_error = (main_stat & INTSTAT::FRAMERRINT.mask) != 0;
-    let parity_error = (main_stat & INTSTAT::PARITYERRINT.mask) != 0;
-    let rx_fifo_error = (fifo_stat & FIFOSTAT::RXERR.mask) != 0;
-
-    if framing_error || parity_error || rx_fifo_error {
-        // An error occurred. The most robust action is to clear all flags,
-        // flush the buffers, and notify the client that the current
-        // transaction has failed.
-        self.clear_status_flags();
-        self.disable_receive_interrupt();
-        self.rx_status.set(UARTStateRX::Idle);
-
-        self.rx_client.map(|client| {
-            if let Some(buf) = self.rx_buffer.take() {
-                client.received_buffer(buf, 0, Err(ErrorCode::FAIL), Error::FramingError);
-            }
-        });
+    pub fn setup_deferred_call(&'static self) {
+        self.deferred_call.register(self);
     }
 
-    // --- Handle Transmit ---
-    let tx_level_triggered = self.registers.fifointstat.is_set(FIFOINTSTAT::TXLVL);
-    let tx_idle_triggered = self.registers.intstat.is_set(INTSTAT::TXIDLE);
+    pub fn handle_interrupt(&self) {
+        // --- Gracefully handle any error conditions first ---
+        let main_stat = self.registers.stat.get();
+        let fifo_stat = self.registers.fifostat.get();
 
-     if self.tx_status.get() == UARTStateTX::Transmitting {
-        // If TXLVL fires, we need to send more data.
-        if tx_level_triggered {
-            self.fill_fifo();
+        // Check for Framing, Parity, or RX FIFO errors
+        let framing_error = (main_stat & INTSTAT::FRAMERRINT.mask) != 0;
+        let parity_error = (main_stat & INTSTAT::PARITYERRINT.mask) != 0;
+        let rx_fifo_error = (fifo_stat & FIFOSTAT::RXERR.mask) != 0;
 
-            // After filling, check if we're done with the software buffer.
-            if self.tx_position.get() == self.tx_len.get() {
-                // Yes. Switch from "transmitting" to "finishing" state.
-                self.set_interrupts_for_finishing();
+        if framing_error || parity_error || rx_fifo_error {
+            self.clear_status_flags();
+            self.disable_receive_interrupt();
+            self.deferred_reason.set(DeferredReason::Error);
+            self.deferred_call.set();
+            return;
+        }
+
+        // --- Handle Transmit ---
+        let tx_level_triggered = self.registers.fifointstat.is_set(FIFOINTSTAT::TXLVL);
+        let tx_idle_triggered = self.registers.intstat.is_set(INTSTAT::TXIDLE);
+
+        if self.tx_status.get() == UARTStateTX::Transmitting {
+            // If TXLVL fires, we need to send more data.
+            if tx_level_triggered {
+                self.fill_fifo();
+
+                // After filling, check if we're done with the software buffer.
+                if self.tx_position.get() == self.tx_len.get() {
+                    // Yes. Switch from "transmitting" to "finishing" state.
+                    self.set_interrupts_for_finishing();
+                }
+            }
+            // If TXIDLE fires, the entire operation is complete.
+            else if tx_idle_triggered {
+                self.registers.stat.write(STAT::TXIDLE::SET); // Clear flag
+                self.disable_all_tx_interrupts();
+                self.deferred_reason.set(DeferredReason::TransmitComplete);
+                self.deferred_call.set();
             }
         }
-        // If TXIDLE fires, the entire operation is complete.
-        else if tx_idle_triggered {
-            self.registers.stat.write(STAT::TXIDLE::SET); // Clear flag
-            self.disable_all_tx_interrupts();
-            self.tx_status.set(UARTStateTX::Idle);
-            self.tx_client.map(|client| {
-                self.tx_buffer.take().map(|buffer| {
-                    client.transmitted_buffer(buffer, self.tx_len.get(), Ok(()));
-                });
-            });
-        }
-    }
 
-    // --- Handle Receive ---
-    if self.registers.fifointstat.is_set(FIFOINTSTAT::RXLVL) {
-        // We have received data. Read all available bytes from the hardware FIFO.
-        while self.uart_is_readable() && self.rx_position.get() < self.rx_len.get() {
-            let byte = self.receive_byte();
-            let current_pos = self.rx_position.get();
+        // --- Handle Receive ---
+        if self.registers.fifointstat.is_set(FIFOINTSTAT::RXLVL) {
+            // We have received data. Read all available bytes from the hardware FIFO.
+            while self.uart_is_readable() && self.rx_position.get() < self.rx_len.get() {
+                let byte = self.receive_byte();
+                let current_pos = self.rx_position.get();
 
-            // Put the byte into our software buffer
-            self.rx_buffer.map(|buf| {
-                buf[current_pos] = byte;
-            });
-
-            // Now, check if this byte is a line terminator.
-            let is_terminator = byte == b'\n' || byte == b'\r';
-
-            // Update position *after* checking the byte
-            self.rx_position.set(current_pos + 1);
-
-            // Check if the buffer is now full
-            let buffer_is_full = self.rx_position.get() == self.rx_len.get();
-
-            // --- THIS IS THE CORE LOGIC ---
-            // If we received a terminator OR the buffer is full,
-            // the transaction is complete.
-            if is_terminator || buffer_is_full {
-                // The message is complete. Disable further RX interrupts for this
-                // transaction and notify the client.
-                self.disable_receive_interrupt();
-                self.rx_status.set(UARTStateRX::Idle);
-
-                self.rx_client.map(|client| {
-                    if let Some(buf) = self.rx_buffer.take() {
-                        client.received_buffer(buf, self.rx_position.get(), Ok(()), Error::None);
-                    }
+                // Put the byte into our software buffer
+                self.rx_buffer.map(|buf| {
+                    buf[current_pos] = byte;
                 });
 
-                break;
+                // Update position *after* checking the byte
+                self.rx_position.set(current_pos + 1);
+
+                // Now, check if this byte is a line terminator.
+                let is_terminator = byte == b'\n' || byte == b'\r';
+                // Check if the buffer is now full
+                let buffer_is_full = self.rx_position.get() == self.rx_len.get();
+
+                // --- THIS IS THE CORE LOGIC ---
+                // If we received a terminator OR the buffer is full,
+                // the transaction is complete.
+                if is_terminator || buffer_is_full {
+                    self.disable_receive_interrupt();
+                    self.deferred_reason.set(DeferredReason::ReceiveComplete);
+                    self.deferred_call.set();
+
+                    break;
+                }
             }
         }
     }
-}
+
 
     fn fill_fifo(&self) {
         // Use `map` to borrow the buffer without taking it.
@@ -864,38 +862,79 @@ pub fn handle_interrupt(&self) {
     }
     }
 
-// impl DeferredCallClient for Uart<'_> {
-//     fn register(&'static self) {
-//         self.deferred_call.register(self)
-//     }
+impl DeferredCallClient for Uart<'_> {
+    fn register(&'static self) {
+        self.deferred_call.register(self)
+    }
 
-//     fn handle_deferred_call(&self) {
-//         if self.tx_status.get() == UARTStateTX::AbortRequested {
-//             // alert client
-//             self.tx_client.map(|client| {
-//                 self.tx_buffer.take().map(|buf| {
-//                     client.transmitted_buffer(buf, self.tx_position.get(), Err(ErrorCode::CANCEL));
-//                 });
-//             });
-//             self.tx_status.set(UARTStateTX::Idle);
-//         }
+    fn handle_deferred_call(&self) {
+        let reason = self.deferred_reason.get();
+        // Clear the reason so we don't accidentally re-handle it.
+        self.deferred_reason.set(DeferredReason::None);
 
-//         if self.rx_status.get() == UARTStateRX::AbortRequested {
-//             // alert client
-//             self.rx_client.map(|client| {
-//                 self.rx_buffer.take().map(|buf| {
-//                     client.received_buffer(
-//                         buf,
-//                         self.rx_position.get(),
-//                         Err(ErrorCode::CANCEL),
-//                         hil::uart::Error::Aborted,
-//                     );
-//                 });
-//             });
-//             self.rx_status.set(UARTStateRX::Idle);
-//         }
-//     }
-// }
+        match reason {
+            DeferredReason::TransmitComplete => {
+                // This logic is from the TXIDLE branch of your working ISR
+                self.registers.stat.write(STAT::TXIDLE::SET); // Clear flag
+                self.disable_all_tx_interrupts();
+                self.tx_status.set(UARTStateTX::Idle);
+                self.tx_client.map(|client| {
+                    self.tx_buffer.take().map(|buffer| {
+                        client.transmitted_buffer(buffer, self.tx_len.get(), Ok(()));
+                    });
+                });
+            }
+            DeferredReason::ReceiveComplete => {
+                // This logic is from the (is_terminator || buffer_is_full) branch
+                self.disable_receive_interrupt();
+                self.rx_status.set(UARTStateRX::Idle);
+                self.rx_client.map(|client| {
+                    if let Some(buf) = self.rx_buffer.take() {
+                        client.received_buffer(buf, self.rx_position.get(), Ok(()), Error::None);
+                    }
+                });
+            }
+            DeferredReason::Error => {
+                // This is the error handling logic from your working ISR
+                self.clear_status_flags();
+                self.disable_receive_interrupt();
+                self.rx_status.set(UARTStateRX::Idle);
+                self.rx_client.map(|client| {
+                    if let Some(buf) = self.rx_buffer.take() {
+                        client.received_buffer(buf, 0, Err(ErrorCode::FAIL), Error::FramingError);
+                    }
+                });
+            }
+            DeferredReason::Abort => {
+                // Handle aborts for both TX and RX
+                if self.tx_status.get() == UARTStateTX::AbortRequested {
+                    self.tx_status.set(UARTStateTX::Idle);
+                    self.tx_client.map(|client| {
+                        self.tx_buffer.take().map(|buf| {
+                            client.transmitted_buffer(buf, self.tx_position.get(), Err(ErrorCode::CANCEL));
+                        });
+                    });
+                }
+                if self.rx_status.get() == UARTStateRX::AbortRequested {
+                    self.rx_status.set(UARTStateRX::Idle);
+                    self.rx_client.map(|client| {
+                        self.rx_buffer.take().map(|buf| {
+                            client.received_buffer(
+                                buf,
+                                self.rx_position.get(),
+                                Err(ErrorCode::CANCEL),
+                                Error::Aborted,
+                            );
+                        });
+                    });
+                }
+            }
+            DeferredReason::None => {
+                // Spurious call, do nothing.
+            }
+        }
+    }
+}
 
 impl Configure for Uart<'_> {
     fn configure(&self, params: Parameters) -> Result<(), ErrorCode> {
@@ -1013,7 +1052,7 @@ fn transmit_buffer(
             self.disable_all_tx_interrupts();
             self.tx_status.set(UARTStateTX::AbortRequested);
 
-            //self.deferred_call.set();
+            self.deferred_call.set();
 
             Err(ErrorCode::BUSY)
         } else {
@@ -1064,7 +1103,7 @@ impl<'a> Receive<'a> for Uart<'a> {
             self.disable_receive_interrupt();
             self.rx_status.set(UARTStateRX::AbortRequested);
 
-            //self.deferred_call.set();
+            self.deferred_call.set();
 
             Err(ErrorCode::BUSY)
         } else {

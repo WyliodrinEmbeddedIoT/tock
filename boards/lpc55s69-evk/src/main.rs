@@ -282,6 +282,8 @@ unsafe fn main() -> ! {
 
         uart.set_transmit_client(main_app);
         uart.set_receive_client(main_app);
+        uart.setup_deferred_call();
+
 
         const IOCON_BASE: u32 = 0x4000_1000;
         unsafe { ((IOCON_BASE + 0x74) as *mut u32).write_volatile(0x101); }
