@@ -23,7 +23,8 @@ mod pic;
 
 pub mod pit;
 
-mod dv_kb;
+pub mod dv_kb;
 pub mod ps2;
 mod ps2_cmd;
 pub mod serial;
+pub mod kb_poll;

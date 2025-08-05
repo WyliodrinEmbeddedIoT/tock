@@ -245,7 +245,7 @@ impl Ps2Controller {
     }
 
     /// Internal: push a scan-code into the ring buffer, dropping oldest if full.
-    fn push_code(&self, byte: u8) {
+    pub(crate) fn push_code(&self, byte: u8) {
         // Runs in IRQ context, but `with()` is re-entrant-safe: if `IF` is already
         // clear it leaves it that way.
         with(|| {
