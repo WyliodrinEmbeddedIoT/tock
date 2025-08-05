@@ -55,6 +55,7 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
     /// Legacy PIT timer
     pub pit: Pit<'a, PR>,
 
+    /// PS/2 Controller
     pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// System call context
@@ -173,6 +174,8 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
 pub struct PcComponent<'a> {
     pd: &'a mut PD,
     pt: &'a mut PT,
+
+    /// Holds the PS/2 controller passed in by the board
     ps2: Option<&'a crate::ps2::Ps2Controller>,
 }
 
@@ -191,6 +194,7 @@ impl<'a> PcComponent<'a> {
     pub unsafe fn new(pd: &'a mut PD, pt: &'a mut PT) -> Self {
         Self { pd, pt, ps2: None }
     }
+    /// Supply the PS/2 controller so that `Pc` can dispatch KEYBOARD IRQs
     pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller) -> Self {
         self.ps2 = Some(ps2);
         self

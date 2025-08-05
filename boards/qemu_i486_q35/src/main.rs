@@ -156,9 +156,14 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
 unsafe extern "cdecl" fn main() {
     // ---------- BASIC INITIALIZATION -----------
 
+    // Create our PS/2 controller instance before the chip itself, so we
+    // can hand it into the PcComponent and have IRQ1 routed automatically.
     let ps2 = static_init!(Ps2Controller, Ps2Controller::new());
 
     // Basic setup of the i486 platform
+    //
+    // Build the PC chip and attach our
+    // PS/2 controller so that `service_pending_interrupts` will dispatch IRQ1.
     let chip = PcComponent::new(
         &mut *ptr::addr_of_mut!(PAGE_DIR),
         &mut *ptr::addr_of_mut!(PAGE_TABLE),
@@ -258,6 +263,11 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(components::debug_writer_component_static!());
 
+    // Now that the serial‐console debug writer is in place, we can safely
+    // call `debug!()` inside our PS/2 init without panicking.
+    //
+    // Otherwise, if no `debug!()` lines are desired in ps2.rs
+    // just move this near the chip initialization
     ps2.init();
 
     let lldb = components::lldb::LowLevelDebugComponent::new(
