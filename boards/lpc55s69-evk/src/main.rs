@@ -9,15 +9,17 @@
 //static __checksum: u32 = 0;
 
 use cortex_m_semihosting::hprintln;
+use cortexm33::nvic::Nvic;
 use kernel::hil::uart::{Parameters, Parity, StopBits, Width, Error};
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::hil::uart::{ReceiveClient,TransmitClient};
+use kernel::utilities::cells::OptionalCell;
 use kernel::ErrorCode;
 use kernel::process::ProcessArray;
 use kernel::scheduler::round_robin::RoundRobinSched;
 use kernel::{capabilities, create_capability, static_init};
-use lpc55s6x::flexcomm;
-use lpc55s6x::uart;
+use lpc55s6x::{flexcomm, interrupts};
+use lpc55s6x::uart::{self, Uart};
 use core::panic::PanicInfo;
 use kernel::hil::uart::Configure;
 use core::cell::Cell;
@@ -25,7 +27,7 @@ use kernel::hil::uart::{Receive,Transmit};
 
 use core::arch::asm;
 use core::ptr::write_volatile;
-use cortex_m::asm;
+use cortex_m::{asm, interrupt};
 use cortex_m::peripheral::NVIC;
 // use cortex_m_semihosting::hprintln;
 use cortexm33;
@@ -157,6 +159,7 @@ impl KernelResources<Lpc55s69<'static, Lpc55s69DefaultPeripheral<'static>>> for 
     }
 }
 
+
 pub struct Main {
     uart: &'static uart::Uart<'static>,
     tx_busy: Cell<bool>,
@@ -182,42 +185,24 @@ impl ReceiveClient for Main {
         _result: Result<(), ErrorCode>,
         _error: Error,
     ) {
-        // unsafe {
-        //     // A simple "echo" implementation.
-        //     // Copy the received data into the TX buffer to send it back.
-        //     let tx_buf_len = if rx_len > UART_TX_BUFFER.len() { UART_TX_BUFFER.len() } else { rx_len };
-        //     UART_TX_BUFFER[..tx_buf_len].copy_from_slice(&buffer[..tx_buf_len]);
+        // --- ECHO LOGIC ---
+        // Try to send back what we just received.
+        if !self.tx_busy.get() {
+            // The transmitter is free, let's echo.
+            unsafe {
+                let echo_len = rx_len.min(UART_TX_BUFFER.len());
+                UART_TX_BUFFER[..echo_len].copy_from_slice(&buffer[..echo_len]);
 
-        //     // Start the echo transmission.
-        //     if !self.tx_busy.get() {
-        //          self.tx_busy.set(true);
-        //          let _ = self.uart.transmit_buffer(&mut UART_TX_BUFFER, tx_buf_len);
-        //     }
-        // }
-
-        // --- THE NEW LOGIC ---
-
-        // 1. Get a slice of the buffer that contains the received data.
-        let received_data = &buffer[..rx_len];
-
-        // 2. Try to convert the received bytes to a string.
-        //    core::str::from_utf8 is a safe way to do this. It returns a Result.
-        match core::str::from_utf8(received_data) {
-            Ok(str_slice) => {
-                // Success! Print the received string.
-                hprintln!("RECEIVED: '{}'", str_slice);
+                // Mark the transmitter as busy and start the echo transmission.
+                // The `transmitted_buffer` callback will set tx_busy back to false.
+                self.tx_busy.set(true);
+                let _ = self.uart.transmit_buffer(&mut UART_TX_BUFFER, echo_len);
             }
-            Err(_) => {
-                // The data was not valid UTF-8. Print the raw bytes instead.
-                hprintln!("RECEIVED (raw bytes): {:?}", received_data);
-            }
+        } else {
+            // The UART is busy sending something else. We'll just drop this echo.
+            hprintln!("TX busy, dropping echo.");
         }
-
-        // We are now done with the receive operation.
-        self.rx_busy.set(false);
-
-        // Crucially, we must start listening for the *next* message.
-        // ----------------------------------------- self.start_uart_rx();
+        let _ = self.uart.receive_buffer(buffer, buffer.len());
     }
 }
 
@@ -228,7 +213,7 @@ impl Main {
         }
 
         unsafe {
-            let message = b"Hello from main.rs!\r\n";
+            let message = b"Hello from main.rs! This is a longer message to test the capabilities of sending messages.\r\n";
             let len = message.len();
             UART_TX_BUFFER[..len].copy_from_slice(message);
             self.tx_busy.set(true);
@@ -278,6 +263,12 @@ unsafe fn main() -> ! {
         uart.set_clocks(clock);
         uart.set_flexcomm(flexcomm0);
 
+        unsafe {
+            let nvic_interrupt = Nvic::new(interrupts::FLEXCOMM0);
+            nvic_interrupt.enable();
+        }
+
+
         let main_app = static_init!(
             Main,
             Main {
@@ -287,12 +278,14 @@ unsafe fn main() -> ! {
             }
         );
 
+        
+
         uart.set_transmit_client(main_app);
         uart.set_receive_client(main_app);
 
         const IOCON_BASE: u32 = 0x4000_1000;
-        unsafe { ((IOCON_BASE + 0x74) as *mut u32).write_volatile(0x01); }
-        unsafe { ((IOCON_BASE + 0x78) as *mut u32).write_volatile(0x01); }
+        unsafe { ((IOCON_BASE + 0x74) as *mut u32).write_volatile(0x101); }
+        unsafe { ((IOCON_BASE + 0x78) as *mut u32).write_volatile(0x101); }
         let params = Parameters { baud_rate: 9600, width: Width::Eight, stop_bits: StopBits::One, parity: Parity::None, hw_flow_control: false };
         uart.configure(params).unwrap();
 
@@ -311,9 +304,16 @@ unsafe fn main() -> ! {
             systick: cortexm33::systick::SysTick::new_with_calibration(12_000_000),
         };
 
-        main_app.start_uart_rx();
-        
         main_app.start_uart_tx();
+        main_app.start_uart_rx();
+
+        // loop {
+        //     if uart.uart_is_readable() {
+        //         let received_byte = uart.receive_byte();
+        //         while !uart.uart_is_writable() {}
+        //         uart.send_byte(received_byte);
+        //     }
+        // }     
 
         board_kernel.kernel_loop(
             &lpc55,
@@ -323,14 +323,6 @@ unsafe fn main() -> ! {
         );
 }
 
-
-// #[no_mangle]
-// #[allow(non_snake_case)]
-// pub extern "C" fn FLEXCOMM0_IRQ() {
-//     if let Some(uart) = unsafe { UART0_CELL.as_ref() } {
-//         uart.handle_interrupt();
-//     }
-// }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
