@@ -32,15 +32,14 @@ use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 
-use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::dv_kb::Keyboard;
+use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::ps2::Ps2Controller;
 
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
 use multiboot::MultibootV1Header;
-
 
 mod io;
 
@@ -265,8 +264,10 @@ unsafe extern "cdecl" fn main() {
 
     ps2.init();
 
-    let kb = static_init!(Keyboard<Ps2Controller>, Keyboard::new(&chip.ps2));
-    unsafe { KEYBOARD.replace(kb); }
+    let kb = static_init!(Keyboard<Ps2Controller>, Keyboard::new(chip.ps2));
+    unsafe {
+        KEYBOARD = Some(kb);
+    }
 
     let lldb = components::lldb::LowLevelDebugComponent::new(
         board_kernel,

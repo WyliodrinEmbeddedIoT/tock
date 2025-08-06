@@ -7,7 +7,10 @@
 //! Centralises the ACK/RESEND handshake and retry logic required by
 //! LED, typematic‑rate, scan‑set and similar commands.
 
+// Only needed outside `cargo test`.
+#[cfg(not(test))]
 use crate::ps2::{read_data, wait_input_ready, wait_output_ready, write_data};
+#[cfg(not(test))]
 use kernel::errorcode::ErrorCode;
 
 /// Maximum number of bytes the command helper supports
@@ -44,6 +47,7 @@ impl Resp {
 /// Send `cmd` (opcode + optional data) and collect `resp_len` bytes.
 /// Automatically retries the entire sequence on `0xFE` (RESEND)
 /// up to 3 times.
+#[cfg(not(test))]
 pub fn send(cmd: &[u8], resp_len: usize) -> Result<Resp, ErrorCode> {
     const MAX_RETRIES: usize = 3;
     assert!(cmd.len() <= MAX_CMD);

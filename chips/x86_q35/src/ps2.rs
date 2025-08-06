@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn trait_works() {
-        use super::{Ps2Controller, ScanSource};
+        use super::Ps2Controller;
         let dev = Ps2Controller::new();
         dev.push_code(0x1C); // simulate ‘A’
         assert_eq!(dev.pop_scan_code(), Some(0x1C));

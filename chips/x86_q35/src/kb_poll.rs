@@ -1,4 +1,7 @@
+// Licensed under the Apache License, Version 2.0 or the MIT License.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2025.
+
 //! Deferred-call poller for the PS/2 Set-2 keyboard driver.
 //
 // Any board can:
@@ -22,7 +25,7 @@ static mut KEYBOARD: Option<&'static Keyboard<Ps2Controller>> = None;
 /// Board helper: remember the keyboard so the poller can use it.
 pub unsafe fn register_keyboard(kb: &'static Keyboard<Ps2Controller>) {
     // single-threaded kernel → a plain `unsafe` block is fine
-    unsafe { KEYBOARD.replace(kb) };
+    unsafe { KEYBOARD = Some(kb) };
 }
 
 /// Start a periodic poll every `interval_us` micro-seconds.
@@ -72,6 +75,10 @@ pub fn start(interval_us: u32) {
 // Unit test: controller → keyboard → ASCII event (no `alloc` needed)
 // -----------------------------------------------------------------------------
 #[cfg(test)]
+#[allow(static_mut_refs)]
+// The writes to the static mut scratch space are safe
+// because tests run single-threaded, but the lint complains anyway.
+// keep that annot only for test, will get removed later in prod
 mod tests {
     use core::mem::MaybeUninit;
 
@@ -82,7 +89,7 @@ mod tests {
     fn controller_to_keyboard() {
         // 1. Statically allocate the objects so they live for 'static.
         static mut CTRL: MaybeUninit<Ps2Controller> = MaybeUninit::uninit();
-        static mut KB:   MaybeUninit<Keyboard<Ps2Controller>> = MaybeUninit::uninit();
+        static mut KB: MaybeUninit<Keyboard<Ps2Controller>> = MaybeUninit::uninit();
 
         let ctrl_ref: &'static Ps2Controller = unsafe {
             CTRL.write(Ps2Controller::new());
