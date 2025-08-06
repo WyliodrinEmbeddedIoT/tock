@@ -58,70 +58,199 @@ pub(crate) const GPIO_BASE: StaticRef<GpioRegisters> =
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum LPCPin {
-    P0_0,
-    P0_1,
-    P0_2,
-    P0_3,
-    P0_4,
-    P0_5,
-    P0_6,
-    P0_7,
-    P0_8,
-    P0_9,
-    P0_10,
-    P0_11,
-    P0_12,
-    P0_13,
-    P0_14,
-    P0_15,
-    P0_16,
-    P0_17,
-    P0_18,
-    P0_19,
-    P0_20,
-    P0_21,
-    P0_22,
-    P0_23,
-    P0_24,
-    P0_25,
-    P0_26,
-    P0_27,
-    P0_28,
-    P0_29,
-    P0_30,
-    P0_31,
-    P1_0,
-    P1_1,
-    P1_2,
-    P1_3,
-    P1_4,
-    P1_5,
-    P1_6,
-    P1_7,
-    P1_8,
-    P1_9,
-    P1_10,
-    P1_11,
-    P1_12,
-    P1_13,
-    P1_14,
-    P1_15,
-    P1_16,
-    P1_17,
-    P1_18,
-    P1_19,
-    P1_20,
-    P1_21,
-    P1_22,
-    P1_23,
-    P1_24,
-    P1_25,
-    P1_26,
-    P1_27,
-    P1_28,
-    P1_29,
-    P1_30,
-    P1_31,
+    P0_0 = 0,
+    P0_1 = 1,
+    P0_2 = 2,
+    P0_3 = 3,
+    P0_4 = 4,
+    P0_5 = 5,
+    P0_6 = 6,
+    P0_7 = 7,
+    P0_8 = 8,
+    P0_9 = 9,
+    P0_10 = 10,
+    P0_11 = 11,
+    P0_12 = 12,
+    P0_13 = 13,
+    P0_14 = 14,
+    P0_15 = 15,
+    P0_16 = 16,
+    P0_17 = 17,
+    P0_18 = 18,
+    P0_19 = 19,
+    P0_20 = 20,
+    P0_21 = 21,
+    P0_22 = 22,
+    P0_23 = 23,
+    P0_24 = 24,
+    P0_25 = 25,
+    P0_26 = 26,
+    P0_27 = 27,
+    P0_28 = 28,
+    P0_29 = 29,
+    P0_30 = 30,
+    P0_31 = 31,
+    P1_0 = 32,
+    P1_1 = 33,
+    P1_2 = 34,
+    P1_3 = 35,
+    P1_4 = 36,
+    P1_5 = 37,
+    P1_6 = 38,
+    P1_7 = 39,
+    P1_8 = 40,
+    P1_9 = 41,
+    P1_10 = 42,
+    P1_11 = 43,
+    P1_12 = 44,
+    P1_13 = 45,
+    P1_14 = 46,
+    P1_15 = 47,
+    P1_16 = 48,
+    P1_17 = 49,
+    P1_18 = 50,
+    P1_19 = 51,
+    P1_20 = 52,
+    P1_21 = 53,
+    P1_22 = 54,
+    P1_23 = 55,
+    P1_24 = 56,
+    P1_25 = 57,
+    P1_26 = 58,
+    P1_27 = 59,
+    P1_28 = 60,
+    P1_29 = 61,
+    P1_30 = 62,
+    P1_31 = 63,
+}
+
+pub struct Pins<'a> {
+    pub pins: [Option<GpioPin<'a>>; 64],
+    pub inputmux: Inputmux,
+    pub iocon: Iocon,
+    pub pint: Pint<'a>,
+}
+
+impl<'a> Pins<'a> {
+    pub const fn new() -> Self {
+        let inputmux = Inputmux::new();
+        let iocon = Iocon::new();
+        let pint = Pint::new();
+        Self {
+            pins: [
+                Some(GpioPin::new(LPCPin::P0_0)),
+                Some(GpioPin::new(LPCPin::P0_1)),
+                Some(GpioPin::new(LPCPin::P0_2)),
+                Some(GpioPin::new(LPCPin::P0_3)),
+                Some(GpioPin::new(LPCPin::P0_4)),
+                Some(GpioPin::new(LPCPin::P0_5)),
+                Some(GpioPin::new(LPCPin::P0_6)),
+                Some(GpioPin::new(LPCPin::P0_7)),
+                Some(GpioPin::new(LPCPin::P0_8)),
+                Some(GpioPin::new(LPCPin::P0_9)),
+                Some(GpioPin::new(LPCPin::P0_10)),
+                Some(GpioPin::new(LPCPin::P0_11)),
+                Some(GpioPin::new(LPCPin::P0_12)),
+                Some(GpioPin::new(LPCPin::P0_13)),
+                Some(GpioPin::new(LPCPin::P0_14)),
+                Some(GpioPin::new(LPCPin::P0_15)),
+                Some(GpioPin::new(LPCPin::P0_16)),
+                Some(GpioPin::new(LPCPin::P0_17)),
+                Some(GpioPin::new(LPCPin::P0_18)),
+                Some(GpioPin::new(LPCPin::P0_19)),
+                Some(GpioPin::new(LPCPin::P0_20)),
+                Some(GpioPin::new(LPCPin::P0_21)),
+                Some(GpioPin::new(LPCPin::P0_22)),
+                Some(GpioPin::new(LPCPin::P0_23)),
+                Some(GpioPin::new(LPCPin::P0_24)),
+                Some(GpioPin::new(LPCPin::P0_25)),
+                Some(GpioPin::new(LPCPin::P0_26)),
+                Some(GpioPin::new(LPCPin::P0_27)),
+                Some(GpioPin::new(LPCPin::P0_28)),
+                Some(GpioPin::new(LPCPin::P0_29)),
+                Some(GpioPin::new(LPCPin::P0_30)),
+                Some(GpioPin::new(LPCPin::P0_31)),
+                Some(GpioPin::new(LPCPin::P1_0)),
+                Some(GpioPin::new(LPCPin::P1_1)),
+                Some(GpioPin::new(LPCPin::P1_2)),
+                Some(GpioPin::new(LPCPin::P1_3)),
+                Some(GpioPin::new(LPCPin::P1_4)),
+                Some(GpioPin::new(LPCPin::P1_5)),
+                Some(GpioPin::new(LPCPin::P1_6)),
+                Some(GpioPin::new(LPCPin::P1_7)),
+                Some(GpioPin::new(LPCPin::P1_8)),
+                Some(GpioPin::new(LPCPin::P1_9)),
+                Some(GpioPin::new(LPCPin::P1_10)),
+                Some(GpioPin::new(LPCPin::P1_11)),
+                Some(GpioPin::new(LPCPin::P1_12)),
+                Some(GpioPin::new(LPCPin::P1_13)),
+                Some(GpioPin::new(LPCPin::P1_14)),
+                Some(GpioPin::new(LPCPin::P1_15)),
+                Some(GpioPin::new(LPCPin::P1_16)),
+                Some(GpioPin::new(LPCPin::P1_17)),
+                Some(GpioPin::new(LPCPin::P1_18)),
+                Some(GpioPin::new(LPCPin::P1_19)),
+                Some(GpioPin::new(LPCPin::P1_20)),
+                Some(GpioPin::new(LPCPin::P1_21)),
+                Some(GpioPin::new(LPCPin::P1_22)),
+                Some(GpioPin::new(LPCPin::P1_23)),
+                Some(GpioPin::new(LPCPin::P1_24)),
+                Some(GpioPin::new(LPCPin::P1_25)),
+                Some(GpioPin::new(LPCPin::P1_26)),
+                Some(GpioPin::new(LPCPin::P1_27)),
+                Some(GpioPin::new(LPCPin::P1_28)),
+                Some(GpioPin::new(LPCPin::P1_29)),
+                Some(GpioPin::new(LPCPin::P1_30)),
+                Some(GpioPin::new(LPCPin::P1_31)),
+            ],
+            inputmux,
+            iocon,
+            pint,
+        }
+    }
+    pub fn get_pin(&self, searched_pin: LPCPin) -> &'a GpioPin {
+        self.pins[searched_pin as usize].as_ref().unwrap()
+    }
+
+    pub fn handle_interrupt(&self) {
+        self.pint.handle_interrupt();
+
+        for pin in self.pins.iter() {
+            if let Some(gpio_pin) = pin {
+                gpio_pin.handle_interrupt();
+            }
+        }
+    }
+
+    pub fn set_inputmux(&'a self) {
+        for pin in self.pins.iter() {
+            if let Some(gpio_pin) = pin {
+                gpio_pin.set_inputmux(&self.inputmux);
+            }
+        }
+    }
+
+    pub fn set_iocon(&'a self) {
+        for pin in self.pins.iter() {
+            if let Some(gpio_pin) = pin {
+                gpio_pin.set_iocon(&self.iocon);
+            }
+        }
+    }
+
+    pub fn set_pint(&'a self) {
+        for pin in self.pins.iter() {
+            if let Some(gpio_pin) = pin {
+                gpio_pin.set_pint(&self.pint);
+            }
+        }
+    }
+
+    pub fn init(&'a self) {
+        self.set_inputmux();
+        self.set_iocon();
+        self.set_pint();
+    }
 }
 
 pub struct GpioPin<'a> {
@@ -130,18 +259,18 @@ pub struct GpioPin<'a> {
     pin: u8,
     pint_channel: OptionalCell<u8>,
     client: OptionalCell<&'a dyn gpio::Client>,
-    inputmux: Inputmux,
-    iocon: Iocon,
-    pint: Pint,
+    inputmux: OptionalCell<&'a Inputmux>,
+    iocon: OptionalCell<&'a Iocon>,
+    pint: OptionalCell<&'a Pint<'a>>,
 }
 
 pub use kernel::hil::gpio::{Configure, Input, Interrupt, Output, Pin};
 
-use crate::inputmux::Inputmux;
+use crate::inputmux::{self, Inputmux};
 use crate::iocon::Iocon;
 use crate::pint::{self, Edge, Pint};
 
-impl GpioPin<'_> {
+impl<'a> GpioPin<'a> {
     pub const fn new(pin_name: LPCPin) -> Self {
         let pin_num = pin_name as u8;
         Self {
@@ -150,9 +279,9 @@ impl GpioPin<'_> {
             pin: pin_num % 32,
             pint_channel: OptionalCell::empty(),
             client: OptionalCell::empty(),
-            inputmux: Inputmux::new(),
-            iocon: Iocon::new(),
-            pint: Pint::new(),
+            inputmux: OptionalCell::empty(),
+            iocon: OptionalCell::empty(),
+            pint: OptionalCell::empty(),
         }
     }
 
@@ -170,6 +299,22 @@ impl GpioPin<'_> {
 
     pub fn get_pin_num(&self) -> usize {
         (self.port as usize * 32) + self.pin as usize
+    }
+
+    pub fn handle_interrupt(&self) {
+        self.pint.map(|pint| {
+            pint.handle_interrupt();
+        });
+    }
+
+    pub fn set_inputmux(&self, inputmux: &'a Inputmux) {
+        self.inputmux.set(inputmux);
+    }
+    pub fn set_iocon(&self, iocon: &'a Iocon) {
+        self.iocon.set(iocon);
+    }
+    pub fn set_pint(&self, pint: &'a Pint<'a>) {
+        self.pint.set(pint);
     }
 }
 
@@ -250,7 +395,94 @@ impl gpio::Configure for GpioPin<'_> {
         }
     }
 
-    fn set_floating_state(&self, _state: gpio::FloatingState) {}
+    fn set_floating_state(&self, state: kernel::hil::gpio::FloatingState) {
+        let pins = [
+            LPCPin::P0_0,
+            LPCPin::P0_1,
+            LPCPin::P0_2,
+            LPCPin::P0_3,
+            LPCPin::P0_4,
+            LPCPin::P0_5,
+            LPCPin::P0_6,
+            LPCPin::P0_7,
+            LPCPin::P0_8,
+            LPCPin::P0_9,
+            LPCPin::P0_10,
+            LPCPin::P0_11,
+            LPCPin::P0_12,
+            LPCPin::P0_13,
+            LPCPin::P0_14,
+            LPCPin::P0_15,
+            LPCPin::P0_16,
+            LPCPin::P0_17,
+            LPCPin::P0_18,
+            LPCPin::P0_19,
+            LPCPin::P0_20,
+            LPCPin::P0_21,
+            LPCPin::P0_22,
+            LPCPin::P0_23,
+            LPCPin::P0_24,
+            LPCPin::P0_25,
+            LPCPin::P0_26,
+            LPCPin::P0_27,
+            LPCPin::P0_28,
+            LPCPin::P0_29,
+            LPCPin::P0_30,
+            LPCPin::P0_31,
+            LPCPin::P1_0,
+            LPCPin::P1_1,
+            LPCPin::P1_2,
+            LPCPin::P1_3,
+            LPCPin::P1_4,
+            LPCPin::P1_5,
+            LPCPin::P1_6,
+            LPCPin::P1_7,
+            LPCPin::P1_8,
+            LPCPin::P1_9,
+            LPCPin::P1_10,
+            LPCPin::P1_11,
+            LPCPin::P1_12,
+            LPCPin::P1_13,
+            LPCPin::P1_14,
+            LPCPin::P1_15,
+            LPCPin::P1_16,
+            LPCPin::P1_17,
+            LPCPin::P1_18,
+            LPCPin::P1_19,
+            LPCPin::P1_20,
+            LPCPin::P1_21,
+            LPCPin::P1_22,
+            LPCPin::P1_23,
+            LPCPin::P1_24,
+            LPCPin::P1_25,
+            LPCPin::P1_26,
+            LPCPin::P1_27,
+            LPCPin::P1_28,
+            LPCPin::P1_29,
+            LPCPin::P1_30,
+            LPCPin::P1_31,
+        ];
+
+        for pin in pins.iter() {
+            match state {
+                gpio::FloatingState::PullNone => {
+                    self.iocon.map(|iocon| {
+                        iocon.set_pull_none(*pin);
+                    });
+                }
+                gpio::FloatingState::PullUp => {
+                    self.iocon.map(|iocon| {
+                        iocon.set_pull_up(*pin);
+                    });
+                }
+                gpio::FloatingState::PullDown => {
+                    self.iocon.map(|iocon| {
+                        iocon.set_pull_down(*pin);
+                    });
+                }
+            }
+        }
+    }
     fn floating_state(&self) -> gpio::FloatingState {
         gpio::FloatingState::PullNone
     }
@@ -269,24 +501,35 @@ impl gpio::Configure for GpioPin<'_> {
 impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
     fn set_client(&self, client: &'a dyn gpio::Client) {
         self.client.set(client);
+        self.pint.map(|pint| {
+            pint.set_client(0, client);
+        });
     }
 
     fn enable_interrupts(&self, mode: gpio::InterruptEdge) {
         match mode {
             gpio::InterruptEdge::RisingEdge => {
-                self.pint.configure_interrupt(0, Edge::Rising);
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Rising);
+                });
             }
             gpio::InterruptEdge::FallingEdge => {
-                self.pint.configure_interrupt(0, Edge::Falling);
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Falling);
+                });
             }
             gpio::InterruptEdge::EitherEdge => {
-                self.pint.configure_interrupt(0, Edge::Both);
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Both);
+                });
             }
         }
     }
 
     fn disable_interrupts(&self) {
-        self.pint.disable_interrupt(0);
+        self.pint.map(|pint| {
+            pint.disable_interrupt(0);
+        });
     }
 
     fn is_pending(&self) -> bool {

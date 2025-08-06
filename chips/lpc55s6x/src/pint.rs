@@ -468,14 +468,14 @@ pub enum Edge {
     Both,
 }
 
-pub struct Pint {
+pub struct Pint<'a> {
     registers: StaticRef<PintRegisters>,
-    clients: [OptionalCell<&'static dyn kernel::hil::gpio::Client>; 8],
+    clients: [OptionalCell<&'a dyn kernel::hil::gpio::Client>; 8],
 }
 
 // pub static PINT: Pint = Pint::new();
 
-impl Pint {
+impl<'a> Pint<'a> {
     pub const fn new() -> Self {
         Self {
             registers: PINT_BASE,
@@ -509,11 +509,11 @@ impl Pint {
     //     }
     // }
 
-    // pub fn set_client(&mut self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
-    //     if channel < 8 {
-    //     self.clients[channel as usize].replace(client);
-    //     }
-    // }
+    pub fn set_client(&self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
+        if channel < 8 {
+            self.clients[channel as usize].replace(client);
+        }
+    }
 
     pub fn configure_interrupt(&self, channel: usize, edge: Edge) {
         if channel < 8 {
@@ -567,7 +567,7 @@ impl Pint {
 
         // self.registers.ist.get();
 
-        let blue_led = GpioPin::new(LPCPin::P1_4);
+        // let blue_led = GpioPin::new(LPCPin::P1_6);
 
         for i in 0..8 {
             if (status & (1 << i)) != 0 {
@@ -578,11 +578,11 @@ impl Pint {
             }
         }
 
-        blue_led.toggle();
-        Self::delay_ms(1000);
-        blue_led.toggle();
+        // blue_led.toggle();
+        // Self::delay_ms(1000);
+        // blue_led.toggle();
 
-        self.configure_interrupt(0, Edge::Rising);
+        // self.configure_interrupt(0, Edge::Rising);
     }
 
     pub fn disable_interrupt(&self, channel: usize) {
@@ -596,13 +596,5 @@ impl Pint {
 
     pub fn read_interrupt(&self) -> u32 {
         self.registers.rise.get()
-    }
-
-    fn delay_ms(ms: u32) {
-        for _ in 0..ms {
-            for _ in 0..3000 {
-                cortexm33::support::nop();
-            }
-        }
     }
 }
