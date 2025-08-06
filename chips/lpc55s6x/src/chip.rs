@@ -1,16 +1,22 @@
 use core::fmt::Write;
 <<<<<<< HEAD
+<<<<<<< HEAD
 use core::panic;
 use cortex_m_semihosting::hprint;
 use cortex_m_semihosting::hprintln;
 // use cortex_m_semihosting::hprintln;
 =======
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+use core::panic;
+// use cortex_m_semihosting::hprintln;
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 // use cortex_m_semihosting::hprintln;
 use cortexm33::{CortexM33, CortexMVariant};
 use kernel::platform::chip::Chip;
 use kernel::platform::chip::InterruptService;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 use crate::ctimer0::LPCTimer;
 use crate::gpio::GpioPin;
@@ -19,6 +25,11 @@ use crate::gpio::Pins;
 =======
 use crate::gpio::LPCPin;
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+use crate::gpio::GpioPin;
+use crate::gpio::LPCPin;
+use crate::gpio::Pins;
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 use crate::interrupts;
 use crate::iocon::Iocon;
 use crate::pint::Pint;
@@ -94,6 +105,7 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub struct Lpc55s69DefaultPeripheral<'a> {
     pub pins: Pins<'a>,
     pub ctimer0: LPCTimer<'a>,
@@ -108,20 +120,29 @@ impl<'a> Lpc55s69DefaultPeripheral<'a> {
 pub struct Lpc55s69DefaultPeripheral {
     pub iocon: Iocon,
     pub pint: Pint,
+=======
+pub struct Lpc55s69DefaultPeripheral<'a> {
+    pub pins: Pins<'a>,
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }
 
-impl Lpc55s69DefaultPeripheral {
+impl<'a> Lpc55s69DefaultPeripheral<'a> {
     pub fn new() -> Self {
+<<<<<<< HEAD
         Self {
             iocon: Iocon::new(),
             pint: Pint::new(),
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
         }
+=======
+        Self { pins: Pins::new() }
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     }
 
     pub fn resolve_dependencies(&'static self) {}
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
@@ -140,21 +161,31 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
 
 =======
 impl InterruptService for Lpc55s69DefaultPeripheral {
+=======
+impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
         match interrupt {
             interrupts::GPIO_INT0_IRQ0 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt0 active!");
+                // panic!("Interrupt0 active!");
                 true
             }
             interrupts::GPIO_INT0_IRQ1 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt1 active!");
+<<<<<<< HEAD
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+                // panic!("Interrupt1 active!");
+
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
                 true
             }
 
             interrupts::GPIO_INT0_IRQ2 => {
+<<<<<<< HEAD
 <<<<<<< HEAD
                 self.pins.handle_interrupt();
                 // hprintln!("Interrupt2 active!");
@@ -205,33 +236,51 @@ impl InterruptService for Lpc55s69DefaultPeripheral {
 
 =======
                 self.pint.handle_interrupt();
+=======
+                self.pins.handle_interrupt();
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
                 // hprintln!("Interrupt2 active!");
+                // panic!("Interrupt2 active!");
+
                 true
             }
             interrupts::GPIO_INT0_IRQ3 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt3 active!");
+                // panic!("Interrupt3 active!");
+
                 true
             }
             interrupts::GPIO_INT0_IRQ4 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt4 active!");
+                // panic!("Interrupt4 active!");
+
                 true
             }
             interrupts::GPIO_INT0_IRQ5 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt5 active!");
+                // panic!("Interrupt5 active!");
+
                 true
             }
             interrupts::GPIO_INT0_IRQ6 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt6 active!");
+                // panic!("Interrupt6 active!");
+
                 true
             }
             interrupts::GPIO_INT0_IRQ7 => {
-                self.pint.handle_interrupt();
+                self.pins.handle_interrupt();
                 // hprintln!("Interrupt7 active!");
+<<<<<<< HEAD
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+                // panic!("Interrupt7 active!");
+
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
                 true
             }
 

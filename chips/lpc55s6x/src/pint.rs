@@ -469,6 +469,7 @@ pub enum Edge {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub struct Pint<'a> {
     registers: StaticRef<PintRegisters>,
     clients: [OptionalCell<&'a dyn kernel::hil::gpio::Client>; 8],
@@ -477,15 +478,24 @@ pub struct Pint {
     registers: StaticRef<PintRegisters>,
     clients: [OptionalCell<&'static dyn kernel::hil::gpio::Client>; 8],
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+pub struct Pint<'a> {
+    registers: StaticRef<PintRegisters>,
+    clients: [OptionalCell<&'a dyn kernel::hil::gpio::Client>; 8],
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }
 
 // pub static PINT: Pint = Pint::new();
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 impl<'a> Pint<'a> {
 =======
 impl Pint {
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+impl<'a> Pint<'a> {
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     pub const fn new() -> Self {
         Self {
             registers: PINT_BASE,
@@ -520,11 +530,15 @@ impl Pint {
     // }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     pub fn set_client(&self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
         if channel < 8 {
             self.clients[channel as usize].replace(client);
         }
     }
+<<<<<<< HEAD
 =======
     // pub fn set_client(&mut self, channel: u8, client: &'a dyn kernel::hil::gpio::Client) {
     //     if channel < 8 {
@@ -532,6 +546,8 @@ impl Pint {
     //     }
     // }
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 
     pub fn configure_interrupt(&self, channel: usize, edge: Edge) {
         if channel < 8 {
@@ -586,10 +602,14 @@ impl Pint {
         // self.registers.ist.get();
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         // let blue_led = GpioPin::new(LPCPin::P1_6);
 =======
         let blue_led = GpioPin::new(LPCPin::P1_4);
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        // let blue_led = GpioPin::new(LPCPin::P1_6);
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 
         for i in 0..8 {
             if (status & (1 << i)) != 0 {
@@ -600,6 +620,7 @@ impl Pint {
             }
         }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         // blue_led.toggle();
         // Self::delay_ms(1000);
@@ -613,6 +634,13 @@ impl Pint {
 
         self.configure_interrupt(0, Edge::Rising);
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        // blue_led.toggle();
+        // Self::delay_ms(1000);
+        // blue_led.toggle();
+
+        // self.configure_interrupt(0, Edge::Rising);
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     }
 
     pub fn disable_interrupt(&self, channel: usize) {
@@ -628,6 +656,7 @@ impl Pint {
         self.registers.rise.get()
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 
     fn delay_ms(ms: u32) {
@@ -638,4 +667,6 @@ impl Pint {
         }
     }
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }

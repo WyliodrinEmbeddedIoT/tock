@@ -59,6 +59,9 @@ pub(crate) const GPIO_BASE: StaticRef<GpioRegisters> =
 #[allow(non_camel_case_types)]
 pub enum LPCPin {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     P0_0 = 0,
     P0_1 = 1,
     P0_2 = 2,
@@ -252,6 +255,7 @@ impl<'a> Pins<'a> {
         self.set_iocon();
         self.set_pint();
     }
+<<<<<<< HEAD
 =======
     P0_0,
     P0_1,
@@ -318,6 +322,8 @@ impl<'a> Pins<'a> {
     P1_30,
     P1_31,
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }
 
 pub struct GpioPin<'a> {
@@ -327,6 +333,7 @@ pub struct GpioPin<'a> {
     pint_channel: OptionalCell<u8>,
     client: OptionalCell<&'a dyn gpio::Client>,
 <<<<<<< HEAD
+<<<<<<< HEAD
     inputmux: OptionalCell<&'a Inputmux>,
     iocon: OptionalCell<&'a Iocon>,
     pint: OptionalCell<&'a Pint<'a>>,
@@ -335,10 +342,16 @@ pub struct GpioPin<'a> {
     iocon: Iocon,
     pint: Pint,
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+    inputmux: OptionalCell<&'a Inputmux>,
+    iocon: OptionalCell<&'a Iocon>,
+    pint: OptionalCell<&'a Pint<'a>>,
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }
 
 pub use kernel::hil::gpio::{Configure, Input, Interrupt, Output, Pin};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 use crate::inputmux::{self, Inputmux};
 use crate::iocon::Iocon;
@@ -352,6 +365,13 @@ use crate::pint::{self, Edge, Pint};
 
 impl GpioPin<'_> {
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+use crate::inputmux::{self, Inputmux};
+use crate::iocon::Iocon;
+use crate::pint::{self, Edge, Pint};
+
+impl<'a> GpioPin<'a> {
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     pub const fn new(pin_name: LPCPin) -> Self {
         let pin_num = pin_name as u8;
         Self {
@@ -361,6 +381,7 @@ impl GpioPin<'_> {
             pint_channel: OptionalCell::empty(),
             client: OptionalCell::empty(),
 <<<<<<< HEAD
+<<<<<<< HEAD
             inputmux: OptionalCell::empty(),
             iocon: OptionalCell::empty(),
             pint: OptionalCell::empty(),
@@ -369,6 +390,11 @@ impl GpioPin<'_> {
             iocon: Iocon::new(),
             pint: Pint::new(),
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+            inputmux: OptionalCell::empty(),
+            iocon: OptionalCell::empty(),
+            pint: OptionalCell::empty(),
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
         }
     }
 
@@ -388,6 +414,9 @@ impl GpioPin<'_> {
         (self.port as usize * 32) + self.pin as usize
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 
     pub fn handle_interrupt(&self) {
         self.pint.map(|pint| {
@@ -404,8 +433,11 @@ impl GpioPin<'_> {
     pub fn set_pint(&self, pint: &'a Pint<'a>) {
         self.pint.set(pint);
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 }
 
 impl gpio::Output for GpioPin<'_> {
@@ -486,6 +518,9 @@ impl gpio::Configure for GpioPin<'_> {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     fn set_floating_state(&self, state: kernel::hil::gpio::FloatingState) {
         let pins = [
             LPCPin::P0_0,
@@ -574,9 +609,12 @@ impl gpio::Configure for GpioPin<'_> {
             }
         }
     }
+<<<<<<< HEAD
 =======
     fn set_floating_state(&self, _state: gpio::FloatingState) {}
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     fn floating_state(&self) -> gpio::FloatingState {
         gpio::FloatingState::PullNone
     }
@@ -596,16 +634,23 @@ impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
     fn set_client(&self, client: &'a dyn gpio::Client) {
         self.client.set(client);
 <<<<<<< HEAD
+<<<<<<< HEAD
         self.pint.map(|pint| {
             pint.set_client(0, client);
         });
 =======
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        self.pint.map(|pint| {
+            pint.set_client(0, client);
+        });
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     }
 
     fn enable_interrupts(&self, mode: gpio::InterruptEdge) {
         match mode {
             gpio::InterruptEdge::RisingEdge => {
+<<<<<<< HEAD
 <<<<<<< HEAD
                 self.pint.map(|pint| {
                     pint.configure_interrupt(0, Edge::Rising);
@@ -622,18 +667,32 @@ impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
                 });
 =======
                 self.pint.configure_interrupt(0, Edge::Rising);
+=======
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Rising);
+                });
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
             }
             gpio::InterruptEdge::FallingEdge => {
-                self.pint.configure_interrupt(0, Edge::Falling);
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Falling);
+                });
             }
             gpio::InterruptEdge::EitherEdge => {
+<<<<<<< HEAD
                 self.pint.configure_interrupt(0, Edge::Both);
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+                self.pint.map(|pint| {
+                    pint.configure_interrupt(0, Edge::Both);
+                });
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
             }
         }
     }
 
     fn disable_interrupts(&self) {
+<<<<<<< HEAD
 <<<<<<< HEAD
         self.pint.map(|pint| {
             pint.disable_interrupt(0);
@@ -641,6 +700,11 @@ impl<'a> gpio::Interrupt<'a> for GpioPin<'a> {
 =======
         self.pint.disable_interrupt(0);
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        self.pint.map(|pint| {
+            pint.disable_interrupt(0);
+        });
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
     }
 
     fn is_pending(&self) -> bool {
