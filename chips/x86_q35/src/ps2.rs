@@ -9,55 +9,6 @@ use kernel::utilities::registers::register_bitfields;
 use tock_registers::LocalRegisterCopy;
 use x86::registers::io;
 
-/// Run `f` with interrupts disabled, then restore the previous IF state.
-///
-/// `pop_scan_code()` executes in thread context while scan-codes are pushed
-/// from IRQ 1.  Masking interrupts around the head/tail/count mutations keeps
-/// the ring buffer coherent even if a keystroke arrives in the middle of the
-/// read-modify-write sequence.
-#[cfg(not(test))]
-#[inline(always)]
-fn with<R, F: FnOnce() -> R>(f: F) -> R {
-    // Read EFLAGS to see whether IF was set.
-    let mut flags: usize;
-    unsafe {
-        core::arch::asm!(
-        "pushf",
-        "pop {flags}",
-        flags = lateout(reg) flags,
-        options(nomem, preserves_flags)
-        );
-    }
-    let were_enabled = flags & (1 << 9) != 0; // bit 9 = IF
-
-    // Disable interrupts if they were enabled.
-    if were_enabled {
-        unsafe {
-            core::arch::asm!("cli", options(nomem, nostack, preserves_flags));
-        }
-    }
-
-    // Critical section
-    let ret = f();
-
-    // Restore IF to its previous state.
-    if were_enabled {
-        unsafe {
-            core::arch::asm!("sti", options(nomem, nostack, preserves_flags));
-        }
-    }
-    ret
-}
-
-// stub version: compiled when `cargo test` runs on the host
-// will be removed once tests are gone before prod.
-#[cfg(test)]
-#[inline(always)]
-fn with<R, F: FnOnce() -> R>(f: F) -> R {
-    // Host tests don’t need interrupt masking and can’t execute CLI/STI.
-    f()
-}
-
 /// PS/2 controller ports
 const PS2_DATA_PORT: u16 = 0x60;
 const PS2_STATUS_PORT: u16 = 0x64;
@@ -227,42 +178,29 @@ impl Ps2Controller {
 
     /// Pop the next scan-code, or None if buffer is empty.
     pub fn pop_scan_code(&self) -> Option<u8> {
-        // Disable interrupts for the whole read-modify-write window so an IRQ
-        // can’t change `count`, `tail`, or the buffer between our reads.
-        with(|| {
-            if self.count.get() == 0 {
-                return None;
-            }
-
-            let t = self.tail.get();
-            let byte = self.buffer.borrow()[t];
-
-            self.tail.set((t + 1) % BUFFER_SIZE);
-            self.count.set(self.count.get() - 1);
-
-            Some(byte)
-        })
+        if self.count.get() == 0 {
+            return None;
+        }
+        // Safe: only called in thread context, no concurrent push
+        let t = self.tail.get();
+        let byte = self.buffer.borrow()[t];
+        self.tail.set((t + 1) % BUFFER_SIZE);
+        self.count.set(self.count.get() - 1);
+        Some(byte)
     }
 
     /// Internal: push a scan-code into the ring buffer, dropping oldest if full.
     pub(crate) fn push_code(&self, byte: u8) {
-        // Runs in IRQ context, but `with()` is re-entrant-safe: if `IF` is already
-        // clear it leaves it that way.
-        with(|| {
-            let head = self.head.get();
-            self.buffer.borrow_mut()[head] = byte;
-
-            let next_head = (head + 1) % BUFFER_SIZE;
-            self.head.set(next_head);
-
-            if self.count.get() < BUFFER_SIZE {
-                // Still space – just bump the valid-byte count.
-                self.count.set(self.count.get() + 1);
-            } else {
-                // Buffer was full – advance tail to drop the oldest byte.
-                self.tail.set((self.tail.get() + 1) % BUFFER_SIZE);
-            }
-        });
+        // Safe: always called from interrupt context, and no concurrent pop
+        let head = self.head.get();
+        self.buffer.borrow_mut()[head] = byte;
+        let next_head = (head + 1) % BUFFER_SIZE;
+        self.head.set(next_head);
+        if self.count.get() < BUFFER_SIZE {
+            self.count.set(self.count.get() + 1);
+        } else {
+            self.tail.set((self.tail.get() + 1) % BUFFER_SIZE);
+        }
     }
 }
 

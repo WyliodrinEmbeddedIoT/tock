@@ -5,16 +5,17 @@
 use core::fmt::Write;
 use core::mem::MaybeUninit;
 
+use crate::dv_kb::Keyboard;
+use crate::pit::{Pit, RELOAD_1KHZ};
+use crate::ps2::Ps2Controller;
+use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 use kernel::component::Component;
 use kernel::platform::chip::Chip;
-
+use kernel::static_init;
 use x86::mpu::PagingMPU;
 use x86::registers::bits32::paging::{PD, PT};
 use x86::support;
 use x86::{Boundary, InterruptPoller};
-
-use crate::pit::{Pit, RELOAD_1KHZ};
-use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 
 /// Interrupt constants for legacy PC peripherals
 mod interrupt {
@@ -57,6 +58,8 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
 
     pub ps2: &'a crate::ps2::Ps2Controller,
 
+    pub kb: &'a crate::dv_kb::Keyboard<'a, Ps2Controller>,
+
     /// System call context
     syscall: Boundary,
     paging: PagingMPU<'a>,
@@ -90,6 +93,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                     // new PS/2 keyboard interrupt handler
                     interrupt::KEYBOARD => {
                         self.ps2.handle_interrupt();
+                        self.kb.poll();
                     }
 
                     _ => unimplemented!("interrupt {num}"),
@@ -234,7 +238,10 @@ impl Component for PcComponent<'static> {
 
         // debug
         let ps2 = self.ps2.expect("PcComponent::with_ps2 was not called");
-
+        let kb = unsafe {
+            // static_init! writes into a `static mut` buffer
+            static_init!(Keyboard<Ps2Controller>, Keyboard::new(ps2))
+        };
         let pc = s.4.write(Pc {
             com1,
             com2,
@@ -242,6 +249,7 @@ impl Component for PcComponent<'static> {
             com4,
             pit,
             ps2,
+            kb,
             syscall,
             paging,
         });

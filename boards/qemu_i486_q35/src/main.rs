@@ -32,7 +32,6 @@ use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 
-use x86_q35::dv_kb::Keyboard;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::ps2::Ps2Controller;
 
@@ -60,8 +59,6 @@ static mut CHIP: Option<&'static Pc> = None;
 static mut PROCESS_PRINTER: Option<&'static capsules_system::process_printer::ProcessPrinterText> =
     None;
 
-// keyboard
-static mut KEYBOARD: Option<&'static Keyboard<Ps2Controller>> = None;
 // How should the kernel respond when a process faults.
 const FAULT_RESPONSE: capsules_system::process_policies::PanicFaultPolicy =
     capsules_system::process_policies::PanicFaultPolicy {};
@@ -263,11 +260,6 @@ unsafe extern "cdecl" fn main() {
     .finalize(components::debug_writer_component_static!());
 
     ps2.init();
-
-    let kb = static_init!(Keyboard<Ps2Controller>, Keyboard::new(chip.ps2));
-    unsafe {
-        KEYBOARD = Some(kb);
-    }
 
     let lldb = components::lldb::LowLevelDebugComponent::new(
         board_kernel,
