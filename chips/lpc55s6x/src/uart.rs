@@ -2,7 +2,6 @@
 #![no_main]
 
 use cortex_m::asm;
-use cortex_m_semihosting::hprintln;
 use kernel::utilities::registers::{
     self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };

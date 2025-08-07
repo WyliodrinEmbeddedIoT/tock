@@ -1,15 +1,8 @@
-// boards/lpc55s69-evk/src/main.rs
-
 #![no_std]
 #![no_main]
-// Add the checksum feature
-//#![feature(linkage)]
-//#[linkage = "weak"]
-//#[no_mangle]
-//static __checksum: u32 = 0;
 
-use cortex_m_semihosting::hprintln;
 use cortexm33::nvic::Nvic;
+use kernel::capabilities::ProcessManagementCapability;
 use kernel::hil::uart::{Parameters, Parity, StopBits, Width, Error};
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::hil::uart::{ReceiveClient,TransmitClient};
@@ -24,12 +17,13 @@ use core::panic::PanicInfo;
 use kernel::hil::uart::Configure;
 use core::cell::Cell;
 use kernel::hil::uart::{Receive,Transmit};
+use kernel::syscall;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
 use cortex_m::{asm, interrupt};
 use cortex_m::peripheral::NVIC;
-// use cortex_m_semihosting::hprintln;
+use cortex_m::peripheral::SCB;
 use cortexm33;
 use kernel::component::Component;
 use lpc55s6x::chip::{Lpc55s69, Lpc55s69DefaultPeripheral};
@@ -40,6 +34,10 @@ use lpc55s6x::clocks::{self, Clock};
 #[no_mangle]
 #[link_section = ".stack_buffer"]
 pub static mut STACK_MEMORY: [u8; 0x2000] = [0; 0x2000];
+
+#[no_mangle]
+#[link_section = ".app_memory"]
+pub static mut APP_MEMORY: [u8;0] = [0;0];
 
 static mut UART_TX_BUFFER: [u8; 128] = [0; 128];
 static mut UART_RX_BUFFER: [u8; 128] = [0; 128];
@@ -109,6 +107,7 @@ static mut CHIP: Option<&'static Lpc55s69<Lpc55s69DefaultPeripheral>> = None;
 pub struct Lpc55s69evk {
     scheduler: &'static RoundRobinSched<'static>,
     systick: cortexm33::systick::SysTick,
+    console: &'static capsules_core::console::Console<'static>,
 }
 
 impl SyscallDriverLookup for Lpc55s69evk {
@@ -117,7 +116,7 @@ impl SyscallDriverLookup for Lpc55s69evk {
         F: FnOnce(Option<&dyn kernel::syscall::SyscallDriver>) -> R,
     {
         match driver_num {
-            // capsules_core::console::DRIVER_NUM => f(Some(self.console)),
+            capsules_core::console::DRIVER_NUM => f(Some(self.console)),
             // capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
             // capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             // capsules_core::button::DRIVER_NUM => f(Some(self.button)),
@@ -200,11 +199,12 @@ impl ReceiveClient for Main {
             }
         } else {
             // The UART is busy sending something else. We'll just drop this echo.
-            hprintln!("TX busy, dropping echo.");
+            //hprintln!("TX busy, dropping echo.");
         }
         let _ = self.uart.receive_buffer(buffer, buffer.len());
     }
 }
+
 
 impl Main {
     pub fn start_uart_tx(&'static self) {
@@ -235,6 +235,8 @@ impl Main {
 
 #[no_mangle]
 unsafe fn main() -> ! {
+
+
     cortexm33::scb::set_vector_table_offset(0x00000000 as *const ());
     // By the time we get here, `system_init` has already run.
     // All necessary clocks are enabled.
@@ -255,59 +257,105 @@ unsafe fn main() -> ! {
 
     let peripherals = get_peripherals();
 
-        let clock = static_init!(clocks::Clock, clocks::Clock::new());
-        let flexcomm0 = static_init!(flexcomm::Flexcomm, flexcomm::Flexcomm::new_id(0).unwrap());
+    let clock = static_init!(clocks::Clock, clocks::Clock::new());
+    let flexcomm0 = static_init!(flexcomm::Flexcomm, flexcomm::Flexcomm::new_id(0).unwrap());
 
-        let uart = &peripherals.uart;
+    let uart = &peripherals.uart;
 
-        uart.set_clocks(clock);
-        uart.set_flexcomm(flexcomm0);
+    uart.set_clocks(clock);
+    uart.set_flexcomm(flexcomm0);
 
-        unsafe {
-            let nvic_interrupt = Nvic::new(interrupts::FLEXCOMM0);
-            nvic_interrupt.enable();
-        }
+    
 
-
-        let main_app = static_init!(
-            Main,
-            Main {
-                uart: uart,
-                tx_busy: Cell::new(false),
-                rx_busy: Cell::new(false),
-            }
-        );
-
-        
-
-        uart.set_transmit_client(main_app);
-        uart.set_receive_client(main_app);
-        uart.setup_deferred_call();
+    unsafe {
+        let nvic_interrupt = Nvic::new(interrupts::FLEXCOMM0);
+        nvic_interrupt.enable();
+    }
 
 
-        const IOCON_BASE: u32 = 0x4000_1000;
-        unsafe { ((IOCON_BASE + 0x74) as *mut u32).write_volatile(0x101); }
-        unsafe { ((IOCON_BASE + 0x78) as *mut u32).write_volatile(0x101); }
-        let params = Parameters { baud_rate: 9600, width: Width::Eight, stop_bits: StopBits::One, parity: Parity::None, hw_flow_control: false };
-        uart.configure(params).unwrap();
+    // let main_app = static_init!(
+    //     Main,
+    //     Main {
+    //         uart: uart,
+    //         tx_busy: Cell::new(false),
+    //         rx_busy: Cell::new(false),
+    //     }
+    // );
 
-        let chip = static_init!(
-            Lpc55s69<Lpc55s69DefaultPeripheral>,
-            Lpc55s69::new(peripherals)
-        );
+    // uart.set_transmit_client(main_app);
+    // uart.set_receive_client(main_app);
+    uart.setup_deferred_call();
 
-        let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
 
-        let scheduler = components::sched::round_robin::RoundRobinComponent::new(processes)
-            .finalize(components::round_robin_component_static!(NUM_PROCS));
+    const IOCON_BASE: u32 = 0x4000_1000;
+    unsafe { ((IOCON_BASE + 0x74) as *mut u32).write_volatile(0x101); }
+    unsafe { ((IOCON_BASE + 0x78) as *mut u32).write_volatile(0x101); }
+    let params = Parameters { baud_rate: 9600, width: Width::Eight, stop_bits: StopBits::One, parity: Parity::None, hw_flow_control: false };
+    uart.configure(params).unwrap();
 
-        let lpc55 = Lpc55s69evk {
-            scheduler,
-            systick: cortexm33::systick::SysTick::new_with_calibration(12_000_000),
-        };
+    let chip = static_init!(
+        Lpc55s69<Lpc55s69DefaultPeripheral>,
+        Lpc55s69::new(peripherals)
+    );
 
-        main_app.start_uart_tx();
-        main_app.start_uart_rx();
+    let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
+
+    let scheduler = components::sched::round_robin::RoundRobinComponent::new(processes)
+        .finalize(components::round_robin_component_static!(NUM_PROCS));
+
+    let uart_mux = components::console::UartMuxComponent::new(uart, 9600)
+    .finalize(components::uart_mux_component_static!());
+
+    let console = components::console::ConsoleComponent::new(
+        board_kernel,
+        capsules_core::console::DRIVER_NUM,
+        uart_mux,
+    )
+    .finalize(components::console_component_static!());
+    
+    extern "C" {
+    /// Beginning of the ROM region containing app images.
+    static _sapps: u8;
+    /// End of the ROM region containing app images.
+    static _eapps: u8;
+    /// Beginning of the RAM region for app memory.
+    static mut _sappmem: u8;
+    /// End of the RAM region for app memory.
+    static _eappmem: u8;
+    }
+
+    let process_management_capability =
+        create_capability!(capabilities::ProcessManagementCapability);
+
+    kernel::process::load_processes(
+        board_kernel,
+        chip,
+        core::slice::from_raw_parts(
+            core::ptr::addr_of!(_sapps),
+            core::ptr::addr_of!(_eapps) as usize - core::ptr::addr_of!(_sapps) as usize,
+        ),
+        core::slice::from_raw_parts_mut(
+            core::ptr::addr_of_mut!(_sappmem),
+            core::ptr::addr_of!(_eappmem) as usize - core::ptr::addr_of!(_sappmem) as usize,
+        ),
+        &FAULT_RESPONSE,
+        &process_management_capability,
+    )
+    .unwrap_or_else(|err| {
+        kernel::debug!("Error loading processes!");
+        kernel::debug!("{:?}", err);
+    });
+
+    
+
+    let lpc55 = Lpc55s69evk {
+        scheduler,
+        systick: cortexm33::systick::SysTick::new_with_calibration(12_000_000),
+        console: console,
+    };
+
+        // main_app.start_uart_tx();
+        // main_app.start_uart_rx();
 
         // loop {
         //     if uart.uart_is_readable() {
@@ -315,7 +363,37 @@ unsafe fn main() -> ! {
         //         while !uart.uart_is_writable() {}
         //         uart.send_byte(received_byte);
         //     }
-        // }     
+        // }
+
+            // let process_names = &[
+            // "hello",
+            // ];
+
+            // let process_management_capability = create_capability!(ProcessManagementCapability);
+
+            // // 2. Call the process loader.
+            // let process_result = kernel::process::load_processes(
+            //     board_kernel,
+            //     chip,
+            //     &mut STACK_MEMORY, // The memory region for all process stacks
+            //     &mut APP_MEMORY,      // The list of process names to load
+            //     &FAULT_RESPONSE,
+            //     &process_management_capability,
+            // );
+
+            // // 3. Check if loading was successful.
+            // match process_result {
+            //     Ok(()) => {
+            //         hprintln!("Process 'hello' loaded successfully.");
+            //     }
+            //     Err(err) => {
+            //         hprintln!("Error loading process 'hello': {:?}", err);
+            //         // It's often useful to just loop here if processes fail to load.
+            //         loop {
+            //             cortex_m::asm::bkpt();
+            //         }
+            //     }
+            // }     
 
         board_kernel.kernel_loop(
             &lpc55,

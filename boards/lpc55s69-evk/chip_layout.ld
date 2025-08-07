@@ -4,18 +4,11 @@
 
 MEMORY
 {
-  rom(rx) : ORIGIN = 0x00000000, LENGTH = 630K
+  rom(rx) : ORIGIN = 0x00000000, LENGTH = 64K
   ram(rwx) : ORIGIN = 0x20000000, LENGTH = 64K
-  prog(rx) : ORIGIN = 0x00080000, LENGTH = 128K
+  prog(rx) : ORIGIN = 0x00010000, LENGTH = 566K
 }
 
 PAGE_SIZE = 4K;
 
-SECTIONS {
-  /* The .text section is where all code and read-only data goes */
-  .text : {
-    KEEP(*(.vector_table .vector_table.*))
-  } > rom
-
-  /* ... other sections for .bss, .data, .stack ... */
-}
+ENTRY(initialize_ram_jump_to_main)

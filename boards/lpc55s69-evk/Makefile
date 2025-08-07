@@ -13,6 +13,10 @@ PROBE_RS=probe-rs
 # probe-rs needs this to know what it's flashing.
 iCHIP=LPC55S69JBD100
 
+APP=/home/pc2/Desktop/libtock-c/examples/c_hello/build/cortex-m7/cortex-m7.tbf
+KERNEL=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM).elf
+KERNEL_WITH_APP=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)-app.elf
+
 # Default target for installing the kernel.
 .PHONY: install
 install: flash
@@ -35,4 +39,7 @@ debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
 
 # An alias for the default `install` target.
 .PHONY: program
-program: install
+program: release
+	arm-none-eabi-objcopy --set-section-flags .apps=LOAD,ALLOC $(KERNEL) $(KERNEL_WITH_APP)
+	arm-none-eabi-objcopy --update-section .apps=$(APP) $(KERNEL_WITH_APP)
+	$(PROBE_RS) run --chip $(iCHIP) $(KERNEL_WITH_APP)
