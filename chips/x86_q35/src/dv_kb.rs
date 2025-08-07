@@ -1,19 +1,10 @@
 // Licensed under the Apache License, Version 2.0 or the MIT License.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-// Copyright Tock Contributors 2024.
+// Copyright Tock Contributors 2025.
 
 //! PS/2 keyboard wrapper and Set‑2 decoder for the 8042 controller
-// this will be removed, only available for this milestone
-#![allow(dead_code, unused_imports)]
-// will remove in prod dw
 use crate::ps2::ScanSource;
-#[cfg(not(test))]
-use crate::ps2_cmd;
 use core::cell::RefCell;
-use core::marker::PhantomData;
-use kernel::errorcode::ErrorCode;
-
-/// Public key‑event types
 
 /// High‑level keyboard event exposed to capsules.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -302,7 +293,6 @@ pub struct Keyboard<'a, S: ScanSource> {
     ps2: &'a S,
     decoder: RefCell<DecoderState>,
     events: RefCell<EventFifo>,
-    _marker: PhantomData<&'a ()>,
 }
 
 impl<'a, S: ScanSource> Keyboard<'a, S> {
@@ -311,36 +301,10 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
             ps2,
             decoder: RefCell::new(DecoderState::new()),
             events: RefCell::new(EventFifo::new()),
-            _marker: PhantomData,
         }
-    }
-
-    /// Full device bring-up
-    /// Controller must already be init
-    pub fn init(&self) -> Result<(), ErrorCode> {
-        // Reset & self-test (0xFF → expect 0xAA)
-        let r = ps2_cmd::send(&[0xFF], 1)?;
-        if r.as_slice() != [0xAA] {
-            return Err(ErrorCode::FAIL);
-        }
-
-        // Select Scan-Set 2
-        ps2_cmd::send(&[0xF0, 0x02], 0)?;
-
-        // Restore defaults
-        ps2_cmd::send(&[0xF6], 0)?;
-
-        // Typematic: 10.9 cps / 250 ms (0x20)
-        ps2_cmd::send(&[0xF3, 0x20], 0)?;
-
-        // Enable scanning
-        ps2_cmd::send(&[0xF4], 0)?;
-
-        Ok(())
     }
 
     /// Thin top‑half: simply forward to the controller.
-    pub fn handle_interrupt(&self) {}
     /// Bottom-half: drain raw bytes and queue KeyEvents
     pub fn poll(&self) {
         while let Some(raw) = self.ps2.pop_scan_code() {
@@ -349,184 +313,9 @@ impl<'a, S: ScanSource> Keyboard<'a, S> {
             }
         }
     }
-    /// Non-blocking getter for consumers
+
+    /// Pop the next decoded event, or `None` if empty.
     pub fn next_event(&self) -> Option<KeyEvent> {
         self.events.borrow_mut().pop()
-    }
-
-    pub fn set_leds(&self, mask: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xED, mask & 0x07], 0).map(|_| ())
-    }
-
-    pub fn probe_echo(&self) -> Result<(), ErrorCode> {
-        let r = ps2_cmd::send(&[0xEE], 1)?;
-        (r.as_slice() == [0xEE])
-            .then_some(())
-            .ok_or(ErrorCode::FAIL)
-    }
-
-    pub fn identify(&self) -> Result<([u8; 3], usize), ErrorCode> {
-        let r = ps2_cmd::send(&[0xF2], 3)?;
-        let mut ids = [0u8; 3];
-        ids[..r.len()].copy_from_slice(r.as_slice());
-        Ok((ids, r.len()))
-    }
-
-    pub fn scan_code_set(&self, cmd: u8) -> Result<u8, ErrorCode> {
-        let resp_len = usize::from(cmd == 0);
-        let r = ps2_cmd::send(&[0xF0, cmd], resp_len)?;
-        Ok(if resp_len == 1 { r.as_slice()[0] } else { cmd })
-    }
-
-    pub fn set_typematic(&self, rate: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF3, rate & 0x7F], 0).map(|_| ())
-    }
-
-    pub fn enable_scanning(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF4], 0).map(|_| ())
-    }
-
-    pub fn disable_scanning(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF5], 0).map(|_| ())
-    }
-
-    pub fn set_defaults(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF6], 0).map(|_| ())
-    }
-
-    pub fn set_typematic_only(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF7], 0).map(|_| ())
-    }
-
-    pub fn set_make_release(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF8], 0).map(|_| ())
-    }
-
-    pub fn set_make_only(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xF9], 0).map(|_| ())
-    }
-
-    pub fn set_full_mode(&self) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xFA], 0).map(|_| ())
-    }
-
-    pub fn set_key_typematic_only(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xFB, sc], 0).map(|_| ())
-    }
-
-    pub fn set_key_make_release(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xFC, sc], 0).map(|_| ())
-    }
-
-    pub fn set_key_make_only(&self, sc: u8) -> Result<(), ErrorCode> {
-        ps2_cmd::send(&[0xFD, sc], 0).map(|_| ())
-    }
-
-    pub fn is_present(&self) -> bool {
-        self.probe_echo().is_ok()
-    }
-
-    pub fn resend_last_byte(&self) -> Result<u8, ErrorCode> {
-        let r = ps2_cmd::send(&[0xFE], 1)?;
-        Ok(r.as_slice()[0])
-    }
-
-    pub fn reset_and_self_test(&self) -> Result<(), ErrorCode> {
-        let r = ps2_cmd::send(&[0xFF], 1)?;
-        match r.as_slice()[0] {
-            0xAA => Ok(()),
-            _ => Err(ErrorCode::FAIL),
-        }
-    }
-}
-
-/// Unit tests
-
-/// 1.  Crate-root mock for `ps2_cmd::send`
-/// This block is compiled **only when running `cargo test` and it
-/// shadows the real (I/O-using) implementation, while re-exporting
-/// the `Resp` helper from the original module.
-#[cfg(test)]
-pub(super) mod ps2_cmd {
-    use kernel::errorcode::ErrorCode;
-    // Re-export the real Resp / MAX_CMD so the driver sees the same types.
-    pub use crate::ps2_cmd::{Resp, MAX_CMD};
-
-    /// Tiny fake: only the op-codes used during `Keyboard::init`.
-    pub fn send(_cmd: &[u8], resp_len: usize) -> Result<Resp, ErrorCode> {
-        let mut r = Resp::new();
-
-        // 0xFF (reset) → reply 0xAA (self-test pass)
-        if _cmd == [0xFF] {
-            r.push(0xAA);
-        }
-        debug_assert!(resp_len <= MAX_CMD);
-        Ok(r)
-    }
-}
-
-/// Tests
-/// Everything below is **inside the same file; nothing else changes.
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use core::cell::Cell;
-
-    /* --- dummy scan-code source ---*/
-    struct DummySrc {
-        bytes: &'static [u8],
-        idx: Cell<usize>,
-    }
-    impl DummySrc {
-        const fn new(bytes: &'static [u8]) -> Self {
-            Self {
-                bytes,
-                idx: Cell::new(0),
-            }
-        }
-    }
-    impl ScanSource for DummySrc {
-        fn pop_scan_code(&self) -> Option<u8> {
-            let i = self.idx.get();
-            self.idx.set(i + 1);
-            self.bytes.get(i).copied()
-        }
-    }
-
-    /* --- Pump path ---*/
-    #[test]
-    fn pump_basic() {
-        static BYTES: &[u8] = &[0x1C, 0xF0, 0x1C];
-        let src = DummySrc::new(BYTES);
-        let kb = Keyboard::new(&src);
-
-        kb.poll();
-        assert_eq!(kb.next_event(), Some(KeyEvent::Ascii(b'a')));
-        assert_eq!(kb.next_event(), None);
-    }
-
-    /* ---  FIFO overflow ---*/
-    #[test]
-    fn overflow() {
-        const N: usize = 70;
-        static BYTES: [u8; N] = [0x1C; N];
-        let src = DummySrc::new(&BYTES);
-        let kb = Keyboard::new(&src);
-
-        kb.poll();
-
-        let mut count = 0;
-        while kb.next_event().is_some() {
-            count += 1;
-        }
-        assert_eq!(count, EVT_CAP); // capped at 64
-    }
-
-    /* --- Keyboard::init uses the mock ps2_cmd ---*/
-    #[test]
-    fn init_ok() {
-        let src = DummySrc::new(&[]);
-        let kb = Keyboard::new(&src);
-        assert!(kb.init().is_ok());
     }
 }

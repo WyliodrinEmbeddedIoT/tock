@@ -3,7 +3,6 @@
 // Copyright Tock Contributors 2025.
 
 use core::cell::{Cell, RefCell};
-use core::marker::PhantomData;
 use kernel::debug;
 use kernel::utilities::registers::register_bitfields;
 use tock_registers::LocalRegisterCopy;
@@ -112,7 +111,6 @@ pub struct Ps2Controller {
     head: Cell<usize>,
     tail: Cell<usize>,
     count: Cell<usize>, // new field to track number of valid entries
-    _p: PhantomData<()>,
 }
 
 impl Ps2Controller {
@@ -122,7 +120,6 @@ impl Ps2Controller {
             head: Cell::new(0),
             tail: Cell::new(0),
             count: Cell::new(0), // ← initialize count
-            _p: PhantomData,
         }
     }
     pub fn init(&self) {

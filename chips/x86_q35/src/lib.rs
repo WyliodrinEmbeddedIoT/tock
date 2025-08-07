@@ -25,5 +25,4 @@ pub mod pit;
 
 pub mod dv_kb;
 pub mod ps2;
-mod ps2_cmd;
 pub mod serial;
