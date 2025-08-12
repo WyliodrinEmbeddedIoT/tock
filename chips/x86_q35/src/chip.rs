@@ -69,7 +69,7 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
     pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// PS/2 Mouse
-    pub ms: &'a crate::dv_ms::Mouse<'a, Ps2Controller>,
+    pub ms: &'a crate::dv_ms::Mouse<'a>,
 
     /// System call context
     syscall: Boundary,
@@ -100,17 +100,12 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                         self.com1.handle_interrupt();
                         self.com3.handle_interrupt();
                     }
-
-                    // new PS/2 keyboard interrupt handler
                     interrupt::KEYBOARD => {
                         self.ps2.handle_interrupt();
                     }
-
-                    // new PS/2 mouse
                     interrupt::MOUSE => {
-                        // TO-DO
+                        self.ms.handle_interrupt();
                     }
-
                     _ => unimplemented!("interrupt {num}"),
                 }
 
@@ -192,28 +187,28 @@ pub struct PcComponent<'a> {
     pd: &'a mut PD,
     pt: &'a mut PT,
 
-    /// Holds the PS/2 controller passed in by the board
     ps2: Option<&'a crate::ps2::Ps2Controller>,
+    mouse: Option<&'a crate::dv_ms::Mouse<'a>>, // added 4 mouse!!!!!!
 }
 
 impl<'a> PcComponent<'a> {
-    /// Creates a new `PcComponent` instance.
-    ///
-    /// ## Safety
-    ///
-    /// It is unsafe to construct more than a single `PcComponent` during the entire lifetime of the
-    /// kernel.
-    ///
-    /// Before calling, memory must be identity-mapped. Otherwise, introduction of flat segmentation
-    /// will cause the kernel's code/data to move unexpectedly.
-    ///
-    /// See [`x86::init`] for further details.
     pub unsafe fn new(pd: &'a mut PD, pt: &'a mut PT) -> Self {
-        Self { pd, pt, ps2: None }
+        Self {
+            pd,
+            pt,
+            ps2: None,
+            mouse: None,
+        }
     }
-    /// Supply the PS/2 controller so that `Pc` can dispatch KEYBOARD IRQs
+
     pub fn with_ps2(mut self, ps2: &'a crate::ps2::Ps2Controller) -> Self {
         self.ps2 = Some(ps2);
+        self
+    }
+
+    pub fn with_mouse(mut self, mouse: &'a crate::dv_ms::Mouse<'a>) -> Self {
+        // ← new
+        self.mouse = Some(mouse);
         self
     }
 }
@@ -229,8 +224,6 @@ impl Component for PcComponent<'static> {
     type Output = &'static Pc<'static>;
 
     fn finalize(self, s: Self::StaticInput) -> Self::Output {
-        // Low-level hardware initialization. We do this first to guarantee the CPU is in a
-        // predictable state before initializing the chip object.
         unsafe {
             x86::init();
             crate::pic::init();
@@ -263,13 +256,13 @@ impl Component for PcComponent<'static> {
             let pt_addr = core::ptr::from_ref(self.pt) as usize;
             PagingMPU::new(self.pd, pd_addr, self.pt, pt_addr)
         };
-
         paging.init();
 
         let syscall = Boundary::new();
 
         // PS/2 instance supplied via .with_ps2(...)
         let ps2 = self.ps2.expect("PcComponent::with_ps2 was not called");
+        let mouse = self.mouse.expect("PcComponent::with_mouse was not called"); // added new 4 the mouse
 
         kernel::deferred_call::DeferredCallClient::register(ps2);
 
@@ -284,7 +277,7 @@ impl Component for PcComponent<'static> {
             pit,
             vga,
             ps2,
-            ms, //new for ms
+            ms: mouse, // ← pass the mouse
             syscall,
             paging,
         });
