@@ -243,3 +243,5 @@ impl<'a> Mouse<'a> {
         }
     }
 }
+//must fix issue where the kernel freezes!
+//must review the mouse driver and ensure it does not block or cause deadlocks
