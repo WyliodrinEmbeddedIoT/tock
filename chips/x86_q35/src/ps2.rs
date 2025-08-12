@@ -26,6 +26,7 @@ use x86::support;
 const PS2_DATA_PORT: u16 = 0x60;
 const PS2_STATUS_PORT: u16 = 0x64;
 const PIC1_DATA_PORT: u16 = 0x21;
+const PIC2_DATA_PORT: u16 = 0xA1; // added PIC2 (!!! check address)
 
 /// Depth of the scan-code ring buffer
 const BUFFER_SIZE: usize = 32;

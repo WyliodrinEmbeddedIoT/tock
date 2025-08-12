@@ -23,6 +23,7 @@ mod pic;
 
 pub mod pit;
 
+pub mod dv_ms; // added mouse driver
 pub mod ps2;
 pub mod serial;
 

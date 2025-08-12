@@ -17,9 +17,12 @@ use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 use crate::vga_uart_driver::VgaText;
 
+use crate::dv_ms::Mouse; // added mouse crate
+
 /// Interrupt constants for legacy PC peripherals
 mod interrupt {
     use crate::pic::PIC1_OFFSET;
+    use crate::pic::PIC2_OFFSET;
 
     /// Interrupt number used by PIT
     pub(super) const PIT: u32 = PIC1_OFFSET as u32;
@@ -31,6 +34,9 @@ mod interrupt {
     pub(super) const COM1_COM3: u32 = (PIC1_OFFSET as u32) + 4;
 
     pub(super) const KEYBOARD: u32 = (PIC1_OFFSET as u32) + 1;
+
+    // Interrupt number for mouse (IRQ12, found in the slave PIC (PIC2))
+    pub(super) const MOUSE: u32 = (PIC2_OFFSET as u32) + 4;
 }
 
 /// Representation of a generic PC platform.
@@ -61,6 +67,9 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
 
     /// PS/2 Controller
     pub ps2: &'a crate::ps2::Ps2Controller,
+
+    /// PS/2 Mouse
+    pub ms: &'a crate::dv_ms::Mouse<'a, Ps2Controller>,
 
     /// System call context
     syscall: Boundary,
@@ -95,6 +104,11 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                     // new PS/2 keyboard interrupt handler
                     interrupt::KEYBOARD => {
                         self.ps2.handle_interrupt();
+                    }
+
+                    // new PS/2 mouse
+                    interrupt::MOUSE => {
+                        // TO-DO
                     }
 
                     _ => unimplemented!("interrupt {num}"),
@@ -270,6 +284,7 @@ impl Component for PcComponent<'static> {
             pit,
             vga,
             ps2,
+            ms, //new for ms
             syscall,
             paging,
         });
