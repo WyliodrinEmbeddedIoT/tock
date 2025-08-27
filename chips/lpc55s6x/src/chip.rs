@@ -1,11 +1,14 @@
 use core::fmt::Write;
 use core::panic;
+use cortex_m_semihosting::hprint;
+use cortex_m_semihosting::hprintln;
 // use cortex_m_semihosting::hprintln;
 // use cortex_m_semihosting::hprintln;
 use cortexm33::{CortexM33, CortexMVariant};
 use kernel::platform::chip::Chip;
 use kernel::platform::chip::InterruptService;
 
+use crate::ctimer0::LPCTimer;
 use crate::gpio::GpioPin;
 use crate::gpio::LPCPin;
 use crate::gpio::Pins;
@@ -85,11 +88,15 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
 
 pub struct Lpc55s69DefaultPeripheral<'a> {
     pub pins: Pins<'a>,
+    pub ctimer0: LPCTimer<'a>,
 }
 
 impl<'a> Lpc55s69DefaultPeripheral<'a> {
     pub fn new() -> Self {
-        Self { pins: Pins::new() }
+        Self {
+            pins: Pins::new(),
+            ctimer0: LPCTimer::new(),
+        }
     }
 
     pub fn resolve_dependencies(&'static self) {}
@@ -97,6 +104,7 @@ impl<'a> Lpc55s69DefaultPeripheral<'a> {
 
 impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
+        // hprintln!("Interrupt: {}\n", interrupt);
         match interrupt {
             interrupts::GPIO_INT0_IRQ0 => {
                 self.pins.handle_interrupt();
@@ -122,7 +130,7 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
             interrupts::GPIO_INT0_IRQ3 => {
                 self.pins.handle_interrupt();
                 // hprintln!("Interrupt3 active!");
-                // panic!("Interrupt3 active!");
+                // panic!("Interrupt3 active!");    }
 
                 true
             }
@@ -149,6 +157,14 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
             }
             interrupts::GPIO_INT0_IRQ7 => {
                 self.pins.handle_interrupt();
+                // hprintln!("Interrupt7 active!");
+                // panic!("Interrupt7 active!");
+
+                true
+            }
+
+            interrupts::CTIMER0 => {
+                self.ctimer0.handle_interrupt();
                 // hprintln!("Interrupt7 active!");
                 // panic!("Interrupt7 active!");
 
