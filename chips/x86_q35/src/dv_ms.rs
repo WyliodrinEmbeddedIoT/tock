@@ -5,6 +5,9 @@ use kernel::errorcode::ErrorCode;
 use crate::ps2::Ps2Controller;
 use crate::ps2::{read_data, wait_output_ready, write_command, write_data};
 
+use crate::ps2::{PS2_DATA_PORT, PS2_STATUS_PORT};
+use x86::registers::io;
+
 const RAW_BUF_SIZE: usize = 32; //rawbuf size
 const PACKET_BUF_SIZE: usize = 16; // packetbuf size
 const MAX_CMD: usize = 8; // maxcmd size
@@ -176,16 +179,38 @@ impl<'a> Mouse<'a> {
     /// Top-half: call from the PIC IRQ stub for mouse/PS2.
     /// Drains a byte from the shared controller buffer and assembles 3-byte packets.
     pub fn handle_interrupt(&self) {
-        let _ = self.controller.handle_interrupt();
-        if let Some(b) = self.controller.pop_scan_code() {
+        loop {
+            let status = unsafe { io::inb(PS2_STATUS_PORT) };
+            // no data?
+            if (status & 0x01) == 0 {
+                break;
+            }
+            // not from mouse? leave it for the keyboard ISR
+            if (status & 0x20) == 0 {
+                return; // changed break; to return;
+            } // bit5 = AUX
+
+            // this byte is mouse data
+            let b = unsafe { io::inb(PS2_DATA_PORT) };
+
+            // assemble 3-byte packets with header resync
             let mut st = self.state.get();
             let mut cur = self.pkt.get();
+
+            if st == 0 {
+                // byte 0 must have bit3 set in standard PS/2 packets
+                if (b & 0x08) == 0 {
+                    // desync, drop until we see a header
+                    continue;
+                }
+            }
+
             cur[st] = b;
             st += 1;
+
             if st == 3 {
                 self.packet_fifo.borrow_mut().push(cur);
                 st = 0;
-                // optional: sanity-check pkt[0] bits if you want
             }
             self.pkt.set(cur);
             self.state.set(st);
@@ -198,7 +223,7 @@ impl<'a> Mouse<'a> {
         Some(MouseEvent {
             buttons: pkt[0] & 0x07,
             x_movement: pkt[1] as i8,
-            y_movement: pkt[2] as i8,
+            y_movement: -(pkt[2] as i8), // old: y_movement: pkt[2] as i8
         })
     }
     // dv cmd helpers
