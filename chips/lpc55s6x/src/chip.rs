@@ -9,6 +9,8 @@ use cortex_m_semihosting::hprintln;
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
 =======
 use core::panic;
+use cortex_m_semihosting::hprint;
+use cortex_m_semihosting::hprintln;
 // use cortex_m_semihosting::hprintln;
 >>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
 // use cortex_m_semihosting::hprintln;
@@ -18,6 +20,9 @@ use kernel::platform::chip::InterruptService;
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
 use crate::ctimer0::LPCTimer;
 use crate::gpio::GpioPin;
 use crate::gpio::LPCPin;
@@ -116,6 +121,7 @@ impl<'a> Lpc55s69DefaultPeripheral<'a> {
         Self {
             pins: Pins::new(),
             ctimer0: LPCTimer::new(),
+<<<<<<< HEAD
 =======
 pub struct Lpc55s69DefaultPeripheral {
     pub iocon: Iocon,
@@ -137,6 +143,9 @@ impl<'a> Lpc55s69DefaultPeripheral<'a> {
 =======
         Self { pins: Pins::new() }
 >>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
+=======
+        }
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
     }
 
     pub fn resolve_dependencies(&'static self) {}
@@ -197,6 +206,7 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
                 self.pins.handle_interrupt();
                 // hprintln!("Interrupt3 active!");
                 // panic!("Interrupt3 active!");    }
+<<<<<<< HEAD
 
                 true
             }
@@ -248,6 +258,8 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
                 self.pins.handle_interrupt();
                 // hprintln!("Interrupt3 active!");
                 // panic!("Interrupt3 active!");
+=======
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
 
                 true
             }
@@ -281,6 +293,14 @@ impl<'a> InterruptService for Lpc55s69DefaultPeripheral<'a> {
                 // panic!("Interrupt7 active!");
 
 >>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
+                true
+            }
+
+            interrupts::CTIMER0 => {
+                self.ctimer0.handle_interrupt();
+                // hprintln!("Interrupt7 active!");
+                // panic!("Interrupt7 active!");
+
                 true
             }
 

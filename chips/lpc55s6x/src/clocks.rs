@@ -1,10 +1,16 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 use crate::syscon::CTIMERCLKSEL0::SEL::CLEAR;
 use crate::syscon::{self, SysconRegisters, *};
 use cortex_m_semihosting::hprintln;
 =======
 use crate::syscon::{self, SysconRegisters, *};
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+use crate::syscon::CTIMERCLKSEL0::SEL::CLEAR;
+use crate::syscon::{self, SysconRegisters, *};
+use cortex_m_semihosting::hprintln;
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
 use kernel::utilities::{
     registers::interfaces::{ReadWriteable, Writeable},
     StaticRef,
@@ -58,11 +64,16 @@ impl Clock {
 
     pub fn start_gpio_clocks(&self) {
 <<<<<<< HEAD
+<<<<<<< HEAD
         // hprintln!("Starting GPIO clocks");
         self.syscon.ahbclkctrl0.modify(
 =======
         self.syscon.ahbclkctrl0.write(
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        // hprintln!("Starting GPIO clocks");
+        self.syscon.ahbclkctrl0.modify(
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
             syscon::AHBCLKCTRL0::SRAM_CTRL1::SET
                 + syscon::AHBCLKCTRL0::SRAM_CTRL2::SET
                 + syscon::AHBCLKCTRL0::SRAM_CTRL3::SET
@@ -78,6 +89,9 @@ impl Clock {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
     pub fn start_timer_clocks(&self) {
         self.syscon
             .ctimerclksel0
@@ -90,8 +104,11 @@ impl Clock {
         self.syscon.clkoutsel.modify(syscon::CLKOUTSEL::SEL::SET);
     }
 
+<<<<<<< HEAD
 =======
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
     pub fn set_frg_clock_source(&self, frg_id: u32, source: FrgClockSource) {
         let sel_val = match source {
             FrgClockSource::MainClock => syscon::FCCLKSEL::SEL::MainClock,

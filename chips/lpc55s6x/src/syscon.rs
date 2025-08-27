@@ -31,10 +31,14 @@ register_structs! {
         (0x04C => _reserved3),
         /// Peripheral reset control 0
 <<<<<<< HEAD
+<<<<<<< HEAD
         (0x100 => pub presetctrl0: ReadWrite<u32, PRESETCTRL0::Register>),
 =======
         (0x100 => presetctrl0: ReadWrite<u32, PRESETCTRL0::Register>),
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        (0x100 => pub presetctrl0: ReadWrite<u32, PRESETCTRL0::Register>),
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
         /// Peripheral reset control 1
         (0x104 => presetctrl1: ReadWrite<u32, PRESETCTRL1::Register>),
         /// Peripheral reset control 2
@@ -86,10 +90,14 @@ register_structs! {
         (0x268 => traceclksel: ReadWrite<u32>),
         /// CTimer 0 clock source select
 <<<<<<< HEAD
+<<<<<<< HEAD
         (0x26C => pub ctimerclksel0: ReadWrite<u32, CTIMERCLKSEL0::Register>),
 =======
         (0x26C => ctimerclksel0: ReadWrite<u32>),
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        (0x26C => pub ctimerclksel0: ReadWrite<u32, CTIMERCLKSEL0::Register>),
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
         /// CTimer 1 clock source select
         (0x270 => ctimerclksel1: ReadWrite<u32>),
         /// CTimer 2 clock source select
@@ -104,10 +112,14 @@ register_structs! {
         (0x284 => mainclkselb: ReadWrite<u32>),
         /// CLKOUT clock source select
 <<<<<<< HEAD
+<<<<<<< HEAD
         (0x288 => pub clkoutsel: ReadWrite<u32, CLKOUTSEL::Register>),
 =======
         (0x288 => clkoutsel: ReadWrite<u32>),
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+        (0x288 => pub clkoutsel: ReadWrite<u32, CLKOUTSEL::Register>),
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
         (0x28C => _reserved11),
         /// PLL0 clock source select
         (0x290 => pll0clksel: ReadWrite<u32>),
@@ -1299,10 +1311,14 @@ TRACECLKSEL [
     ]
 ],
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub CTIMERCLKSEL0 [
 =======
 CTIMERCLKSEL0 [
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+pub CTIMERCLKSEL0 [
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
     /// CTimer 0 clock source select.
     SEL OFFSET(0) NUMBITS(3) [
         /// Main clock.
@@ -1444,10 +1460,14 @@ MAINCLKSELB [
     ]
 ],
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub CLKOUTSEL [
 =======
 CLKOUTSEL [
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+pub CLKOUTSEL [
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
     /// CLKOUT clock source select.
     SEL OFFSET(0) NUMBITS(3) [
         /// Main clock.

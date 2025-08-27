@@ -8,6 +8,7 @@ use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, Cor
 pub mod chip;
 pub mod clocks;
 pub mod ctimer0;
+<<<<<<< HEAD
 pub mod gpio;
 pub mod inputmux;
 pub mod interrupts;
@@ -33,11 +34,14 @@ use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, Cor
 =======
 pub mod chip;
 pub mod clocks;
+=======
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
 pub mod gpio;
 pub mod inputmux;
 pub mod interrupts;
 pub mod iocon;
 pub mod pint;
+// pub mod rtc;
 pub mod syscon;
 
 >>>>>>> 2cc808484 (Add initial code for the GPIO)
