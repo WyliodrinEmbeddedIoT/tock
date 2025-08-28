@@ -283,12 +283,8 @@ unsafe extern "cdecl" fn main() {
     )
     .finalize(components::debug_writer_component_static!());
 
-    // Now that the serial‐console debug writer is in place, we can safely
-    // call `debug!()` inside our PS/2 init without panicking.
-    //
-    // Otherwise, if no `debug!()` lines are desired in ps2.rs
-    // just move this near the chip initialization
-    ps2.init();
+    // Tiny breadcrumb: PS/2 bring-up ran in the chip already.
+    debug!("ps/2: controller initialized (chip ran init_early)");
 
     let lldb = components::lldb::LowLevelDebugComponent::new(
         board_kernel,

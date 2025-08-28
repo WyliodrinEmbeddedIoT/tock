@@ -255,8 +255,11 @@ impl Component for PcComponent<'static> {
 
         let syscall = Boundary::new();
 
-        // debug
+        // PS/2 instance supplied via .with_ps2(...)
         let ps2 = self.ps2.expect("PcComponent::with_ps2 was not called");
+
+        // controller bring-up owned by the chip (no logging here)
+        let _ = ps2.init_early(); // if error appears, will be fixed soon
 
         let pc = s.4.write(Pc {
             com1,
