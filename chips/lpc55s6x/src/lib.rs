@@ -5,13 +5,13 @@ use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, Cor
 
 pub mod chip;
 pub mod clocks;
-//pub mod gpio;
-//pub mod inputmux;
-pub mod interrupts;
-pub mod iocon;
-//pub mod pint;
 pub mod ctimer0;
 pub mod flexcomm;
+pub mod gpio;
+pub mod inputmux;
+pub mod interrupts;
+pub mod iocon;
+pub mod pint;
 pub mod syscon;
 pub mod uart;
 

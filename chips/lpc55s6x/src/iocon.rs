@@ -1,5 +1,5 @@
-//use crate::gpio::LPCPin;
-use kernel::utilities::registers::interfaces::Writeable;
+use crate::gpio::LPCPin;
+use kernel::utilities::registers::interfaces::{ReadWriteable, Writeable};
 use kernel::utilities::registers::{
     self, register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
 };
@@ -7,7 +7,7 @@ use kernel::utilities::StaticRef;
 
 register_structs! {
     /// I/O pin configuration (IOCON)
-    IoconRegisters {
+    pub IoconRegisters {
         /// Digital I/O control for port 0 pins PIO0_0
         (0x000 => pio0_0: ReadWrite<u32, PIO0_0::Register>),
         /// Digital I/O control for port 0 pins PIO0_1
@@ -4156,8 +4156,8 @@ PIO1_31 [
     ]
 ]
 ];
-const IOCON_BASE: StaticRef<IoconRegisters> =
-    unsafe { StaticRef::new(0x40001000 as *const IoconRegisters) };
+pub(crate) const IOCON_BASE: StaticRef<IoconRegisters> =
+    unsafe { StaticRef::new(0x50001000 as *const IoconRegisters) };
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -4187,7 +4187,7 @@ pub enum Slew {
     Standard = 0,
     Fast = 1,
 }
-
+#[derive(Clone, Copy)]
 pub struct Config {
     pub function: Function,
     pub pull: Pull,
@@ -4208,20 +4208,116 @@ impl Iocon {
         }
     }
 
-    // pub fn configure_pin(&self, pin: LPCPin, config: Config) {
-    //     let standard_value = PIO0_0::FUNC.val(config.function as u32)
-    //         + PIO0_0::MODE.val(config.pull as u32)
-    //         + PIO0_0::SLEW.val(config.slew as u32)
-    //         + PIO0_0::INVERT.val(config.invert as u32)
-    //         + PIO0_0::DIGIMODE.val(config.digital_mode as u32)
-    //         + PIO0_0::OD.val(config.open_drain as u32);
+    pub fn configure_pin(&self, pin: LPCPin, config: Config) {
+        let standard_value = PIO0_0::FUNC.val(config.function as u32)
+            + PIO0_0::MODE.val(config.pull as u32)
+            // + PIO0_0::SLEW.val(config.slew as u32)
+            // + PIO0_0::INVERT.val(config.invert as u32)
+            + PIO0_0::DIGIMODE.val(config.digital_mode as u32);
+        // + PIO0_0::OD.val(config.open_drain as u32);
 
-    //     match pin {
-    //         LPCPin::P0_0 => self.registers.pio0_0.set(standard_value.into()),
-    //         LPCPin::P0_1 => self.registers.pio0_1.set(standard_value.into()),
-    //         LPCPin::P1_4 => self.registers.pio1_4.set(standard_value.into()), //BLUE LED ON THE BOARD
-    //         LPCPin::P1_9 => self.registers.pio1_9.set(standard_value.into()),
-    //         _ => {}
-    //     }
+        match pin {
+            LPCPin::P0_0 => self.registers.pio0_0.set(standard_value.into()),
+            LPCPin::P0_1 => self.registers.pio0_1.set(standard_value.into()),
+            // LPCPin::P0_2 => self.registers.pio0_2.set(standard_value.into()),
+            // LPCPin::P0_3 => self.registers.pio0_3.set(standard_value.into()),
+            // LPCPin::P0_4 => self.registers.pio0_4.set(standard_value.into()),
+            // LPCPin::P0_5 => self.registers.pio0_5.set(standard_value.into()),
+            // LPCPin::P0_6 => self.registers.pio0_6.set(standard_value.into()),
+            // LPCPin::P0_7 => self.registers.pio0_7.set(standard_value.into()),
+            // LPCPin::P0_8 => self.registers.pio0_8.set(standard_value.into()),
+            // LPCPin::P0_9 => self.registers.pio0_9.set(standard_value.into()),
+            // LPCPin::P0_10 => self.registers.pio0_10.set(standard_value.into()),
+            // LPCPin::P0_11 => self.registers.pio0_11.set(standard_value.into()),
+            // LPCPin::P0_12 => self.registers.pio0_12.set(standard_value.into()),
+            // LPCPin::P0_13 => self.registers.pio0_13.set(standard_value.into()),
+            // LPCPin::P0_14 => self.registers.pio0_14.set(standard_value.into()),
+            // LPCPin::P0_15 => self.registers.pio0_15.set(standard_value.into()),
+            // LPCPin::P0_16 => self.registers.pio0_16.set(standard_value.into()),
+            // LPCPin::P0_17 => self.registers.pio0_17.set(standard_value.into()),
+            // LPCPin::P0_18 => self.registers.pio0_18.set(standard_value.into()),
+            // LPCPin::P0_19 => self.registers.pio0_19.set(standard_value.into()),
+            // LPCPin::P0_20 => self.registers.pio0_20.set(standard_value.into()),
+            // LPCPin::P0_21 => self.registers.pio0_21.set(standard_value.into()),
+            // LPCPin::P0_22 => self.registers.pio0_22.set(standard_value.into()),
+            // LPCPin::P0_23 => self.registers.pio0_23.set(standard_value.into()),
+            // LPCPin::P0_24 => self.registers.pio0_24.set(standard_value.into()),
+            // LPCPin::P0_25 => self.registers.pio0_25.set(standard_value.into()),
+            // LPCPin::P0_26 => self.registers.pio0_26.set(standard_value.into()),
+            // LPCPin::P0_27 => self.registers.pio0_27.set(standard_value.into()),
+            // LPCPin::P0_28 => self.registers.pio0_28.set(standard_value.into()),
+            LPCPin::P0_29 => self.registers.pio0_29.set(standard_value.into()),
+            LPCPin::P0_30 => self.registers.pio0_30.set(standard_value.into()),
+            // LPCPin::P0_31 => self.registers.pio0_31.set(standard_value.into()),
+            // LPCPin::P1_0 => self.registers.pio1_0.set(standard_value.into()),
+            // LPCPin::P1_1 => self.registers.pio1_1.set(standard_value.into()),
+            // LPCPin::P1_2 => self.registers.pio1_2.set(standard_value.into()),
+            // LPCPin::P1_3 => self.registers.pio1_3.set(standard_value.into()),
+            LPCPin::P1_4 => self.registers.pio1_4.set(standard_value.into()), //BLUE LED ON THE BOARD
+            // LPCPin::P1_5 => self.registers.pio1_5.set(standard_value.into()),
+            LPCPin::P1_6 => self.registers.pio1_6.set(standard_value.into()),
+            // LPCPin::P1_7 => self.registers.pio1_7.set(standard_value.into()),
+            // LPCPin::P1_8 => self.registers.pio1_8.set(standard_value.into()),
+            LPCPin::P1_9 => self.registers.pio1_9.set(standard_value.into()), //USER BUTTON ON THE BOARD
+            // LPCPin::P1_10 => self.registers.pio1_10.set(standard_value.into()),
+            // LPCPin::P1_11 => self.registers.pio1_11.set(standard_value.into()),
+            // LPCPin::P1_12 => self.registers.pio1_12.set(standard_value.into()),
+            // LPCPin::P1_13 => self.registers.pio1_13.set(standard_value.into()),
+            // LPCPin::P1_14 => self.registers.pio1_14.set(standard_value.into()),
+            // LPCPin::P1_15 => self.registers.pio1_15.set(standard_value.into()),
+            // LPCPin::P1_16 => self.registers.pio1_16.set(standard_value.into()),
+            // LPCPin::P1_17 => self.registers.pio1_17.set(standard_value.into()),
+            // LPCPin::P1_18 => self.registers.pio1_18.set(standard_value.into()),
+            // LPCPin::P1_19 => self.registers.pio1_19.set(standard_value.into()),
+            // LPCPin::P1_20 => self.registers.pio1_20.set(standard_value.into()),
+            // LPCPin::P1_21 => self.registers.pio1_21.set(standard_value.into()),
+            // LPCPin::P1_22 => self.registers.pio1_22.set(standard_value.into()),
+            // LPCPin::P1_23 => self.registers.pio1_23.set(standard_value.into()),
+            // LPCPin::P1_24 => self.registers.pio1_24.set(standard_value.into()),
+            // LPCPin::P1_25 => self.registers.pio1_25.set(standard_value.into()),
+            // LPCPin::P1_26 => self.registers.pio1_26.set(standard_value.into()),
+            // LPCPin::P1_27 => self.registers.pio1_27.set(standard_value.into()),
+            // LPCPin::P1_28 => self.registers.pio1_28.set(standard_value.into()),
+            // LPCPin::P1_29 => self.registers.pio1_29.set(standard_value.into()),
+            // LPCPin::P1_30 => self.registers.pio1_30.set(standard_value.into()),
+            // LPCPin::P1_31 => self.registers.pio1_31.set(standard_value.into()),
+            _ => {}
+        }
     }
 
+    pub fn set_pull_none(&self, pin: LPCPin) {
+        let config = Config {
+            function: Function::GPIO,
+            pull: Pull::None,
+            slew: Slew::Standard,
+            invert: false,
+            digital_mode: true,
+            open_drain: false,
+        };
+        self.configure_pin(pin, config);
+    }
+
+    pub fn set_pull_up(&self, pin: LPCPin) {
+        let config = Config {
+            function: Function::GPIO,
+            pull: Pull::Up,
+            slew: Slew::Standard,
+            invert: false,
+            digital_mode: true,
+            open_drain: false,
+        };
+        self.configure_pin(pin, config);
+    }
+
+    pub fn set_pull_down(&self, pin: LPCPin) {
+        let config = Config {
+            function: Function::GPIO,
+            pull: Pull::Down,
+            slew: Slew::Standard,
+            invert: false,
+            digital_mode: true,
+            open_drain: false,
+        };
+        self.configure_pin(pin, config);
+    }
+}

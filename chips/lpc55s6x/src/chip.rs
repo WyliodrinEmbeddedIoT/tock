@@ -1,4 +1,5 @@
 use crate::ctimer0::LPCTimer;
+use crate::gpio::Pins;
 use crate::uart::Uart;
 use core::cell::Cell;
 use core::fmt::Write;
@@ -86,6 +87,7 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
 pub struct Lpc55s69DefaultPeripheral<'a> {
     pub uart: Uart<'a>,
     pub ctimer0: LPCTimer<'a>,
+    pub pins: Pins<'a>,
 }
 
 impl Lpc55s69DefaultPeripheral<'_> {
@@ -93,6 +95,7 @@ impl Lpc55s69DefaultPeripheral<'_> {
         Self {
             uart: Uart::new_uart0(),
             ctimer0: LPCTimer::new(),
+            pins: Pins::new(),
         }
     }
 
@@ -102,47 +105,47 @@ impl Lpc55s69DefaultPeripheral<'_> {
 impl InterruptService for Lpc55s69DefaultPeripheral<'_> {
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
         match interrupt {
-            // interrupts::GPIO_INT0_IRQ0 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt0 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ1 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt1 active!");
-            //     true
-            // }
+            interrupts::GPIO_INT0_IRQ0 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt0 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ1 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt1 active!");
+                true
+            }
 
-            // interrupts::GPIO_INT0_IRQ2 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt2 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ3 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt3 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ4 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt4 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ5 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt5 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ6 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt6 active!");
-            //     true
-            // }
-            // interrupts::GPIO_INT0_IRQ7 => {
-            //     self.pint.handle_interrupt();
-            //     hprintln!("Interrupt7 active!");
-            //     true
-            // }
+            interrupts::GPIO_INT0_IRQ2 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt2 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ3 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt3 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ4 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt4 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ5 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt5 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ6 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt6 active!");
+                true
+            }
+            interrupts::GPIO_INT0_IRQ7 => {
+                self.pins.handle_interrupt();
+                // hprintln!("Interrupt7 active!");
+                true
+            }
             interrupts::FLEXCOMM0 => {
                 self.uart.handle_interrupt();
                 true
