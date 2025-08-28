@@ -11,9 +11,9 @@ use core::arch::asm;
 use core::cell::Cell;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil;
-use kernel::hil::uart::ReceiveClient; 
+use kernel::hil::uart::ReceiveClient;
 use kernel::hil::uart::{
-    Configure, Parameters, Parity, Receive, StopBits, Transmit, TransmitClient, Width, Error
+    Configure, Error, Parameters, Parity, Receive, StopBits, Transmit, TransmitClient, Width,
 };
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -58,7 +58,7 @@ register_structs! {
         /// FIFO interrupt enable clear (disable) and read register.
         (0xE14 => fifointenclr: ReadWrite<u32, FIFOINTENCLR::Register>),
         /// FIFO interrupt status register.
-        (0xE18 => fifointstat: ReadOnly<u32, FIFOINTSTAT::Register>),   
+        (0xE18 => fifointstat: ReadOnly<u32, FIFOINTSTAT::Register>),
         (0xE1C => _reserved3),
         /// FIFO write data.
         (0xE20 => fifowr: WriteOnly<u32>),
@@ -550,7 +550,6 @@ enum DeferredReason {
     Abort,
 }
 
-
 const USART0_BASE: StaticRef<UsartRegisters> =
     unsafe { StaticRef::new(0x40086000 as *const UsartRegisters) };
 
@@ -583,10 +582,10 @@ pub struct Uart<'a> {
 }
 
 impl<'a> Uart<'a> {
-    pub fn new_uart0() -> Self {
+    pub fn new(registers: StaticRef<UsartRegisters>, instance: u8) -> Self {
         Self {
-            registers: USART0_BASE,
-            instance: 0,
+            registers,
+            instance,
             clocks: OptionalCell::empty(),
             flexcomm: OptionalCell::empty(),
 
@@ -609,32 +608,12 @@ impl<'a> Uart<'a> {
             deferred_reason: Cell::new(DeferredReason::None),
         }
     }
+    pub fn new_uart0() -> Self {
+        Self::new(USART0_BASE, 0)
+    }
 
     pub fn new_uart4() -> Self {
-        Self {
-            registers: USART4_BASE,
-            instance: 4,
-            clocks: OptionalCell::empty(),
-            flexcomm: OptionalCell::empty(),
-
-            uart_clock_source: Cell::new(FrgClockSource::Fro12Mhz),
-
-            tx_client: OptionalCell::empty(),
-            rx_client: OptionalCell::empty(),
-
-            tx_buffer: TakeCell::empty(),
-            tx_position: Cell::new(0),
-            tx_len: Cell::new(0),
-            tx_status: Cell::new(UARTStateTX::Idle),
-
-            rx_buffer: TakeCell::empty(),
-            rx_position: Cell::new(0),
-            rx_len: Cell::new(0),
-            rx_status: Cell::new(UARTStateRX::Idle),
-
-            deferred_call: DeferredCall::new(),
-            deferred_reason: Cell::new(DeferredReason::None),
-        }
+        Self::new(USART4_BASE, 4)
     }
 
     pub fn set_clocks(&self, clocks: &'a Clock) {
@@ -659,9 +638,9 @@ impl<'a> Uart<'a> {
 
     fn set_interrupts_for_transmitting(&self) {
         // We want to know when the FIFO has space.
-        self.registers.fifointenset.write(
-            FIFOINTENSET::TXLVL::SET + FIFOINTENSET::TXERR::SET
-        );
+        self.registers
+            .fifointenset
+            .write(FIFOINTENSET::TXLVL::SET + FIFOINTENSET::TXERR::SET);
         // We do NOT care about the final TXIDLE state yet.
         self.registers.intenclr.write(INTENCLR::TXIDLECLR::SET);
     }
@@ -675,13 +654,13 @@ impl<'a> Uart<'a> {
 
     /// Disables all UART transmit-related interrupts.
     fn disable_all_tx_interrupts(&self) {
-        self.registers.fifointenclr.write(
-            FIFOINTENCLR::TXLVL::SET + FIFOINTENCLR::TXERR::SET
-        );
+        self.registers
+            .fifointenclr
+            .write(FIFOINTENCLR::TXLVL::SET + FIFOINTENCLR::TXERR::SET);
         self.registers.intenclr.write(INTENCLR::TXIDLECLR::SET);
     }
 
-    pub fn is_transmitting(&self) -> bool{ 
+    pub fn is_transmitting(&self) -> bool {
         self.tx_status.get() == UARTStateTX::Transmitting
     }
 
@@ -712,10 +691,6 @@ impl<'a> Uart<'a> {
         self.registers.fifostat.is_set(FIFOSTAT::RXNOTEMPTY)
     }
 
-    pub fn check_tx_not_empty(&self) -> bool {
-        self.registers.fifostat.is_set(TXEMPTY)
-    }
-
     pub fn send_byte(&self, data: u8) {
         self.registers.fifowr.set(data as u32);
     }
@@ -729,17 +704,13 @@ impl<'a> Uart<'a> {
     }
 
     pub fn handle_interrupt(&self) {
-        // --- Gracefully handle any error conditions first ---
-        let main_stat = self.registers.stat.get();
-        let fifo_stat = self.registers.fifostat.get();
-
-        // Check for Framing, Parity, or RX FIFO errors
-        let framing_error = (main_stat & INTSTAT::FRAMERRINT.mask) != 0;
-        let parity_error = (main_stat & INTSTAT::PARITYERRINT.mask) != 0;
-        let rx_fifo_error = (fifo_stat & FIFOSTAT::RXERR.mask) != 0;
+        // --- Handle Errors ---
+        let framing_error = self.registers.stat.is_set(STAT::FRAMERRINT);
+        let parity_error = self.registers.stat.is_set(STAT::PARITYERRINT);
+        let rx_fifo_error = self.registers.fifostat.is_set(FIFOSTAT::RXERR);
 
         if framing_error || parity_error || rx_fifo_error {
-            self.clear_status_flags();
+            self.clear_status_flags_and_fifos();
             self.disable_receive_interrupt();
             self.deferred_reason.set(DeferredReason::Error);
             self.deferred_call.set();
@@ -782,16 +753,15 @@ impl<'a> Uart<'a> {
                     buf[current_pos] = byte;
                 });
 
-                // Update position *after* checking the byte
+                // Update position after checking the byte
                 self.rx_position.set(current_pos + 1);
 
-                // Now, check if this byte is a line terminator.
+                // Check if this byte is a line terminator.
                 let is_terminator = byte == b'\n' || byte == b'\r';
                 // Check if the buffer is now full
                 let buffer_is_full = self.rx_position.get() == self.rx_len.get();
 
-                // --- THIS IS THE CORE LOGIC ---
-                // If we received a terminator OR the buffer is full,
+                // If we received a terminator or the buffer is full,
                 // the transaction is complete.
                 if is_terminator || buffer_is_full {
                     self.disable_receive_interrupt();
@@ -804,10 +774,7 @@ impl<'a> Uart<'a> {
         }
     }
 
-
     fn fill_fifo(&self) {
-        // Use `map` to borrow the buffer without taking it.
-        // This is safer and more idiomatic for TakeCell.
         self.tx_buffer.map(|buf| {
             while self.uart_is_writable() && self.tx_position.get() < self.tx_len.get() {
                 let byte = buf[self.tx_position.get()];
@@ -832,34 +799,31 @@ impl<'a> Uart<'a> {
     }
 
     pub fn clear_fifo_errors(&self) {
-        self.registers.fifostat.write(
-        FIFOSTAT::TXERR::SET + FIFOSTAT::RXERR::SET
-        );
+        self.registers
+            .fifostat
+            .write(FIFOSTAT::TXERR::SET + FIFOSTAT::RXERR::SET);
 
         self.registers.stat.write(
-            STAT::DELTACTS::SET +
-            STAT::FRAMERRINT::SET +
-            STAT::PARITYERRINT::SET +
-            STAT::RXBRK::SET
+            STAT::DELTACTS::SET
+                + STAT::FRAMERRINT::SET
+                + STAT::PARITYERRINT::SET
+                + STAT::RXBRK::SET,
         );
-    }   
+    }
 
-    pub fn clear_status_flags(&self) {
-        // To clear the main status flags, you write a 1 to the bits you want to clear.
+    pub fn clear_status_flags_and_fifos(&self) {
         self.registers.stat.write(
-            STAT::DELTACTS::SET +
-            STAT::FRAMERRINT::SET +
-            STAT::PARITYERRINT::SET +
-            STAT::RXBRK::SET
+            STAT::DELTACTS::SET
+                + STAT::FRAMERRINT::SET
+                + STAT::PARITYERRINT::SET
+                + STAT::RXBRK::SET,
         );
 
-        // To flush the FIFOs, you set the EMPTYTX and EMPTYRX bits in FIFOCFG.
-        // This will discard any "ghost bytes" that were received during startup.
-        self.registers.fifocfg.modify(
-            FIFOCFG::EMPTYTX::SET + FIFOCFG::EMPTYRX::SET
-        );
+        self.registers
+            .fifocfg
+            .modify(FIFOCFG::EMPTYTX::SET + FIFOCFG::EMPTYRX::SET);
     }
-    }
+}
 
 impl DeferredCallClient for Uart<'_> {
     fn register(&'static self) {
@@ -873,8 +837,7 @@ impl DeferredCallClient for Uart<'_> {
 
         match reason {
             DeferredReason::TransmitComplete => {
-                // This logic is from the TXIDLE branch of your working ISR
-                self.registers.stat.write(STAT::TXIDLE::SET); // Clear flag
+                self.registers.stat.write(STAT::TXIDLE::SET);
                 self.disable_all_tx_interrupts();
                 self.tx_status.set(UARTStateTX::Idle);
                 self.tx_client.map(|client| {
@@ -884,7 +847,6 @@ impl DeferredCallClient for Uart<'_> {
                 });
             }
             DeferredReason::ReceiveComplete => {
-                // This logic is from the (is_terminator || buffer_is_full) branch
                 self.disable_receive_interrupt();
                 self.rx_status.set(UARTStateRX::Idle);
                 self.rx_client.map(|client| {
@@ -894,8 +856,7 @@ impl DeferredCallClient for Uart<'_> {
                 });
             }
             DeferredReason::Error => {
-                // This is the error handling logic from your working ISR
-                self.clear_status_flags();
+                self.clear_status_flags_and_fifos();
                 self.disable_receive_interrupt();
                 self.rx_status.set(UARTStateRX::Idle);
                 self.rx_client.map(|client| {
@@ -905,12 +866,15 @@ impl DeferredCallClient for Uart<'_> {
                 });
             }
             DeferredReason::Abort => {
-                // Handle aborts for both TX and RX
                 if self.tx_status.get() == UARTStateTX::AbortRequested {
                     self.tx_status.set(UARTStateTX::Idle);
                     self.tx_client.map(|client| {
                         self.tx_buffer.take().map(|buf| {
-                            client.transmitted_buffer(buf, self.tx_position.get(), Err(ErrorCode::CANCEL));
+                            client.transmitted_buffer(
+                                buf,
+                                self.tx_position.get(),
+                                Err(ErrorCode::CANCEL),
+                            );
                         });
                     });
                 }
@@ -928,9 +892,7 @@ impl DeferredCallClient for Uart<'_> {
                     });
                 }
             }
-            DeferredReason::None => {
-                // Spurious call, do nothing.
-            }
+            DeferredReason::None => {}
         }
     }
 }
@@ -972,9 +934,7 @@ impl Configure for Uart<'_> {
         };
 
         // Write all configuration bits at once
-        self.registers.cfg.write(
-            datalen + paritysel + stoplen,
-        );
+        self.registers.cfg.write(datalen + paritysel + stoplen);
 
         // --- Configure and Enable FIFOs ---
         // Clear any old data
@@ -993,10 +953,12 @@ impl Configure for Uart<'_> {
         // --- Re-enable USART ---
         self.registers.cfg.modify(CFG::ENABLE::SET);
 
-        unsafe{ //could maybe be replaced? //waits for clock to be stabilized
-            for _ in 0..1500 {
+        // A short busy-wait loop is required to allow the peripheral clock
+        // to propagate and the internal logic to settle after being re-enabled
+        for _ in 0..1500 {
+            unsafe {
                 asm!("nop");
-            }  
+            }
         }
 
         Ok(())
@@ -1008,39 +970,37 @@ impl<'a> Transmit<'a> for Uart<'a> {
         self.tx_client.set(client);
     }
 
-    // In your Transmit implementation
-fn transmit_buffer(
-    &self,
-    tx_buffer: &'static mut [u8],
-    tx_len: usize,
-) -> Result<(), (ErrorCode, &'static mut [u8])> {
-    if self.tx_status.get() == UARTStateTX::Idle {
-        if tx_len <= tx_buffer.len() {
-            self.tx_buffer.replace(tx_buffer);
-            self.tx_position.set(0);
-            self.tx_len.set(tx_len);
-            self.tx_status.set(UARTStateTX::Transmitting);
+    fn transmit_buffer(
+        &self,
+        tx_buffer: &'static mut [u8],
+        tx_len: usize,
+    ) -> Result<(), (ErrorCode, &'static mut [u8])> {
+        if self.tx_status.get() == UARTStateTX::Idle {
+            if tx_len <= tx_buffer.len() {
+                self.tx_buffer.replace(tx_buffer);
+                self.tx_position.set(0);
+                self.tx_len.set(tx_len);
+                self.tx_status.set(UARTStateTX::Transmitting);
 
-            // This part is the same
-            self.fill_fifo();
+                self.fill_fifo();
 
-            if self.tx_position.get() == self.tx_len.get() {
-                // The entire message fit in the FIFO at once.
-                // Move directly to the "finishing" state.
-                self.set_interrupts_for_finishing();
+                if self.tx_position.get() == self.tx_len.get() {
+                    // The entire message fit in the FIFO at once.
+                    // Move directly to the "finishing" state.
+                    self.set_interrupts_for_finishing();
+                } else {
+                    // There's more data to send.
+                    // Go to the "transmitting" state.
+                    self.set_interrupts_for_transmitting();
+                }
+                Ok(())
             } else {
-                // There's more data to send.
-                // Go to the "transmitting" state.
-                self.set_interrupts_for_transmitting();
+                Err((ErrorCode::SIZE, tx_buffer))
             }
-            Ok(())
         } else {
-            Err((ErrorCode::SIZE, tx_buffer))
+            Err((ErrorCode::BUSY, tx_buffer))
         }
-    } else {
-        Err((ErrorCode::BUSY, tx_buffer))
     }
-}
 
     fn transmit_word(&self, _word: u32) -> Result<(), ErrorCode> {
         Err(ErrorCode::FAIL)
@@ -1060,7 +1020,7 @@ fn transmit_buffer(
     }
 }
 
-impl<'a> Receive<'a> for Uart<'a> {    
+impl<'a> Receive<'a> for Uart<'a> {
     fn set_receive_client(&self, client: &'a dyn ReceiveClient) {
         self.rx_client.set(client);
     }
@@ -1086,10 +1046,10 @@ impl<'a> Receive<'a> for Uart<'a> {
         self.rx_position.set(0);
         self.rx_len.set(rx_len);
         self.rx_status.set(UARTStateRX::Receiving);
-        
+
         // Enable the hardware interrupt that fires when data arrives.
         self.enable_receive_interrupt();
-        
+
         Ok(())
     }
 

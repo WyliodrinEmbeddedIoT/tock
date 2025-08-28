@@ -1,17 +1,17 @@
+use crate::ctimer0::LPCTimer;
+use crate::uart::Uart;
+use core::cell::Cell;
 use core::fmt::Write;
 use cortex_m_semihosting::hprintln;
 use cortexm33::{CortexM33, CortexMVariant};
 use kernel::hil::uart::Transmit;
+use kernel::hil::uart::{self, TransmitClient};
 use kernel::platform::chip::Chip;
 use kernel::platform::chip::InterruptService;
-use crate::uart::Uart;
-use core::cell::Cell;
-use kernel::hil::uart::{self, TransmitClient};
 
-use crate::interrupts;
+use crate::{ctimer0, interrupts};
 
 static mut UART_TX_BUFFER: [u8; 128] = [0; 128];
-
 
 #[repr(u8)]
 pub enum Processor {
@@ -85,19 +85,19 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
 
 pub struct Lpc55s69DefaultPeripheral<'a> {
     pub uart: Uart<'a>,
+    pub ctimer0: LPCTimer<'a>,
 }
 
 impl Lpc55s69DefaultPeripheral<'_> {
     pub fn new() -> Self {
         Self {
             uart: Uart::new_uart0(),
+            ctimer0: LPCTimer::new(),
         }
     }
 
     pub fn resolve_dependencies(&'static self) {}
-
 }
-
 
 impl InterruptService for Lpc55s69DefaultPeripheral<'_> {
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {

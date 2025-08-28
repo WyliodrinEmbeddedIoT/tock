@@ -10,9 +10,10 @@ pub mod clocks;
 pub mod interrupts;
 pub mod iocon;
 //pub mod pint;
+pub mod ctimer0;
+pub mod flexcomm;
 pub mod syscon;
 pub mod uart;
-pub mod flexcomm;
 
 extern "C" {
     fn _estack();
