@@ -502,7 +502,7 @@ unsafe fn start() -> (
     ));
     let _ = process_console.start();
 
-    debug!("Tock OS initialization complete. Entering main loop");
+    debug!("Tock");
 
     extern "C" {
         /// Beginning of the ROM region containing app images.
