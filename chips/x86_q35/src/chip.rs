@@ -18,6 +18,7 @@ use crate::pic::PIC1_OFFSET;
 use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 use crate::vga_uart_driver::VgaText;
+use crate::keyboard::Keyboard;
 
 /// Interrupt constants for legacy PC peripherals
 mod interrupt {
