@@ -182,7 +182,7 @@ impl Kernel {
     pub(crate) fn get_process_iter(
         &self,
     ) -> core::iter::FilterMap<
-        core::slice::Iter<ProcessSlot>,
+        core::slice::Iter<'_, ProcessSlot>,
         fn(&ProcessSlot) -> Option<&'static dyn process::Process>,
     > {
         self.processes.iter().filter_map(ProcessSlot::get)
@@ -385,7 +385,7 @@ impl Kernel {
                             // the running test does not generate
                             // any interrupts.
                             if !no_sleep {
-                                chip.atomic(|| {
+                                chip.with_interrupts_disabled(|| {
                                     // Cannot sleep if interrupts are pending,
                                     // as on most platforms unhandled interrupts
                                     // will wake the device. Also, if the only
