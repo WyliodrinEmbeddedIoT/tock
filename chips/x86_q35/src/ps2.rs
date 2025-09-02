@@ -114,7 +114,7 @@ pub type Ps2Result<T> = core::result::Result<T, Ps2Error>;
 /// Block until the controller’s input buffer is empty (ready for a command).
 
 #[inline(always)]
-fn wait_ib_empty() -> Ps2Result<()> {
+pub fn wait_ib_empty() -> Ps2Result<()> {
     let mut status = LocalRegisterCopy::<u8, STATUS::Register>::new(0);
     let mut loops = 0;
     while {
@@ -135,7 +135,7 @@ fn wait_ib_empty() -> Ps2Result<()> {
 ///
 /// Block until there is data ready to read in the output buffer.
 #[inline(always)]
-fn wait_ob_full() -> Ps2Result<()> {
+pub fn wait_ob_full() -> Ps2Result<()> {
     let mut status = LocalRegisterCopy::<u8, STATUS::Register>::new(0);
     let mut loops = 0;
     while {
@@ -152,14 +152,14 @@ fn wait_ob_full() -> Ps2Result<()> {
 
 /// Read one byte from the data port (0x60).
 #[inline(always)]
-fn read_data() -> Ps2Result<u8> {
+pub fn read_data() -> Ps2Result<u8> {
     wait_ob_full()?;
     Ok(unsafe { io::inb(PS2_DATA_PORT) })
 }
 
 /// Send a command byte to the controller (port 0x64).
 #[inline(always)]
-fn write_command(c: u8) -> Ps2Result<()> {
+pub fn write_command(c: u8) -> Ps2Result<()> {
     wait_ib_empty()?;
     unsafe { io::outb(PS2_STATUS_PORT, c) }
     Ok(())
@@ -167,7 +167,7 @@ fn write_command(c: u8) -> Ps2Result<()> {
 
 /// Write a data byte to the data port (0x60).
 #[inline(always)]
-fn write_data(d: u8) -> Ps2Result<()> {
+pub fn write_data(d: u8) -> Ps2Result<()> {
     wait_ib_empty()?;
     unsafe { io::outb(PS2_DATA_PORT, d) }
     Ok(())

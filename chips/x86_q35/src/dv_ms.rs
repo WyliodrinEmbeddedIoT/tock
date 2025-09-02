@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use kernel::errorcode::ErrorCode;
 
 use crate::ps2::Ps2Controller;
-use crate::ps2::{read_data, wait_output_ready, write_command, write_data};
+use crate::ps2::{read_data, wait_ob_full, write_command, write_data};
 
 use crate::ps2::{PS2_DATA_PORT, PS2_STATUS_PORT};
 use x86::registers::io;
@@ -123,13 +123,13 @@ fn send_mouse(cmd: &[u8], resp_len: usize) -> Result<Resp, ErrorCode> {
     'retry: loop {
         // host → mouse (ACK after each byte)
         for &b in cmd {
-            write_command(0xD4); // “send next byte to mouse”
-            write_data(b);
+            write_command(0xD4).map_err(|_| ErrorCode::FAIL)?; // “send next byte to mouse”
+            write_data(b).map_err(|_| ErrorCode::FAIL)?;
 
-            wait_output_ready();
+            wait_ob_full().map_err(|_| ErrorCode::FAIL)?;
             match read_data() {
-                0xFA => {} // ACK
-                0xFE => {
+                Ok(0xFA) => {} // ACK
+                Ok(0xFE) => {
                     // RESEND → restart whole sequence
                     retries += 1;
                     if retries > MAX_RETRIES {
@@ -147,9 +147,16 @@ fn send_mouse(cmd: &[u8], resp_len: usize) -> Result<Resp, ErrorCode> {
             len: 0,
         };
         for _ in 0..resp_len {
-            wait_output_ready();
-            r.buf[r.len] = read_data();
-            r.len += 1;
+            wait_ob_full().map_err(|_| ErrorCode::FAIL)?;
+            match read_data() {
+                Ok(byte) => {
+                    r.buf[r.len] = byte;
+                    r.len += 1;
+                }
+                Err(_) => {
+                    return Err(ErrorCode::FAIL);
+                }
+            }
         }
         return Ok(r);
     }
