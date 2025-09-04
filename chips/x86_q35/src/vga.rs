@@ -318,6 +318,9 @@ pub struct Vga {
     /// bits 0–3 = fg (0–15), 4–6 = bg (0–7), 7 = blink/bright (mode-dependent).
     /// Kept packed to match hardware and allow a single 16-bit volatile store per glyph.
     attr: Cell<u8>,
+    // UTF-8 decode state
+    utf8_rem: Cell<u8>,  // remaining continuation bytes
+    utf8_acc: Cell<u32>, // codepoint acc
 }
 impl Vga {
     pub const fn new() -> Self {
@@ -326,6 +329,75 @@ impl Vga {
             row: Cell::new(0),
             // default: LightGray on Black, no blink
             attr: Cell::new(ColorCode::new(Color::LightGray, Color::Black, false).as_u8()),
+            utf8_rem: Cell::new(0),
+            utf8_acc: Cell::new(0),
+        }
+    }
+
+    #[inline(always)]
+    fn utf8_feed(&self, b: u8) -> Option<u32> {
+        let rem = self.utf8_rem.get();
+        if rem == 0 {
+            if b < 0x80 {
+                Some(b as u32)
+            } else if (0xC2..=0xDF).contains(&b) {
+                self.utf8_acc.set((b & 0x1F) as u32);
+                self.utf8_rem.set(1);
+                None
+            } else if (0xE0..=0xEF).contains(&b) {
+                self.utf8_acc.set((b & 0x0F) as u32);
+                self.utf8_rem.set(2);
+                None
+            } else if (0xF0..=0xF4).contains(&b) {
+                self.utf8_acc.set((b & 0x07) as u32);
+                self.utf8_rem.set(3);
+                None
+            } else {
+                // invalid starter
+                None
+            }
+        } else {
+            if (b & 0xC0) != 0x80 {
+                // invalid continuation, reset
+                self.utf8_rem.set(0);
+                return None;
+            }
+            let acc = (self.utf8_acc.get() << 6) | (b as u32 & 0x3F);
+            let rem2 = rem - 1;
+            self.utf8_acc.set(acc);
+            self.utf8_rem.set(rem2);
+            if rem2 == 0 {
+                Some(acc)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn unicode_to_cp437_or_ascii(ch: u32) -> Option<u8> {
+        // common box drawing used by PC tables
+        match ch {
+            0x2500 => Some(0xC4),
+            0x2502 => Some(0xB3),
+            0x250C => Some(0xDA),
+            0x2510 => Some(0xBF),
+            0x2514 => Some(0xC0),
+            0x2518 => Some(0xD9),
+            0x252C => Some(0xC2),
+            0x2534 => Some(0xC1),
+            0x251C => Some(0xC3),
+            0x2524 => Some(0xB4),
+            0x253C => Some(0xC5),
+
+            // fallbacks for common punctuation
+            0x2013 | 0x2014 => Some(b'-'),
+            0x2018 | 0x2019 | 0x201C | 0x201D => Some(b'"'),
+            0x2026 => Some(b'.'),
+            0x25BC => Some(b'v'),
+
+            _ if ch < 0x80 => Some(ch as u8), // plain ASCII
+            _ => None, // drop everything else
         }
     }
 
@@ -402,29 +474,23 @@ impl Vga {
     pub fn write_byte(&self, byte: u8) {
         match byte {
             b'\n' => {
-                // line feed
                 self.col.set(0);
                 self.row.set(self.row.get() + 1);
             }
             b'\r' => {
-                // carriage return
                 self.col.set(0);
             }
             b'\t' => {
-                // advance to next 8-column tab stop by inserting spaces
                 let col = self.col.get();
                 let next_tab = ((col / 8) + 1) * 8;
                 let end_col = core::cmp::min(next_tab, TEXT_BUFFER_WIDTH);
-
                 let space = ((self.attr.get() as u16) << 8) | (b' ' as u16);
                 for c in col..end_col {
                     if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), c) {
                         cell.set(space);
                     }
                 }
-
                 if end_col == TEXT_BUFFER_WIDTH {
-                    // wrapped to next line
                     self.col.set(0);
                     self.row.set(self.row.get() + 1);
                 } else {
@@ -432,14 +498,11 @@ impl Vga {
                 }
             }
             0x08 => {
-                // backspace: move left (wrapping to previous line) and erase the cell
                 if self.col.get() > 0 {
                     self.col.set(self.col.get() - 1);
                 } else if self.row.get() > 0 {
                     self.row.set(self.row.get() - 1);
                     self.col.set(TEXT_BUFFER_WIDTH - 1);
-                } else {
-                    // at (0,0): nothing to do
                 }
                 let space = ((self.attr.get() as u16) << 8) | (b' ' as u16);
                 if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), self.col.get()) {
@@ -447,16 +510,42 @@ impl Vga {
                 }
             }
             0x0C => {
-                // form feed: clear screen
                 self.clear();
             }
             0x07 => {
-                // bell: no-op
+                // bell: ignore
+            }
+            b if b >= 0x80 => {
+                if let Some(ch) = self.utf8_feed(b) {
+                    if let Some(cp) = Self::unicode_to_cp437_or_ascii(ch) {
+                        // print this single-byte glyph
+                        let val = ((self.attr.get() as u16) << 8) | cp as u16;
+                        if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), self.col.get()) {
+                            cell.set(val);
+                        } else {
+                            self.scroll_up();
+                            if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), self.col.get())
+                            {
+                                cell.set(val);
+                            }
+                        }
+                        // advance cursor, wrap at end-of-line
+                        let mut col = self.col.get() + 1;
+                        let mut row = self.row.get();
+                        if col >= TEXT_BUFFER_WIDTH {
+                            col = 0;
+                            row += 1;
+                        }
+                        self.col.set(col);
+                        self.row.set(row);
+                    }
+                }
+            }
+            b if b < 0x20 || b == 0x7F => {
+                // ignore other control bytes
             }
             b => {
                 let val = ((self.attr.get() as u16) << 8) | b as u16;
-
-                // safe write; if somehow OOB, scroll and retry once
                 if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), self.col.get()) {
                     cell.set(val);
                 } else {
@@ -465,8 +554,6 @@ impl Vga {
                         cell.set(val);
                     }
                 }
-
-                // advance cursor, wrap at end-of-line
                 let mut col = self.col.get() + 1;
                 let mut row = self.row.get();
                 if col >= TEXT_BUFFER_WIDTH {
@@ -478,15 +565,12 @@ impl Vga {
             }
         }
 
-        // scroll if we ran off the last row (covers '\n' and tab wrap)
         if self.row.get() >= TEXT_BUFFER_HEIGHT {
             self.scroll_up();
         }
-
         self.update_hw_cursor();
     }
 }
-
 const _: () = {
     // Exhaustively touch every current VgaMode variant
     match VgaMode::Text80x25 {
