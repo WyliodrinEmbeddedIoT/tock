@@ -402,11 +402,56 @@ impl Vga {
     pub fn write_byte(&self, byte: u8) {
         match byte {
             b'\n' => {
+                // line feed
                 self.col.set(0);
                 self.row.set(self.row.get() + 1);
             }
             b'\r' => {
+                // carriage return
                 self.col.set(0);
+            }
+            b'\t' => {
+                // advance to next 8-column tab stop by inserting spaces
+                let col = self.col.get();
+                let next_tab = ((col / 8) + 1) * 8;
+                let end_col = core::cmp::min(next_tab, TEXT_BUFFER_WIDTH);
+
+                let space = ((self.attr.get() as u16) << 8) | (b' ' as u16);
+                for c in col..end_col {
+                    if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), c) {
+                        cell.set(space);
+                    }
+                }
+
+                if end_col == TEXT_BUFFER_WIDTH {
+                    // wrapped to next line
+                    self.col.set(0);
+                    self.row.set(self.row.get() + 1);
+                } else {
+                    self.col.set(end_col);
+                }
+            }
+            0x08 => {
+                // backspace: move left (wrapping to previous line) and erase the cell
+                if self.col.get() > 0 {
+                    self.col.set(self.col.get() - 1);
+                } else if self.row.get() > 0 {
+                    self.row.set(self.row.get() - 1);
+                    self.col.set(TEXT_BUFFER_WIDTH - 1);
+                } else {
+                    // at (0,0): nothing to do
+                }
+                let space = ((self.attr.get() as u16) << 8) | (b' ' as u16);
+                if let Some(cell) = VgaDevice::TEXT.get(self.row.get(), self.col.get()) {
+                    cell.set(space);
+                }
+            }
+            0x0C => {
+                // form feed: clear screen
+                self.clear();
+            }
+            0x07 => {
+                // bell: no-op
             }
             b => {
                 let val = ((self.attr.get() as u16) << 8) | b as u16;
@@ -433,7 +478,7 @@ impl Vga {
             }
         }
 
-        // scroll if we ran off the last row (covers '\n' path too)
+        // scroll if we ran off the last row (covers '\n' and tab wrap)
         if self.row.get() >= TEXT_BUFFER_HEIGHT {
             self.scroll_up();
         }
