@@ -28,6 +28,7 @@ pub mod serial;
 
 mod cmd_fifo;
 pub mod keyboard;
+pub mod keyboard_console;
 pub mod vga;
 pub mod vga_uart_driver;
 pub mod keyboard;
