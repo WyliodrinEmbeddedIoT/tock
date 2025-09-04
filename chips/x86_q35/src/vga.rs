@@ -397,7 +397,7 @@ impl Vga {
             0x25BC => Some(b'v'),
 
             _ if ch < 0x80 => Some(ch as u8), // plain ASCII
-            _ => None, // drop everything else
+            _ => None,                        // drop everything else
         }
     }
 
