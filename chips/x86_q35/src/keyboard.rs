@@ -182,8 +182,12 @@ impl<'a> Keyboard<'a> {
     /// already runs in the controller. After capsule lands, we will enqueue:
     ///  F5 (disable scan) -> FF (reset; expect FA then AA) - F0 02 (Set-2) - F4 (enable).
     /// This will use the command engine (ACK/RESEND) and can run with IRQ1 enabled.
+
     pub fn init_device(&self) {
-        // TODO
+        let _ = self.enqueue_command(&[0xF5]);
+        let _ = self.enqueue_command(&[0xFF]);
+        let _ = self.enqueue_command(&[0xF0, 0x02]);
+        let _ = self.enqueue_command(&[0xF4]);
     }
 
     /// Not used by the current ASCII-only console path. Subject to change.
