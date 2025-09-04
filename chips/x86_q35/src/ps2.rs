@@ -389,6 +389,23 @@ impl Ps2Controller {
         self.send_with_ack(0xF4, 3)
     }
 
+    fn ms_disable_reporting(&self) -> Ps2Result<()> {
+        self.send_mouse_with_ack(0xF5, 3)
+    }
+
+    fn ms_reset_and_wait_bat(&self) -> Ps2Result<()> {
+        self.send_mouse_with_ack(0xFF, 3)?; // reset
+        match read_data()? {
+            0xAA => Ok(()), // BAT passed
+            0x00 => Ok(()), // BAT passed ?
+            other => Err(Ps2Error::UnexpectedResponse(other)),
+        }
+    }
+
+    fn ms_enable_reporting(&self) -> Ps2Result<()> {
+        self.send_mouse_with_ack(0xF5, 3)
+    }
+
     /// Send a byte to the device and wait for ACK (0xFA).
     /// Count 0xFE (RESEND) attempts in `resends`.
     fn send_with_ack(&self, byte: u8, tries: u8) -> Ps2Result<()> {
@@ -406,6 +423,27 @@ impl Ps2Controller {
                 0xFE => {
                     self.resends.set(self.resends.get().wrapping_add(1));
                     return Err(Ps2Error::AckError);
+                }
+                other => return Err(Ps2Error::UnexpectedResponse(other)),
+            }
+        }
+    }
+
+    pub fn send_mouse_with_ack(&self, byte: u8, tries: u8) -> Ps2Result<()> {
+        let mut retries = 0;
+        loop {
+            write_command(0xD4)?; // Route the next data byte to the mouse
+            write_data(byte)?; // Send actual byte
+            wait_ob_full()?; // Wait for response
+            let resp = read_data()?;
+            match resp {
+                0xFA => return Ok(()), // ACK
+                0xFE => {
+                    retries += 1; // RESEND
+                    if retries >= tries {
+                        return Err(Ps2Error::AckError);
+                    }
+                    continue;
                 }
                 other => return Err(Ps2Error::UnexpectedResponse(other)),
             }
@@ -435,7 +473,7 @@ impl Ps2Controller {
         self.tally_timeout(cfg_set_irq12(false))?; // IRQ12 off
         self.tally_timeout(cfg_set_translation(false))?; // translation OFF (we want Set2)
         self.tally_timeout(cfg_set_port1_clock(true))?; // keyboard clock enabled
-        self.tally_timeout(cfg_set_port2_clock(false))?; // mouse clock disabled (for now)
+        self.tally_timeout(cfg_set_port2_clock(true))?; // mouse clock enabled
 
         // port1 test then enable keyboard clock at the controller command level
         self.tally_timeout(port1_interface_test())?;
@@ -447,6 +485,12 @@ impl Ps2Controller {
         self.tally_timeout(self.kbd_set_scancode_set2())?; // F0 02
         self.tally_timeout(cfg_set_irq1(true))?; // turn on controller-side IRQ1 (PIC policy lives in chip)
         self.tally_timeout(self.kbd_enable_scan())?; // F4
+
+        // device sequence (mouse)
+        self.tally_timeout(self.ms_disable_reporting())?; // F5
+        self.tally_timeout(self.ms_reset_and_wait_bat())?; // FF -> BAT= 00 or AA
+        self.tally_timeout(cfg_set_irq12(true))?; // turn on controller-side IRQ12 (PIC policy lives in chip)
+        self.tally_timeout(self.ms_enable_reporting())?; // F4
 
         Ok(())
     }
