@@ -100,7 +100,7 @@ impl<'a, I: InterruptService + 'a> Esp32C3<'a, I> {
             if !self.pic_interrupt_service.service_interrupt(interrupt) {
                 panic!("Unhandled interrupt {}", interrupt);
             }
-            self.with_interrupts_disabled(|| {
+            self.atomic(|| {
                 // Safe as interrupts are disabled
                 self.intc.complete(interrupt);
             });
@@ -146,11 +146,11 @@ impl<'a, I: InterruptService + 'a> Chip for Esp32C3<'a, I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    unsafe fn atomic<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        rv32i::support::with_interrupts_disabled(f)
+        rv32i::support::atomic(f)
     }
 
     unsafe fn print_state(&self, writer: &mut dyn Write) {
@@ -298,47 +298,48 @@ pub extern "C" fn _start_trap_vectored() {
 }
 
 #[cfg(any(doc, all(target_arch = "riscv32", target_os = "none")))]
-#[link_section = ".riscv.trap_vectored"]
-#[unsafe(naked)]
-pub extern "C" fn _start_trap_vectored() -> ! {
-    use core::arch::naked_asm;
-    // Below are 32 (non-compressed) jumps to cover the entire possible
-    // range of vectored traps.
-    naked_asm!(
-        "
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        j {start_trap}
-        ",
-        start_trap = sym rv32i::_start_trap,
-    );
+extern "C" {
+    pub fn _start_trap_vectored();
 }
+
+#[cfg(any(doc, all(target_arch = "riscv32", target_os = "none")))]
+// Below are 32 (non-compressed) jumps to cover the entire possible
+// range of vectored traps.
+core::arch::global_asm!(
+    "
+            .section .riscv.trap_vectored, \"ax\"
+            .globl _start_trap_vectored
+          _start_trap_vectored:
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+            j _start_trap
+        "
+);

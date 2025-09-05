@@ -28,7 +28,7 @@ provided syscalls, and the driver specific interfaces (using `allow`,
 
 ## Syscall Binary Interface
 
-Details of the [application binary interface](https://book.tockos.org/doc/syscalls.html).
+Details of the [application binary interface](../Syscalls.md).
 
 ## Core Kernel Provided Syscalls
 

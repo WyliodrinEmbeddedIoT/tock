@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use cortexm4f::support::with_interrupts_disabled;
+use cortexm4f::support::atomic;
 use kernel::hil::time::{
     Alarm, AlarmClient, Counter, Freq16KHz, OverflowClient, Ticks, Ticks32, Time,
 };
@@ -428,7 +428,7 @@ impl<'a> Alarm<'a> for Tim2<'a> {
 
     fn disarm(&self) -> Result<(), ErrorCode> {
         unsafe {
-            with_interrupts_disabled(|| {
+            atomic(|| {
                 // Disable counter
                 self.registers.dier.modify(DIER::CC1IE::CLEAR);
                 cortexm4f::nvic::Nvic::new(self.irqn).clear_pending();

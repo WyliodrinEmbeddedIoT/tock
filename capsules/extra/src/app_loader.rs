@@ -106,9 +106,7 @@ mod ro_allow {
     pub const COUNT: u8 = 1;
 }
 
-// Discussion regarding this buffer size value
-// can be found at: https://github.com/tock/tock/pull/4520
-pub const BUF_LEN: usize = 4096;
+pub const BUF_LEN: usize = 512;
 
 #[derive(Default)]
 pub struct App {
@@ -247,8 +245,9 @@ impl<
             let _ = self.apps.enter(processid, move |app, kernel_data| {
                 app.pending_command = false;
                 // Signal the app.
-                let _ = kernel_data
-                    .schedule_upcall(upcall::SETUP_DONE, (into_statuscode(result), 0, 0));
+                kernel_data
+                    .schedule_upcall(upcall::SETUP_DONE, (into_statuscode(result), 0, 0))
+                    .ok();
             });
         });
     }
@@ -263,8 +262,9 @@ impl<
                 app.pending_command = false;
 
                 // And then signal the app.
-                let _ = kernel_data
-                    .schedule_upcall(upcall::WRITE_DONE, (into_statuscode(result), length, 0));
+                kernel_data
+                    .schedule_upcall(upcall::WRITE_DONE, (into_statuscode(result), length, 0))
+                    .ok();
             });
         });
     }
@@ -277,8 +277,9 @@ impl<
                 app.pending_command = false;
 
                 self.current_process.take();
-                let _ = kernel_data
-                    .schedule_upcall(upcall::FINALIZE_DONE, (into_statuscode(result), 0, 0));
+                kernel_data
+                    .schedule_upcall(upcall::FINALIZE_DONE, (into_statuscode(result), 0, 0))
+                    .ok();
             });
         });
     }
@@ -291,8 +292,9 @@ impl<
                 app.pending_command = false;
 
                 self.current_process.take();
-                let _ = kernel_data
-                    .schedule_upcall(upcall::ABORT_DONE, (into_statuscode(result), 0, 0));
+                kernel_data
+                    .schedule_upcall(upcall::ABORT_DONE, (into_statuscode(result), 0, 0))
+                    .ok();
             });
         });
     }
@@ -338,8 +340,9 @@ impl<
                 app.pending_command = false;
                 // Signal the app.
                 self.current_process.take();
-                let _ = kernel_data
-                    .schedule_upcall(upcall::LOAD_DONE, (into_statuscode(status_code), 0, 0));
+                kernel_data
+                    .schedule_upcall(upcall::LOAD_DONE, (into_statuscode(status_code), 0, 0))
+                    .ok();
             });
         });
     }

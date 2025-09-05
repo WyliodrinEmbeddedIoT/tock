@@ -1521,7 +1521,9 @@ impl<'a, A: hil::time::Alarm<'a>> SDCardClient for SDCardDriver<'a, A> {
     fn card_detection_changed(&self, installed: bool) {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(process_id, |_app, kernel_data| {
-                let _ = kernel_data.schedule_upcall(0, (0, installed as usize, 0));
+                kernel_data
+                    .schedule_upcall(0, (0, installed as usize, 0))
+                    .ok();
             });
         });
     }
@@ -1530,7 +1532,9 @@ impl<'a, A: hil::time::Alarm<'a>> SDCardClient for SDCardDriver<'a, A> {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(process_id, |_app, kernel_data| {
                 let size_in_kb = ((total_size >> 10) & 0xFFFFFFFF) as usize;
-                let _ = kernel_data.schedule_upcall(0, (1, block_size as usize, size_in_kb));
+                kernel_data
+                    .schedule_upcall(0, (1, block_size as usize, size_in_kb))
+                    .ok();
             });
         });
     }
@@ -1564,7 +1568,7 @@ impl<'a, A: hil::time::Alarm<'a>> SDCardClient for SDCardDriver<'a, A> {
                 // perform callback
                 // Note that we are explicitly performing the callback even if no
                 // data was read or if the app's read_buffer doesn't exist
-                let _ = kernel_data.schedule_upcall(0, (2, read_len, 0));
+                kernel_data.schedule_upcall(0, (2, read_len, 0)).ok();
             });
         });
     }
@@ -1574,7 +1578,7 @@ impl<'a, A: hil::time::Alarm<'a>> SDCardClient for SDCardDriver<'a, A> {
 
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(process_id, |_app, kernel_data| {
-                let _ = kernel_data.schedule_upcall(0, (3, 0, 0));
+                kernel_data.schedule_upcall(0, (3, 0, 0)).ok();
             });
         });
     }
@@ -1582,7 +1586,7 @@ impl<'a, A: hil::time::Alarm<'a>> SDCardClient for SDCardDriver<'a, A> {
     fn error(&self, error: u32) {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(process_id, |_app, kernel_data| {
-                let _ = kernel_data.schedule_upcall(0, (4, error as usize, 0));
+                kernel_data.schedule_upcall(0, (4, error as usize, 0)).ok();
             });
         });
     }

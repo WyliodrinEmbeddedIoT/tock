@@ -521,21 +521,31 @@ impl<'a, A: Alarm<'a>> uart::ReceiveClient for ConsoleOrdered<'a, A> {
                                     // case.
                                     (rcode, rx_len)
                                 };
-                                let _ = kernel_data.schedule_upcall(
-                                    2,
-                                    (kernel::errorcode::into_statuscode(ret), received_length, 0),
-                                );
+                                kernel_data
+                                    .schedule_upcall(
+                                        2,
+                                        (
+                                            kernel::errorcode::into_statuscode(ret),
+                                            received_length,
+                                            0,
+                                        ),
+                                    )
+                                    .ok();
                             }
                             _ => {
                                 // Some UART error occurred
-                                let _ = kernel_data.schedule_upcall(
-                                    2,
-                                    (
-                                        kernel::errorcode::into_statuscode(Err(ErrorCode::FAIL)),
-                                        0,
-                                        0,
-                                    ),
-                                );
+                                kernel_data
+                                    .schedule_upcall(
+                                        2,
+                                        (
+                                            kernel::errorcode::into_statuscode(Err(
+                                                ErrorCode::FAIL,
+                                            )),
+                                            0,
+                                            0,
+                                        ),
+                                    )
+                                    .ok();
                             }
                         }
                     })

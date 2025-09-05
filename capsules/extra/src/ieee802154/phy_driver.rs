@@ -307,10 +307,12 @@ impl<'a, R: hil::radio::Radio<'a>> hil::radio::TxClient for RadioDriver<'a, R> {
         self.kernel_tx.replace(spi_buf);
         self.current_app.take().map(|processid| {
             let _ = self.apps.enter(processid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::FRAME_TRANSMITTED,
-                    (kernel::errorcode::into_statuscode(result), acked.into(), 0),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::FRAME_TRANSMITTED,
+                        (kernel::errorcode::into_statuscode(result), acked.into(), 0),
+                    )
+                    .ok();
             });
         });
         self.do_next_tx();
@@ -439,7 +441,9 @@ impl<'a, R: hil::radio::Radio<'a>> hil::radio::RxClient for RadioDriver<'a, R> {
                 .unwrap_or(false);
             if read_present {
                 // Place lqi as argument to be included in upcall.
-                let _ = kernel_data.schedule_upcall(upcall::FRAME_RECEIVED, (lqi as usize, 0, 0));
+                kernel_data
+                    .schedule_upcall(upcall::FRAME_RECEIVED, (lqi as usize, 0, 0))
+                    .ok();
             }
         });
 

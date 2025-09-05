@@ -118,7 +118,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwMasterClient
 
                 self.app.map(|app| {
                     let _ = self.apps.enter(app, |_, kernel_data| {
-                        let _ = kernel_data.schedule_upcall(0, (0, status, 0));
+                        kernel_data.schedule_upcall(0, (0, status, 0)).ok();
                     });
                 });
             }
@@ -148,7 +148,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwMasterClient
                                 })
                             })
                             .unwrap_or(0);
-                        let _ = kernel_data.schedule_upcall(0, (1, status, 0));
+                        kernel_data.schedule_upcall(0, (1, status, 0)).ok();
                     });
                 });
             }
@@ -174,7 +174,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwMasterClient
                                 })
                             })
                             .unwrap_or(0);
-                        let _ = kernel_data.schedule_upcall(0, (7, status, 0));
+                        kernel_data.schedule_upcall(0, (7, status, 0)).ok();
                     });
                 });
             }
@@ -232,7 +232,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwSlaveClient
                             })
                             .unwrap_or(0);
 
-                        let _ = kernel_data.schedule_upcall(0, (3, length, 0));
+                        kernel_data.schedule_upcall(0, (3, length, 0)).ok();
                     });
                 });
             }
@@ -243,7 +243,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwSlaveClient
                 // Notify the app that the read finished
                 self.app.map(|app| {
                     let _ = self.apps.enter(app, |_, kernel_data| {
-                        let _ = kernel_data.schedule_upcall(0, (4, length, 0));
+                        kernel_data.schedule_upcall(0, (4, length, 0)).ok();
                     });
                 });
             }
@@ -258,7 +258,7 @@ impl<'a, I: hil::i2c::I2CMasterSlave<'a>> hil::i2c::I2CHwSlaveClient
                 // Ask the app to setup a read buffer. The app must call
                 // command 3 after it has setup the shared read buffer with
                 // the correct bytes.
-                let _ = kernel_data.schedule_upcall(0, (2, 0, 0));
+                kernel_data.schedule_upcall(0, (2, 0, 0)).ok();
             });
         });
     }

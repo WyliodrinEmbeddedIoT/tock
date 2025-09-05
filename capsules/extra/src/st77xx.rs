@@ -793,7 +793,7 @@ impl<'a, A: Alarm<'a>, B: Bus<'a, BusAddr8>, P: Pin> screen::Screen<'a> for ST77
         if self.status.get() == Status::Idle {
             // Data is provided as RGB565 ( RRRRR GGG | GGG BBBBB ), but the device expects it to come over the bus in little endian, so ( GGG BBBBB | RRRRR GGG ).
             // TODO(alevy): replace `chunks_mut` wit `array_chunks` when stable.
-            for pair in data.as_mut_slice().chunks_mut(2) {
+            for pair in data.as_slice().chunks_mut(2) {
                 pair.swap(0, 1);
             }
 
@@ -1217,24 +1217,6 @@ pub struct ST77XXScreen {
     /// as some screen implementations might have off screen
     /// pixels for some of the rotations
     offset: fn(rotation: ScreenRotation) -> (usize, usize),
-}
-
-impl ST77XXScreen {
-    pub const fn new(
-        init_sequence: &'static [SendCommand],
-        default_width: usize,
-        default_height: usize,
-        inverted: bool,
-        offset: fn(rotation: ScreenRotation) -> (usize, usize),
-    ) -> Self {
-        Self {
-            init_sequence,
-            default_width,
-            default_height,
-            inverted,
-            offset,
-        }
-    }
 }
 
 pub const ST7735: ST77XXScreen = ST77XXScreen {

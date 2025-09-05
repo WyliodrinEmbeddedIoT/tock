@@ -509,10 +509,12 @@ where
                         .unwrap_or(false);
 
                     if success {
-                        let _ = kernel_data.schedule_upcall(
-                            0,
-                            (kernel::errorcode::into_statuscode(result), len as usize, 0),
-                        );
+                        kernel_data
+                            .schedule_upcall(
+                                0,
+                                (kernel::errorcode::into_statuscode(result), len as usize, 0),
+                            )
+                            .ok();
                     }
                 }
 

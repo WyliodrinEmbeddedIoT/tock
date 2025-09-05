@@ -25,7 +25,7 @@ pub enum Processor {
 }
 
 pub struct Rp2350<'a, I: InterruptService + 'a> {
-    mpu: cortexm33::mpu::MPU<8>,
+    mpu: cortexm33::mpu::MPU,
     userspace_kernel_boundary: cortexm33::syscall::SysCall,
     interrupt_service: &'a I,
     sio: &'a SIO,
@@ -47,7 +47,7 @@ impl<'a, I: InterruptService> Rp2350<'a, I> {
 }
 
 impl<I: InterruptService> Chip for Rp2350<'_, I> {
-    type MPU = cortexm33::mpu::MPU<8>;
+    type MPU = cortexm33::mpu::MPU;
     type UserspaceKernelBoundary = cortexm33::syscall::SysCall;
 
     fn service_pending_interrupts(&self) {
@@ -57,7 +57,7 @@ impl<I: InterruptService> Chip for Rp2350<'_, I> {
                 Processor::Processor1 => self.processor1_interrupt_mask,
             };
             while let Some(interrupt) = cortexm33::nvic::next_pending_with_mask(mask) {
-                // ignore PROC1_IRQ_CTI as it is intended for processor 1
+                // ignore SIO_IRQ_PROC1 as it is intended for processor 1
                 // not able to unset its pending status
                 // probably only processor 1 can unset the pending by reading the fifo
                 if !self.interrupt_service.service_interrupt(interrupt) {
@@ -92,11 +92,11 @@ impl<I: InterruptService> Chip for Rp2350<'_, I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    unsafe fn atomic<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        cortexm33::support::with_interrupts_disabled(f)
+        cortexm33::support::atomic(f)
     }
 
     unsafe fn print_state(&self, writer: &mut dyn Write) {
@@ -111,6 +111,7 @@ pub struct Rp2350DefaultPeripherals<'a> {
     pub sio: SIO,
     pub ticks: Ticks,
     pub timer0: RPTimer<'a>,
+    pub timer1: RPTimer<'a>,
     pub uart0: Uart<'a>,
     pub uart1: Uart<'a>,
     pub xosc: Xosc,
@@ -125,6 +126,7 @@ impl Rp2350DefaultPeripherals<'_> {
             sio: SIO::new(),
             ticks: Ticks::new(),
             timer0: RPTimer::new_timer0(),
+            timer1: RPTimer::new_timer1(),
             uart0: Uart::new_uart0(),
             uart1: Uart::new_uart1(),
             xosc: Xosc::new(),
@@ -145,6 +147,10 @@ impl InterruptService for Rp2350DefaultPeripherals<'_> {
         match interrupt {
             interrupts::TIMER0_IRQ_0 => {
                 self.timer0.handle_interrupt();
+                true
+            }
+            interrupts::TIMER1_IRQ_0 => {
+                self.timer1.handle_interrupt();
                 true
             }
             interrupts::SIO_IRQ_FIFO => {

@@ -137,11 +137,11 @@ impl<I: InterruptService + 'static> Chip for Imxrt10xx<I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    unsafe fn atomic<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        cortexm7::support::with_interrupts_disabled(f)
+        cortexm7::support::atomic(f)
     }
 
     unsafe fn print_state(&self, write: &mut dyn Write) {

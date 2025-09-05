@@ -24,8 +24,7 @@ pub unsafe fn wfi() {
     asm!("wfi", options(nomem, nostack));
 }
 
-/// Single-core critical section operation
-pub unsafe fn with_interrupts_disabled<F, R>(f: F) -> R
+pub unsafe fn atomic<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
@@ -39,8 +38,8 @@ where
         .read_and_clear_bits(mstatus::mie.mask << mstatus::mie.shift)
         & mstatus::mie.mask << mstatus::mie.shift;
 
-    // Machine mode interrupts are disabled, execute the (uninterruptible)
-    // function
+    // Machine mode interrupts are disabled, execute the atomic
+    // (uninterruptible) function
     let res = f();
 
     // If [`mstatus::mie`] was set before, set it again. Otherwise,

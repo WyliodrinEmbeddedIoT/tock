@@ -221,7 +221,7 @@ impl<'a> Console<'a> {
                     // Go ahead and signal the application
                     let written = app.write_len;
                     app.write_len = 0;
-                    let _ = kernel_data.schedule_upcall(1, (written, 0, 0));
+                    kernel_data.schedule_upcall(1, (written, 0, 0)).ok();
                 }
             });
         } else {
@@ -343,7 +343,9 @@ impl uart::TransmitClient for Console<'_> {
                         // Go ahead and signal the application
                         let written = app.write_len;
                         app.write_len = 0;
-                        let _ = kernel_data.schedule_upcall(upcall::WRITE_DONE, (written, 0, 0));
+                        kernel_data
+                            .schedule_upcall(upcall::WRITE_DONE, (written, 0, 0))
+                            .ok();
                     }
                 }
             })
@@ -439,21 +441,31 @@ impl uart::ReceiveClient for Console<'_> {
                                     (rcode, rx_len)
                                 };
 
-                                let _ = kernel_data.schedule_upcall(
-                                    upcall::READ_DONE,
-                                    (kernel::errorcode::into_statuscode(ret), received_length, 0),
-                                );
+                                kernel_data
+                                    .schedule_upcall(
+                                        upcall::READ_DONE,
+                                        (
+                                            kernel::errorcode::into_statuscode(ret),
+                                            received_length,
+                                            0,
+                                        ),
+                                    )
+                                    .ok();
                             }
                             _ => {
                                 // Some UART error occurred
-                                let _ = kernel_data.schedule_upcall(
-                                    upcall::READ_DONE,
-                                    (
-                                        kernel::errorcode::into_statuscode(Err(ErrorCode::FAIL)),
-                                        0,
-                                        0,
-                                    ),
-                                );
+                                kernel_data
+                                    .schedule_upcall(
+                                        upcall::READ_DONE,
+                                        (
+                                            kernel::errorcode::into_statuscode(Err(
+                                                ErrorCode::FAIL,
+                                            )),
+                                            0,
+                                            0,
+                                        ),
+                                    )
+                                    .ok();
                             }
                         }
                     })

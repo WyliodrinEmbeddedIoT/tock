@@ -205,14 +205,16 @@ impl<'a, I: i2c::I2CMaster<'a>> i2c::I2CHwMasterClient for I2CMasterDriver<'a, I
                 }
 
                 // signal to driver that tx complete
-                let _ = kernel_data.schedule_upcall(
-                    0,
-                    (
-                        kernel::errorcode::into_statuscode(status.map_err(|e| e.into())),
+                kernel_data
+                    .schedule_upcall(
                         0,
-                        0,
-                    ),
-                );
+                        (
+                            kernel::errorcode::into_statuscode(status.map_err(|e| e.into())),
+                            0,
+                            0,
+                        ),
+                    )
+                    .ok();
             })
         });
 

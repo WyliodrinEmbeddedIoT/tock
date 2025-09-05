@@ -70,7 +70,7 @@ enum ShaOperation {
 // Needs to be able to accommodate the largest key sizes, e.g. 512
 const TMP_KEY_BUFFER_SIZE: usize = 512 / 8;
 
-pub struct HmacDriver<'a, H: digest::Digest<'a, DIGEST_LEN>, const DIGEST_LEN: usize> {
+pub struct HmacDriver<'a, H: digest::Digest<'a, L>, const L: usize> {
     hmac: &'a H,
 
     active: Cell<bool>,
@@ -85,29 +85,26 @@ pub struct HmacDriver<'a, H: digest::Digest<'a, DIGEST_LEN>, const DIGEST_LEN: u
 
     data_buffer: TakeCell<'static, [u8]>,
     data_copied: Cell<usize>,
-    dest_buffer: TakeCell<'static, [u8; DIGEST_LEN]>,
+    dest_buffer: TakeCell<'static, [u8; L]>,
 }
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > HmacDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::HmacSha256 + digest::HmacSha384 + digest::HmacSha512,
+        const L: usize,
+    > HmacDriver<'a, H, L>
 {
     pub fn new(
         hmac: &'a H,
         data_buffer: &'static mut [u8],
-        dest_buffer: &'static mut [u8; DIGEST_LEN],
+        dest_buffer: &'static mut [u8; L],
         grant: Grant<
             App,
             UpcallCount<1>,
             AllowRoCount<{ ro_allow::COUNT }>,
             AllowRwCount<{ rw_allow::COUNT }>,
         >,
-    ) -> HmacDriver<'a, H, DIGEST_LEN> {
+    ) -> HmacDriver<'a, H, L> {
         HmacDriver {
             hmac,
             active: Cell::new(false),
@@ -250,12 +247,9 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientData<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::HmacSha256 + digest::HmacSha384 + digest::HmacSha512,
+        const L: usize,
+    > digest::ClientData<L> for HmacDriver<'a, H, L>
 {
     // Because data needs to be copied from a userspace buffer into a kernel (RAM) one,
     // we always pass mut data; this callback should never be invoked.
@@ -339,8 +333,9 @@ impl<
                     // If we get here we are ready to run the digest, reset the copied data
                     if app.op.get().unwrap() == UserSpaceOp::Run {
                         if let Err(e) = self.calculate_digest() {
-                            let _ =
-                                kernel_data.schedule_upcall(0, (into_statuscode(e.into()), 0, 0));
+                            kernel_data
+                                .schedule_upcall(0, (into_statuscode(e.into()), 0, 0))
+                                .ok();
                         }
                     } else if app.op.get().unwrap() == UserSpaceOp::Verify {
                         let _ = kernel_data
@@ -366,11 +361,12 @@ impl<
                             });
 
                         if let Err(e) = self.verify_digest() {
-                            let _ =
-                                kernel_data.schedule_upcall(1, (into_statuscode(e.into()), 0, 0));
+                            kernel_data
+                                .schedule_upcall(1, (into_statuscode(e.into()), 0, 0))
+                                .ok();
                         }
                     } else {
-                        let _ = kernel_data.schedule_upcall(0, (0, 0, 0));
+                        kernel_data.schedule_upcall(0, (0, 0, 0)).ok();
                     }
                 })
                 .map_err(|err| {
@@ -388,14 +384,11 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientHash<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::HmacSha256 + digest::HmacSha384 + digest::HmacSha512,
+        const L: usize,
+    > digest::ClientHash<L> for HmacDriver<'a, H, L>
 {
-    fn hash_done(&self, result: Result<(), ErrorCode>, digest: &'static mut [u8; DIGEST_LEN]) {
+    fn hash_done(&self, result: Result<(), ErrorCode>, digest: &'static mut [u8; L]) {
         self.processid.map(|id| {
             self.apps
                 .enter(id, |_, kernel_data| {
@@ -409,19 +402,20 @@ impl<
                             dest.mut_enter(|dest| {
                                 let len = dest.len();
 
-                                if len < DIGEST_LEN {
+                                if len < L {
                                     dest.copy_from_slice(&digest[0..len]);
                                 } else {
-                                    dest[0..DIGEST_LEN].copy_from_slice(digest);
+                                    dest[0..L].copy_from_slice(digest);
                                 }
                             })
                         });
 
-                    let _ = match result {
+                    match result {
                         Ok(()) => kernel_data.schedule_upcall(0, (0, pointer as usize, 0)),
                         Err(e) => kernel_data
                             .schedule_upcall(0, (into_statuscode(e.into()), pointer as usize, 0)),
-                    };
+                    }
+                    .ok();
 
                     // Clear the current processid as it has finished running
                     self.processid.clear();
@@ -442,27 +436,21 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientVerify<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::HmacSha256 + digest::HmacSha384 + digest::HmacSha512,
+        const L: usize,
+    > digest::ClientVerify<L> for HmacDriver<'a, H, L>
 {
-    fn verification_done(
-        &self,
-        result: Result<bool, ErrorCode>,
-        compare: &'static mut [u8; DIGEST_LEN],
-    ) {
+    fn verification_done(&self, result: Result<bool, ErrorCode>, compare: &'static mut [u8; L]) {
         self.processid.map(|id| {
             self.apps
                 .enter(id, |_app, kernel_data| {
                     self.hmac.clear_data();
 
-                    let _ = match result {
+                    match result {
                         Ok(equal) => kernel_data.schedule_upcall(1, (0, equal as usize, 0)),
                         Err(e) => kernel_data.schedule_upcall(1, (into_statuscode(e.into()), 0, 0)),
-                    };
+                    }
+                    .ok();
 
                     // Clear the current processid as it has finished running
                     self.processid.clear();
@@ -495,12 +483,9 @@ impl<
 ///   the HMAC digest before calling the `hash_done` callback.
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > SyscallDriver for HmacDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::HmacSha256 + digest::HmacSha384 + digest::HmacSha512,
+        const L: usize,
+    > SyscallDriver for HmacDriver<'a, H, L>
 {
     // Subscribe to HmacDriver events.
     //
@@ -681,10 +666,12 @@ impl<
                     3 => {
                         if app_match {
                             if let Err(e) = self.calculate_digest() {
-                                let _ = kernel_data.schedule_upcall(
-                                    0,
-                                    (kernel::errorcode::into_statuscode(e.into()), 0, 0),
-                                );
+                                kernel_data
+                                    .schedule_upcall(
+                                        0,
+                                        (kernel::errorcode::into_statuscode(e.into()), 0, 0),
+                                    )
+                                    .ok();
                             }
                             CommandReturn::success()
                         } else {
@@ -737,8 +724,9 @@ impl<
                                 });
 
                             if let Err(e) = self.verify_digest() {
-                                let _ = kernel_data
-                                    .schedule_upcall(1, (into_statuscode(e.into()), 0, 0));
+                                kernel_data
+                                    .schedule_upcall(1, (into_statuscode(e.into()), 0, 0))
+                                    .ok();
                             }
                             CommandReturn::success()
                         } else {

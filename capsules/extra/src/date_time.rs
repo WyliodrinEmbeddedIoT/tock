@@ -257,7 +257,7 @@ impl<'a, DateTime: date_time::DateTime<'a>> DateTimeCapsule<'a, DateTime> {
                         Ok(()) => Some(()),
                         Err(e) => {
                             let upcall_status = into_statuscode(Err(e));
-                            let _ = kernel.schedule_upcall(0, (upcall_status, 0, 0));
+                            kernel.schedule_upcall(0, (upcall_status, 0, 0)).ok();
                             None
                         }
                     }
@@ -299,7 +299,9 @@ impl<'a, DateTime: date_time::DateTime<'a>> date_time::DateTimeClient
                         }
                     }
 
-                    let _ = upcalls.schedule_upcall(0, (upcall_status, upcall_r1, upcall_r2));
+                    upcalls
+                        .schedule_upcall(0, (upcall_status, upcall_r1, upcall_r2))
+                        .ok();
                 }
             });
         }
@@ -313,7 +315,9 @@ impl<'a, DateTime: date_time::DateTime<'a>> date_time::DateTimeClient
         let _enter_grant = self.apps.enter(processid, |app, upcalls| {
             app.task = None;
 
-            let _ = upcalls.schedule_upcall(0, (into_statuscode(result), 0, 0));
+            upcalls
+                .schedule_upcall(0, (into_statuscode(result), 0, 0))
+                .ok();
         });
 
         self.queue_next_command();

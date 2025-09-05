@@ -769,10 +769,12 @@ impl<'a, const APP_REGION_SIZE: usize> IsolatedNonvolatileStorage<'a, APP_REGION
                                 Ok(started_operation) => started_operation,
                                 Err(e) => {
                                     app.pending_operation = None;
-                                    let _ = kernel_data.schedule_upcall(
-                                        nvm_command.upcall(),
-                                        (into_statuscode(Err(e)), 0, 0),
-                                    );
+                                    kernel_data
+                                        .schedule_upcall(
+                                            nvm_command.upcall(),
+                                            (into_statuscode(Err(e)), 0, 0),
+                                        )
+                                        .ok();
 
                                     false
                                 }
@@ -802,10 +804,12 @@ impl<'a, const APP_REGION_SIZE: usize> IsolatedNonvolatileStorage<'a, APP_REGION
                         // clear pending syscall
                         app.pending_operation = None;
                         // signal app with the result
-                        let _ = kernel_data.schedule_upcall(
-                            upcall::GET_SIZE_DONE,
-                            (into_statuscode(Ok(())), region.length, 0),
-                        );
+                        kernel_data
+                            .schedule_upcall(
+                                upcall::GET_SIZE_DONE,
+                                (into_statuscode(Ok(())), region.length, 0),
+                            )
+                            .ok();
                         Ok(false)
                     }
                     None => Err(ErrorCode::NOMEM),
@@ -957,10 +961,12 @@ impl<const APP_REGION_SIZE: usize> hil::nonvolatile_storage::NonvolatileStorageC
                         // clear pending syscall
                         app.pending_operation = None;
                         // And then signal the app.
-                        let _ = kernel_data.schedule_upcall(
-                            upcall::READ_DONE,
-                            (into_statuscode(Ok(())), read_len, 0),
-                        );
+                        kernel_data
+                            .schedule_upcall(
+                                upcall::READ_DONE,
+                                (into_statuscode(Ok(())), read_len, 0),
+                            )
+                            .ok();
                     });
 
                     self.check_queue();
@@ -1056,10 +1062,12 @@ impl<const APP_REGION_SIZE: usize> hil::nonvolatile_storage::NonvolatileStorageC
                         // clear pending syscall
                         app.pending_operation = None;
                         // Notify app that its write has completed.
-                        let _ = kernel_data.schedule_upcall(
-                            upcall::WRITE_DONE,
-                            (into_statuscode(Ok(())), length, 0),
-                        );
+                        kernel_data
+                            .schedule_upcall(
+                                upcall::WRITE_DONE,
+                                (into_statuscode(Ok(())), length, 0),
+                            )
+                            .ok();
                     });
                     self.current_user.clear();
                     self.check_queue();

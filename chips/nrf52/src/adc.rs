@@ -559,7 +559,13 @@ impl Adc<'_> {
 
     fn setup_frequency(&self, frequency: u32) {
         let raw_cc = 16000000 / frequency;
-        let cc = raw_cc.clamp(80, 2047);
+        let cc = if raw_cc > 2047 {
+            2047
+        } else if raw_cc < 80 {
+            80
+        } else {
+            raw_cc
+        };
 
         self.registers
             .samplerate

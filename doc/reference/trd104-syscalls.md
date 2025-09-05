@@ -1142,7 +1142,7 @@ Pat Pannuto <ppannuto@ucsd.edu>
 
 Leon Schuermann <leon@is.currently.online>
 
-Johnathan Van Why <tock@jrvanwhy.net>
+Johnathan Van Why <jrvanwhy@google.com>
 ```
 
 7 References and Additional Information

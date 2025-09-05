@@ -118,11 +118,9 @@ pub unsafe extern "C" fn unhandled_interrupt() {
 
     // IPSR[8:0] holds the currently active interrupt
     asm!(
-        "
-    mrs r0, ipsr
-        ",
+        "mrs r0, ipsr",
         out("r0") interrupt_number,
-        options(nomem, nostack, preserves_flags),
+        options(nomem, nostack, preserves_flags)
     );
 
     interrupt_number &= 0x1ff;
@@ -130,18 +128,24 @@ pub unsafe extern "C" fn unhandled_interrupt() {
     panic!("Unhandled Interrupt. ISR {} is active.", interrupt_number);
 }
 
-/// Assembly function to initialize the .bss and .data sections in RAM.
-///
-/// We need to (unfortunately) do these operations in assembly because it is
-/// not valid to run Rust code without RAM initialized.
-///
-/// See <https://github.com/tock/tock/issues/2222> for more information.
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
-#[unsafe(naked)]
-pub unsafe extern "C" fn initialize_ram_jump_to_main() {
-    use core::arch::naked_asm;
-    naked_asm!(
-        "
+extern "C" {
+    /// Assembly function to initialize the .bss and .data sections in RAM.
+    ///
+    /// We need to (unfortunately) do these operations in assembly because it is
+    /// not valid to run Rust code without RAM initialized.
+    ///
+    /// See <https://github.com/tock/tock/issues/2222> for more information.
+    pub fn initialize_ram_jump_to_main();
+}
+
+#[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
+core::arch::global_asm!(
+"
+    .section .initialize_ram_jump_to_main, \"ax\"
+    .global initialize_ram_jump_to_main
+    .thumb_func
+  initialize_ram_jump_to_main:
     // Start by initializing .bss memory. The Tock linker script defines
     // `_szero` and `_ezero` to mark the .bss segment.
     ldr r0, ={sbss}     // r0 = first address of .bss
@@ -149,7 +153,7 @@ pub unsafe extern "C" fn initialize_ram_jump_to_main() {
 
     movs r2, #0         // r2 = 0
 
-100: // bss_init_loop
+  100: // bss_init_loop
     cmp r1, r0          // We increment r0. Check if we have reached r1
                         // (end of .bss), and stop if so.
     beq 101f            // If r0 == r1, we are done.
@@ -159,7 +163,7 @@ pub unsafe extern "C" fn initialize_ram_jump_to_main() {
                         // bang allows us to also increment r0 automatically.
     b 100b              // Continue the loop.
 
-101: // bss_init_done
+  101: // bss_init_done
 
     // Now initialize .data memory. This involves coping the values right at the
     // end of the .text section (in flash) into the .data section (in RAM).
@@ -167,7 +171,7 @@ pub unsafe extern "C" fn initialize_ram_jump_to_main() {
     ldr r1, ={edata}    // r1 = first address after data section in RAM
     ldr r2, ={etext}    // r2 = address of stored data initial values
 
-200: // data_init_loop
+  200: // data_init_loop
     cmp r1, r0          // We increment r0. Check if we have reached the end
                         // of the data section, and if so we are done.
     beq 201f            // r0 == r1, and we have iterated through the .data section
@@ -177,19 +181,18 @@ pub unsafe extern "C" fn initialize_ram_jump_to_main() {
                         // increment r0.
     b 200b              // Continue the loop.
 
-201: // data_init_done
+  201: // data_init_done
 
     // Now that memory has been initialized, we can jump to main() where the
     // board initialization takes place and Rust code starts.
     bl main
-        ",
-        sbss = sym _szero,
-        ebss = sym _ezero,
-        sdata = sym _srelocate,
-        edata = sym _erelocate,
-        etext = sym _etext,
-    );
-}
+    ",
+    sbss = sym _szero,
+    ebss = sym _ezero,
+    sdata = sym _srelocate,
+    edata = sym _erelocate,
+    etext = sym _etext,
+);
 
 pub unsafe fn print_cortexm_state(writer: &mut dyn Write) {
     let _ccr = syscall::SCB_REGISTERS[0];

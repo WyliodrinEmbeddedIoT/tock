@@ -31,9 +31,7 @@ SECTIONS {
 
     /*
      * This padding has been added because arm-none-eabi-objcopy
-     * wrongly aligns the .stack section. This is a workaround, not a
-     * permanent fix. See https://github.com/tock/tock/pull/4416#discussion_r2237885703
-     * for details.
+     * wrongly aligns the .stack section.
      */
    .padding (NOLOAD) : {
         BYTE(0xFF)

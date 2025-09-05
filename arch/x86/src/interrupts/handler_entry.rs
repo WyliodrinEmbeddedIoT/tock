@@ -2,13 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2024.
 
-use core::arch::naked_asm;
+use core::arch::global_asm;
 
-#[unsafe(naked)]
-#[unsafe(no_mangle)]
-pub extern "C" fn handler_entry() {
-    naked_asm!(
-        "
+global_asm!(
+    "
+.section .text
+
+.global handle_external_interrupt
+.global handle_kernel_exception
+
+.global handler_entry
+handler_entry:
+
     # Save CPU state of the interrupted procedure. We will be calling cdecl functions, so we only
     # need to save eax/ecx/edx (plus anything else we want to use directly).
     push    eax
@@ -34,7 +39,7 @@ pub extern "C" fn handler_entry() {
 
     # Check for a CPU-generated exception
     cmp     dword ptr [esp+12], 0x20
-    jl      2f
+    jl      1f
 
     # Otherwise, we assume this is an interrupt from an external device. Call into the external
     # interrupt handler provided by the current chip.
@@ -63,7 +68,7 @@ pub extern "C" fn handler_entry() {
 
     iretd
 
-2:
+1:
 
     # If CS was anything besides segment 1, then a user app was running
     #
@@ -81,9 +86,8 @@ pub extern "C" fn handler_entry() {
     call    handle_kernel_exception
 
     # handle_kernel_exception should never return, but just in case...
-3:
-    jmp     3b
+2:
+    jmp     2b
 
 "
-    );
-}
+);

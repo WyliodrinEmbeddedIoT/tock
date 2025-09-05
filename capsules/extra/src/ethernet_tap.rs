@@ -407,14 +407,16 @@ impl<'a, E: EthernetAdapterDatapath<'a>> EthernetTapDriver<'a, E> {
                 u32::from_be_bytes([flags_bytes[0], flags_bytes[1], len_bytes[0], len_bytes[1]])
             };
 
-            let _ = kernel_data.schedule_upcall(
-                upcall::TX_FRAME,
-                (
-                    into_statuscode(err),
-                    flags_len as usize,
-                    transmission_identifier as usize,
-                ),
-            );
+            kernel_data
+                .schedule_upcall(
+                    upcall::TX_FRAME,
+                    (
+                        into_statuscode(err),
+                        flags_len as usize,
+                        transmission_identifier as usize,
+                    ),
+                )
+                .ok();
 
             // Reset the `tx_pending` state of this app:
             grant.tx_pending = None;

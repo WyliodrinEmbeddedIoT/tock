@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2022.
 
-use cortexm4f::support::with_interrupts_disabled;
+use cortexm4f::support::atomic;
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
 use kernel::platform::chip::ClockInterface;
@@ -623,7 +623,7 @@ impl<'a> Exti<'a> {
         // 1 register (`rc_w1`). So, we only clear bits whose value has been
         // transferred to `exti_pr`.
         unsafe {
-            with_interrupts_disabled(|| {
+            atomic(|| {
                 exti_pr = self.registers.pr.get();
                 self.registers.pr.set(exti_pr);
             });

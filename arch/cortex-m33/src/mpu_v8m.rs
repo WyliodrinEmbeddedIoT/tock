@@ -184,17 +184,6 @@ register_bitfields![u32,
     ],
 ];
 
-/// Function to align a pointer to 32 bytes.
-fn align32(initial_ptr: *const u8) -> Result<*const u8, ()> {
-    let memory_offset = initial_ptr.align_offset(32);
-    if memory_offset == usize::MAX {
-        return Err(());
-    }
-
-    let aligned_ptr = initial_ptr.wrapping_add(memory_offset);
-    Ok(aligned_ptr)
-}
-
 /// State related to the real physical MPU.
 ///
 /// There should only be one instantiation of this object as it represents
@@ -253,8 +242,8 @@ impl<const NUM_REGIONS: usize> fmt::Display for CortexMConfig<NUM_REGIONS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "\r\n Cortex-M MPU")?;
         for (i, region) in self.regions.iter().enumerate() {
-            if let Some(location) = region.location {
-                let access_bits = region.rbar_value.read(MPU_RBAR::AP);
+            if let Some(location) = region.location() {
+                let access_bits = region.rbar_value().read(MPU_RBAR::AP);
                 let access_str = match access_bits {
                     0b00 => "ReadWritePrivilegedOnly",
                     0b01 => "ReadWrite",
@@ -289,7 +278,7 @@ impl<const NUM_REGIONS: usize> CortexMConfig<NUM_REGIONS> {
             if number == APP_MEMORY_REGION_MAX_NUM {
                 continue;
             }
-            if region.location.is_none() {
+            if region.location().is_none() {
                 return Some(number);
             }
         }
@@ -377,6 +366,18 @@ impl CortexMRegion {
         }
     }
 
+    fn location(&self) -> Option<(*const u8, *const u8)> {
+        self.location
+    }
+
+    fn rbar_value(&self) -> FieldValue<u32, MPU_RBAR::Register> {
+        self.rbar_value
+    }
+
+    fn rlar_value(&self) -> FieldValue<u32, MPU_RLAR::Register> {
+        self.rlar_value
+    }
+
     fn overlaps(&self, other_start: *const u8, other_size: usize) -> bool {
         let other_start = other_start as usize;
         let other_end = other_start + other_size;
@@ -448,47 +449,54 @@ impl<const NUM_REGIONS: usize> mpu::MPU for MPU<NUM_REGIONS> {
         permissions: mpu::Permissions,
         config: &mut Self::MpuConfig,
     ) -> Option<mpu::Region> {
-        let mut region_calculation = || {
-            // Check that no previously allocated regions overlap the unallocated memory.
-            for region in config.regions.iter() {
-                if region.overlaps(unallocated_memory_start, unallocated_memory_size) {
-                    return Err(());
-                }
+        // Check that no previously allocated regions overlap the unallocated memory.
+        for region in config.regions.iter() {
+            if region.overlaps(unallocated_memory_start, unallocated_memory_size) {
+                return None;
             }
+        }
 
-            let region_num = config.unused_region_number().ok_or(())?;
+        let region_num = config.unused_region_number()?;
 
-            let region_start = align32(unallocated_memory_start)?;
-            let region_end = align32(region_start.wrapping_add(min_region_size))?;
-            let region_size = unsafe { region_end.offset_from(region_start) };
+        // Logical region
+        let mut start = unallocated_memory_start as usize;
+        let mut size = min_region_size;
 
-            // Check for overflow
-            if region_size < 0 {
-                return Err(());
-            }
+        // In the Armv8-M architecture the start and end address
+        // of a region only need to be aligned to a 32 byte boundary.
+        if start % 32 != 0 {
+            start += 32 - (start % 32);
+        }
 
-            // Make sure the region fits in the unallocated memory.
-            if region_size as usize > unallocated_memory_size {
-                return Err(());
-            }
+        let mut end = start + size;
 
-            let region = CortexMRegion::new(
-                region_start,
-                region_size as usize,
-                region_start,
-                region_size as usize,
-                region_num,
-                permissions,
-            )
-            .ok_or(())?;
+        if end % 32 != 0 {
+            end += 32 - (end % 32);
+            size = end - start;
+        }
 
-            config.regions[region_num] = region;
-            config.is_dirty.set(true);
+        // Physical MPU region
+        let region_start = start;
+        let region_size = size;
 
-            Ok(mpu::Region::new(region_start, region_size as usize))
-        };
+        // Check that our logical region fits in memory.
+        if start + size > (unallocated_memory_start as usize) + unallocated_memory_size {
+            return None;
+        }
 
-        region_calculation().ok()
+        let region = CortexMRegion::new(
+            start as *const u8,
+            size,
+            region_start as *const u8,
+            region_size,
+            region_num,
+            permissions,
+        )?;
+
+        config.regions[region_num] = region;
+        config.is_dirty.set(true);
+
+        Some(mpu::Region::new(start as *const u8, size))
     }
 
     fn remove_memory_region(
@@ -523,63 +531,66 @@ impl<const NUM_REGIONS: usize> mpu::MPU for MPU<NUM_REGIONS> {
         permissions: mpu::Permissions,
         config: &mut Self::MpuConfig,
     ) -> Option<(*const u8, usize)> {
-        let mut region_calculation = || {
-            // Check that no previously allocated regions overlap the unallocated
-            // memory.
-            for region in config.regions.iter() {
-                if region.overlaps(unallocated_memory_start, unallocated_memory_size) {
-                    return Err(());
-                }
+        // Check that no previously allocated regions overlap the unallocated
+        // memory.
+        for region in config.regions.iter() {
+            if region.overlaps(unallocated_memory_start, unallocated_memory_size) {
+                return None;
             }
+        }
 
-            // Make sure there is enough memory for app memory and kernel memory.
-            let memory_size = cmp::max(
-                min_memory_size,
-                initial_app_memory_size + initial_kernel_memory_size,
-            );
+        // Make sure there is enough memory for app memory and kernel memory.
+        let mut memory_size = cmp::max(
+            min_memory_size,
+            initial_app_memory_size + initial_kernel_memory_size,
+        );
 
-            // The region should start as close as possible to the start of the
-            // unallocated memory.
-            let region_start = align32(unallocated_memory_start)?;
-            let region_end = align32(region_start.wrapping_add(memory_size))?;
-            let region_size = unsafe { region_end.offset_from(region_start) };
+        // The region should start as close as possible to the start of the
+        // unallocated memory.
+        let mut region_start = unallocated_memory_start as usize;
 
-            // Check for overflow
-            if region_size < 0 {
-                return Err(());
-            }
+        if region_start % 32 != 0 {
+            region_start += 32 - (region_start % 32);
+        }
 
-            // Make sure the region fits in the unallocated memory.
-            if region_size as usize > unallocated_memory_size {
-                return Err(());
-            }
+        let mut region_end = region_start + memory_size;
 
-            let logical_start = region_start;
-            let logical_end = align32(logical_start.wrapping_add(initial_app_memory_size))?;
-            let logical_size = unsafe { logical_end.offset_from(logical_start) };
+        if region_end % 32 != 0 {
+            region_end += 32 - (region_end % 32);
+            memory_size = region_end - region_start;
+        }
 
-            // Check for overflow
-            if logical_size < 0 {
-                return Err(());
-            }
+        let region_size = memory_size;
 
-            let region = CortexMRegion::new(
-                logical_start,
-                logical_size as usize,
-                region_start,
-                region_size as usize,
-                0,
-                permissions,
-            )
-            .ok_or(())?;
+        // Make sure the region fits in the unallocated memory.
+        if region_start + memory_size
+            > (unallocated_memory_start as usize) + unallocated_memory_size
+        {
+            return None;
+        }
 
-            config.regions[0] = region;
-            config.is_dirty.set(true);
+        let logical_start = region_start;
+        let mut logical_end = logical_start + initial_app_memory_size;
 
-            Ok((region_start, memory_size))
-        };
+        if logical_end % 32 != 0 {
+            logical_end += 32 - (32 - logical_end);
+        }
 
-        region_calculation().ok()
+        let logical_size = logical_end - logical_start;
+
+        let region = CortexMRegion::new(
+            logical_start as *const u8,
+            logical_size,
+            region_start as *const u8,
+            region_size,
+            0,
+            permissions,
+        )?;
+
+        config.regions[0] = region;
+        config.is_dirty.set(true);
+
+        Some((region_start as *const u8, memory_size))
     }
 
     fn update_app_memory_region(
@@ -591,48 +602,48 @@ impl<const NUM_REGIONS: usize> mpu::MPU for MPU<NUM_REGIONS> {
     ) -> Result<(), ()> {
         // Get first region, or error if the process tried to update app memory
         // MPU region before it was created.
-        let (region_start, region_end) = config.regions[0].location.ok_or(())?;
-        // .map(|(region_start, region_end)| (region_start as usize, region_end as usize))?;
+        let (region_start, region_end) = config.regions[0]
+            .location()
+            .ok_or(())
+            .map(|(region_start, region_end)| (region_start as usize, region_end as usize))?;
+
+        let app_memory_break = app_memory_break as usize;
+        let kernel_memory_break = kernel_memory_break as usize;
 
         // Check if the memory breaks are out of the allocated region.
-        if (app_memory_break as usize) < (region_start as usize)
-            || (app_memory_break as usize) >= (region_end as usize)
-        {
+        if app_memory_break < region_start || app_memory_break >= region_end {
             return Err(());
         }
 
-        if (kernel_memory_break as usize) < (region_start as usize)
-            || (kernel_memory_break as usize) >= (region_end as usize)
-        {
+        if kernel_memory_break < region_start || kernel_memory_break >= region_end {
             return Err(());
         }
 
         // Out of memory
-        if (app_memory_break as usize) > (kernel_memory_break as usize) {
+        if app_memory_break > kernel_memory_break {
             return Err(());
         }
 
         let logical_start = region_start;
-        let logical_end = align32(app_memory_break)?;
-        let logical_size = unsafe { logical_end.offset_from(logical_start) };
-
-        // Check for overflow
-        if logical_size < 0 {
-            return Err(());
+        let mut logical_end = app_memory_break;
+        if logical_end % 32 != 0 {
+            logical_end += 32 - (logical_end % 32);
         }
 
         // Check if the aligned memory doesn't go over the grants.
-        if (logical_end as usize) > (kernel_memory_break as usize) {
+        if logical_end > kernel_memory_break {
             return Err(());
         }
 
-        let region_size = unsafe { region_end.offset_from(region_start) };
+        let logical_size = logical_end - logical_start;
+
+        let region_size = region_end - region_start;
 
         let region = CortexMRegion::new(
-            logical_start,
-            logical_size as usize,
-            region_start,
-            region_size as usize,
+            logical_start as *const u8,
+            logical_size,
+            region_start as *const u8,
+            region_size,
             0,
             permissions,
         )
@@ -657,8 +668,8 @@ impl<const NUM_REGIONS: usize> mpu::MPU for MPU<NUM_REGIONS> {
                 self.registers
                     .rnr
                     .modify(MPU_RNR::REGION.val(region.region_num as u32));
-                self.registers.rbar.write(region.rbar_value);
-                self.registers.rlar.write(region.rlar_value);
+                self.registers.rbar.write(region.rbar_value());
+                self.registers.rlar.write(region.rlar_value());
             }
             self.hardware_is_configured_for.set(config.id);
             config.is_dirty.set(false);

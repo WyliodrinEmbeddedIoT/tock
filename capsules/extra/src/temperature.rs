@@ -128,7 +128,7 @@ impl<'a, T: hil::sensors::TemperatureDriver<'a>> hil::sensors::TemperatureClient
                 cntr.enter(|app, upcalls| {
                     if app.subscribed {
                         app.subscribed = false;
-                        let _ = upcalls.schedule_upcall(0, (temp_val as usize, 0, 0));
+                        upcalls.schedule_upcall(0, (temp_val as usize, 0, 0)).ok();
                     }
                 });
             }

@@ -417,7 +417,7 @@ impl<'a, I: hil::i2c::I2CDevice> hil::screen::ScreenSetup<'a> for Ssd1306<'a, I>
 
     fn get_supported_pixel_format(&self, index: usize) -> Option<hil::screen::ScreenPixelFormat> {
         match index {
-            0 => Some(hil::screen::ScreenPixelFormat::Mono_8BitPage),
+            0 => Some(hil::screen::ScreenPixelFormat::Mono),
             _ => None,
         }
     }
@@ -433,7 +433,7 @@ impl<'a, I: hil::i2c::I2CDevice> hil::screen::Screen<'a> for Ssd1306<'a, I> {
     }
 
     fn get_pixel_format(&self) -> hil::screen::ScreenPixelFormat {
-        hil::screen::ScreenPixelFormat::Mono_8BitPage
+        hil::screen::ScreenPixelFormat::Mono
     }
 
     fn get_rotation(&self) -> hil::screen::ScreenRotation {

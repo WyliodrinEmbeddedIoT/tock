@@ -1,0 +1,15 @@
+[package]
+name = "lpc55s6x"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+cortexm33 = { path = "../../arch/cortex-m33" }
+kernel = { path = "../../kernel" }
+enum_primitive = { path = "../../libraries/enum_primitive" }
+cortex-m = "0.7.7"
+cortex-m-semihosting = "0.5.0"
+
+[lints]
+workspace = true

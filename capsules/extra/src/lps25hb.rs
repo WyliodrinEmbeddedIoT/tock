@@ -182,7 +182,7 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
             self.buffer.replace(buffer);
             self.owning_process.map(|pid| {
                 let _ = self.apps.enter(pid, |_app, upcalls| {
-                    let _ = upcalls.schedule_upcall(0, (0, 0, 0));
+                    upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                 });
             });
             return;
@@ -208,8 +208,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
                     self.buffer.replace(buffer);
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(pid, |_app, upcalls| {
-                            let _ = upcalls
-                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0))
+                                .ok();
                         });
                     });
                 } else {
@@ -222,8 +223,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
                     self.buffer.replace(buffer);
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(pid, |_app, upcalls| {
-                            let _ = upcalls
-                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0))
+                                .ok();
                         });
                     });
                 } else {
@@ -240,8 +242,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
                     self.buffer.replace(buffer);
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(pid, |_app, upcalls| {
-                            let _ = upcalls
-                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0))
+                                .ok();
                         });
                     });
                 } else {
@@ -254,8 +257,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
                     self.buffer.replace(buffer);
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(pid, |_app, upcalls| {
-                            let _ = upcalls
-                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0))
+                                .ok();
                         });
                     });
                 } else {
@@ -271,7 +275,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
 
                 self.owning_process.map(|pid| {
                     let _ = self.apps.enter(pid, |_app, upcalls| {
-                        let _ = upcalls.schedule_upcall(0, (pressure_ubar as usize, 0, 0));
+                        upcalls
+                            .schedule_upcall(0, (pressure_ubar as usize, 0, 0))
+                            .ok();
                     });
                 });
 
@@ -283,8 +289,9 @@ impl<I: i2c::I2CDevice> i2c::I2CClient for LPS25HB<'_, I> {
                     self.buffer.replace(buffer);
                     self.owning_process.map(|pid| {
                         let _ = self.apps.enter(pid, |_app, upcalls| {
-                            let _ = upcalls
-                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (into_statuscode(Err(error.into())), 0, 0))
+                                .ok();
                         });
                     });
                 } else {

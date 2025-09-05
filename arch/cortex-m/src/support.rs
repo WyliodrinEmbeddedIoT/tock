@@ -24,9 +24,9 @@ pub unsafe fn wfi() {
     asm!("wfi", options(nomem, preserves_flags));
 }
 
-/// Single-core critical section operation
+/// Atomic operation
 #[cfg(any(doc, all(target_arch = "arm", target_os = "none")))]
-pub unsafe fn with_interrupts_disabled<F, R>(f: F) -> R
+pub unsafe fn atomic<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
@@ -54,9 +54,9 @@ pub unsafe fn wfi() {
     unimplemented!()
 }
 
-/// Single-core critical section operation (mock)
+/// Atomic operation (mock)
 #[cfg(not(any(doc, all(target_arch = "arm", target_os = "none"))))]
-pub unsafe fn with_interrupts_disabled<F, R>(_f: F) -> R
+pub unsafe fn atomic<F, R>(_f: F) -> R
 where
     F: FnOnce() -> R,
 {

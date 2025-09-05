@@ -53,7 +53,7 @@ const ESC: u8 = b'\x1B';
 const EOL: u8 = b'\x00';
 
 /// Backspace ANSI character
-const BACKSPACE: u8 = b'\x08';
+const BS: u8 = b'\x08';
 
 /// Delete ANSI character
 const DEL: u8 = b'\x7F';
@@ -103,7 +103,6 @@ enum EscKey {
     Home,
     End,
     Delete,
-    Backspace,
 }
 
 /// Escape state machine to check if
@@ -145,7 +144,7 @@ enum EscState {
 impl EscState {
     fn next_state(self, data: u8) -> Self {
         use self::{
-            EscKey::{Backspace, Delete, Down, End, Home, Left, Right, Up},
+            EscKey::{Delete, Down, End, Home, Left, Right, Up},
             EscState::{
                 Bracket, Bracket3, Bypass, Complete, Started, Unrecognized, UnrecognizedDone,
             },
@@ -154,7 +153,7 @@ impl EscState {
             (Bypass, ESC) | (UnrecognizedDone, ESC) | (Complete(_), ESC) => Started,
             // This is a short-circuit.
             // ASCII DEL and ANSI Escape Sequence "Delete" should be treated the same way.
-            (Bypass, DEL) | (UnrecognizedDone, DEL) | (Complete(_), DEL) => Complete(Backspace),
+            (Bypass, DEL) | (UnrecognizedDone, DEL) | (Complete(_), DEL) => Complete(Delete),
             (Bypass, _) | (UnrecognizedDone, _) | (Complete(_), _) => Bypass,
             (Started, b'[') => Bracket,
             (Bracket, b'A') => Complete(Up),
@@ -1228,8 +1227,7 @@ impl<
 
                                             // Clear the displayed command
                                             for _ in 0..index {
-                                                let _ = self
-                                                    .write_bytes(&[BACKSPACE, SPACE, BACKSPACE]);
+                                                let _ = self.write_bytes(&[BS, SPACE, BS]);
                                             }
 
                                             // Display the new command
@@ -1247,7 +1245,7 @@ impl<
                                     });
                                 }
                                 EscKey::Left if cursor > 0 => {
-                                    let _ = self.write_byte(BACKSPACE);
+                                    let _ = self.write_byte(BS);
                                     self.cursor.set(cursor - 1);
                                 }
                                 EscKey::Right if cursor < index => {
@@ -1256,7 +1254,7 @@ impl<
                                 }
                                 EscKey::Home if cursor > 0 => {
                                     for _ in 0..cursor {
-                                        let _ = self.write_byte(BACKSPACE);
+                                        let _ = self.write_byte(BS);
                                     }
 
                                     self.cursor.set(0);
@@ -1268,62 +1266,6 @@ impl<
 
                                     self.cursor.set(index);
                                 }
-                                EscKey::Backspace if cursor > 0 && cursor <= index => {
-                                    // Move the bytes one position to left
-                                    for i in (cursor - 1)..index {
-                                        command[i] = command[i + 1];
-                                        let _ = self.write_byte(command[i]);
-                                    }
-
-                                    // Now that we copied all bytes to the left, we are left over with
-                                    // a duplicate "ghost" character of the last byte,
-                                    // In case we deleted the first character, this doesn't do anything as
-                                    // the duplicate is not there.
-                                    // |abcdef -> abcdef (won't enter this match case)
-                                    // a|bcdef -> bcdef
-                                    // abc|def -> abdeff -> abdef
-
-                                    let _ = self.write_bytes(&[BACKSPACE, SPACE, BACKSPACE]);
-
-                                    // The following for statements are mandatory for correctly displaying
-                                    // the command and cursor
-                                    //
-                                    // Move the cursor to the correct position (without this,
-                                    // it will get sent all the way right)
-                                    for _ in (cursor - 1)..(index - 1) {
-                                        let _ = self.write_byte(BACKSPACE);
-                                    }
-                                    // Rewrite the command, this will move the cursor right (skipping this
-                                    // step will cause the command to not get updated correctly, for example
-                                    // abc|def -> ab|cde. This is just a visual mismatch)
-                                    for i in (cursor - 1)..(index - 1) {
-                                        let _ = self.write_byte(command[i]);
-                                    }
-                                    // Move the cursor left again (previously, the cursor was sent to the
-                                    // right by the previous for statement, so we need to move it left)
-                                    for _ in (cursor - 1)..(index - 1) {
-                                        let _ = self.write_byte(BACKSPACE);
-                                    }
-
-                                    self.cursor.set(cursor - 1);
-                                    self.command_index.set(index - 1);
-
-                                    // Remove the byte from the command in order
-                                    // not to permit accumulation of the text
-                                    if COMMAND_HISTORY_LEN > 1 {
-                                        self.command_history.map(|ht| {
-                                            if ht.cmd_is_modified {
-                                                // Copy the last command into the unfinished command
-
-                                                ht.cmds[0].clear();
-                                                ht.write_to_first(command);
-                                                ht.cmd_is_modified = false;
-                                            } else {
-                                                ht.cmds[0].delete_byte(cursor);
-                                            }
-                                        });
-                                    }
-                                }
                                 EscKey::Delete if cursor < index => {
                                     // Move the bytes one position to left
                                     for i in cursor..(index - 1) {
@@ -1334,16 +1276,16 @@ impl<
                                     command[index - 1] = command[index];
 
                                     // Now that we copied all bytes to the left, we are left over with
-                                    // a duplicate "ghost" character of the last byte,
+                                    // a dublicate "ghost" character of the last byte,
                                     // In case we deleted the first character, this doesn't do anything as
-                                    // the duplicate is not there.
+                                    // the dublicate is not there.
                                     // |abcdef -> bcdef
                                     // abc|def -> abceff -> abcef
-                                    let _ = self.write_bytes(&[SPACE, BACKSPACE]);
+                                    let _ = self.write_bytes(&[SPACE, BS]);
 
                                     // Move the cursor to last position
                                     for _ in cursor..(index - 1) {
-                                        let _ = self.write_byte(BACKSPACE);
+                                        let _ = self.write_byte(BS);
                                     }
 
                                     self.command_index.set(index - 1);
@@ -1387,12 +1329,12 @@ impl<
                                     });
                                 }
                             }
-                        } else if read_buf[0] == BACKSPACE {
+                        } else if read_buf[0] == BS {
                             if cursor > 0 {
                                 // Backspace, echo and remove the byte
                                 // preceding the cursor
                                 // Note echo is '\b \b' to erase
-                                let _ = self.write_bytes(&[BACKSPACE, SPACE, BACKSPACE]);
+                                let _ = self.write_bytes(&[BS, SPACE, BS]);
 
                                 // Move the bytes one position to left
                                 for i in (cursor - 1)..(index - 1) {
@@ -1403,16 +1345,16 @@ impl<
                                 command[index - 1] = command[index];
 
                                 // Now that we copied all bytes to the left, we are left over with
-                                // a duplicate "ghost" character of the last byte,
+                                // a dublicate "ghost" character of the last byte,
                                 // In case we deleted the last character, this doesn't do anything as
-                                // the duplicate is not there.
+                                // the dublicate is not there.
                                 // abcdef| -> abcdef
                                 // abcd|ef -> abceff -> abcef
-                                let _ = self.write_bytes(&[SPACE, BACKSPACE]);
+                                let _ = self.write_bytes(&[SPACE, BS]);
 
                                 // Move the cursor to last position
                                 for _ in cursor..index {
-                                    let _ = self.write_byte(BACKSPACE);
+                                    let _ = self.write_byte(BS);
                                 }
 
                                 self.command_index.set(index - 1);
@@ -1457,7 +1399,7 @@ impl<
 
                             // Move the cursor to the last position
                             for _ in cursor..index {
-                                let _ = self.write_byte(BACKSPACE);
+                                let _ = self.write_byte(BS);
                             }
 
                             command[cursor] = read_buf[0];

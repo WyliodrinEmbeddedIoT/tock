@@ -251,10 +251,12 @@ impl<'a, A: AES128<'a> + AES128Ctr> EncryptionOracleDriver<'a, A> {
                 grant.request_pending = false;
 
                 if let Err(e) = res {
-                    let _ = kernel_data.schedule_upcall(
-                        upcall::DONE,
-                        (kernel::errorcode::into_statuscode(Err(e)), 0, 0),
-                    );
+                    kernel_data
+                        .schedule_upcall(
+                            upcall::DONE,
+                            (kernel::errorcode::into_statuscode(Err(e)), 0, 0),
+                        )
+                        .ok();
                 }
             });
         }
@@ -362,7 +364,7 @@ impl<'a, A: AES128<'a> + AES128Ctr> Client<'a> for EncryptionOracleDriver<'a, A>
                         .map_or(0, |dest| dest.len()),
                 );
 
-                let _ = kernel_data.schedule_upcall(upcall::DONE, (0, len, 0));
+                kernel_data.schedule_upcall(upcall::DONE, (0, len, 0)).ok();
             });
 
             // Attempt to schedule another operation for a new process:

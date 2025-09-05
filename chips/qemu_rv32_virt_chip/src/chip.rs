@@ -104,7 +104,7 @@ impl<'a, I: InterruptService + 'a> QemuRv32VirtChip<'a, I> {
             if !self.plic_interrupt_service.service_interrupt(interrupt) {
                 debug!("Pidx {}", interrupt);
             }
-            self.with_interrupts_disabled(|| {
+            self.atomic(|| {
                 self.plic.complete(interrupt);
             });
         }
@@ -166,11 +166,11 @@ impl<'a, I: InterruptService + 'a> Chip for QemuRv32VirtChip<'a, I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    unsafe fn atomic<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        rv32i::support::with_interrupts_disabled(f)
+        rv32i::support::atomic(f)
     }
 
     unsafe fn print_state(&self, writer: &mut dyn Write) {

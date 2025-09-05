@@ -428,14 +428,16 @@ impl<I: i2c::I2CDevice> MAX17205Client for MAX17205Driver<'_, I> {
     fn status(&self, status: u16, error: Result<(), ErrorCode>) {
         self.owning_process.map(|pid| {
             let _ = self.apps.enter(pid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::EVENT_COMPLETE,
-                    (
-                        kernel::errorcode::into_statuscode(error),
-                        status as usize,
-                        0,
-                    ),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::EVENT_COMPLETE,
+                        (
+                            kernel::errorcode::into_statuscode(error),
+                            status as usize,
+                            0,
+                        ),
+                    )
+                    .ok();
             });
         });
     }
@@ -449,14 +451,16 @@ impl<I: i2c::I2CDevice> MAX17205Client for MAX17205Driver<'_, I> {
     ) {
         self.owning_process.map(|pid| {
             let _ = self.apps.enter(pid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::EVENT_COMPLETE,
-                    (
-                        kernel::errorcode::into_statuscode(error),
-                        percent as usize,
-                        (capacity as usize) << 16 | (full_capacity as usize),
-                    ),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::EVENT_COMPLETE,
+                        (
+                            kernel::errorcode::into_statuscode(error),
+                            percent as usize,
+                            (capacity as usize) << 16 | (full_capacity as usize),
+                        ),
+                    )
+                    .ok();
             });
         });
     }
@@ -464,14 +468,16 @@ impl<I: i2c::I2CDevice> MAX17205Client for MAX17205Driver<'_, I> {
     fn voltage_current(&self, voltage: u16, current: u16, error: Result<(), ErrorCode>) {
         self.owning_process.map(|pid| {
             let _ = self.apps.enter(pid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::EVENT_COMPLETE,
-                    (
-                        kernel::errorcode::into_statuscode(error),
-                        voltage as usize,
-                        current as usize,
-                    ),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::EVENT_COMPLETE,
+                        (
+                            kernel::errorcode::into_statuscode(error),
+                            voltage as usize,
+                            current as usize,
+                        ),
+                    )
+                    .ok();
             });
         });
     }
@@ -479,14 +485,16 @@ impl<I: i2c::I2CDevice> MAX17205Client for MAX17205Driver<'_, I> {
     fn coulomb(&self, coulomb: u16, error: Result<(), ErrorCode>) {
         self.owning_process.map(|pid| {
             let _ = self.apps.enter(pid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::EVENT_COMPLETE,
-                    (
-                        kernel::errorcode::into_statuscode(error),
-                        coulomb as usize,
-                        0,
-                    ),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::EVENT_COMPLETE,
+                        (
+                            kernel::errorcode::into_statuscode(error),
+                            coulomb as usize,
+                            0,
+                        ),
+                    )
+                    .ok();
             });
         });
     }
@@ -494,14 +502,16 @@ impl<I: i2c::I2CDevice> MAX17205Client for MAX17205Driver<'_, I> {
     fn romid(&self, rid: u64, error: Result<(), ErrorCode>) {
         self.owning_process.map(|pid| {
             let _ = self.apps.enter(pid, |_app, upcalls| {
-                let _ = upcalls.schedule_upcall(
-                    upcall::EVENT_COMPLETE,
-                    (
-                        kernel::errorcode::into_statuscode(error),
-                        (rid & 0xffffffff) as usize,
-                        (rid >> 32) as usize,
-                    ),
-                );
+                upcalls
+                    .schedule_upcall(
+                        upcall::EVENT_COMPLETE,
+                        (
+                            kernel::errorcode::into_statuscode(error),
+                            (rid & 0xffffffff) as usize,
+                            (rid >> 32) as usize,
+                        ),
+                    )
+                    .ok();
             });
         });
     }

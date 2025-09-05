@@ -53,8 +53,6 @@ fn screen_pixel_format_from(screen_pixel_format: usize) -> Option<ScreenPixelFor
         2 => Some(ScreenPixelFormat::RGB_565),
         3 => Some(ScreenPixelFormat::RGB_888),
         4 => Some(ScreenPixelFormat::ARGB_8888),
-        5 => Some(ScreenPixelFormat::RGB_4BIT),
-        6 => Some(ScreenPixelFormat::Mono_8BitPage),
         _ => None,
     }
 }
@@ -301,7 +299,7 @@ impl<'a> Screen<'a> {
         self.current_process.take().map(|process_id| {
             let _ = self.apps.enter(process_id, |app, upcalls| {
                 app.pending_command = false;
-                let _ = upcalls.schedule_upcall(0, (data1, data2, data3));
+                upcalls.schedule_upcall(0, (data1, data2, data3)).ok();
             });
         });
     }

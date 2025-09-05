@@ -152,7 +152,7 @@ impl<'a, R: Rng<'a>> rng::Client for RngDriver<'a, R> {
                     if app.remaining > 0 {
                         done = false;
                     } else {
-                        let _ = kernel_data.schedule_upcall(0, (0, newidx, 0));
+                        kernel_data.schedule_upcall(0, (0, newidx, 0)).ok();
                     }
                 }
             });

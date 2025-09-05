@@ -5,4 +5,3 @@
 # Suppress `tput` warnings by setting TERM
 [build]
 environment = { TERM = "dumb" }
-command = "tools/ci/netlify-build.sh"

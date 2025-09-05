@@ -141,10 +141,10 @@ impl<'a, T: hil::sensors::Distance<'a>> hil::sensors::DistanceClient for Distanc
                     app.subscribed = false; // Clear the subscribed flag.
                     match distance_val {
                         Ok(distance) => {
-                            let _ = upcalls.schedule_upcall(0, (0, distance as usize, 0));
+                            upcalls.schedule_upcall(0, (0, distance as usize, 0)).ok();
                         }
                         Err(e) => {
-                            let _ = upcalls.schedule_upcall(0, (e as usize, 0, 0));
+                            upcalls.schedule_upcall(0, (e as usize, 0, 0)).ok();
                         }
                     }
                 }

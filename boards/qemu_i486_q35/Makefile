@@ -20,6 +20,7 @@ QEMU_BASE_CMDLINE := \
     -cpu 486 \
     -machine q35 \
     -net none \
+    -nographic \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 # Run the kernel inside a qemu-system-i386 "q35" machine type simulation
@@ -33,12 +34,12 @@ QEMU_BASE_CMDLINE := \
 # sections within the ELF file such that .text comes first and the Multiboot header is discoverable.
 #
 # If tock fails to boot with the following error: "qemu_i486_q35: cannot execute binary file",
-# replace objcopy with the full path to GNU objcopy and uncomment the "@$(OBJCOPY) $<".
+# replace objcopy with the full path to GNU objcopy.
 .PHONY: run
 run: $(TARGET_PATH)/release/$(PLATFORM).elf
 	@echo
-#	@echo Reordering ELF file sections
-#	@$(OBJCOPY)  $<
+	@echo Reordering ELF file sections
+	@$(OBJCOPY)  $<
 	@echo
 	@echo -e "Running $$(qemu-system-i386 --version | head -n1)"\
 	  "(tested: $(WORKING_QEMU_VERSION)) with\n"\

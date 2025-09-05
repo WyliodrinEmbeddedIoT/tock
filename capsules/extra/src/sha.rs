@@ -65,7 +65,7 @@ enum ShaOperation {
     Sha512,
 }
 
-pub struct ShaDriver<'a, H: digest::Digest<'a, DIGEST_LEN>, const DIGEST_LEN: usize> {
+pub struct ShaDriver<'a, H: digest::Digest<'a, L>, const L: usize> {
     sha: &'a H,
 
     active: Cell<bool>,
@@ -80,26 +80,26 @@ pub struct ShaDriver<'a, H: digest::Digest<'a, DIGEST_LEN>, const DIGEST_LEN: us
 
     data_buffer: TakeCell<'static, [u8]>,
     data_copied: Cell<usize>,
-    dest_buffer: TakeCell<'static, [u8; DIGEST_LEN]>,
+    dest_buffer: TakeCell<'static, [u8; L]>,
 }
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN> + digest::Sha256 + digest::Sha384 + digest::Sha512,
-        const DIGEST_LEN: usize,
-    > ShaDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::Sha256 + digest::Sha384 + digest::Sha512,
+        const L: usize,
+    > ShaDriver<'a, H, L>
 {
     pub fn new(
         sha: &'a H,
         data_buffer: &'static mut [u8],
-        dest_buffer: &'static mut [u8; DIGEST_LEN],
+        dest_buffer: &'static mut [u8; L],
         grant: Grant<
             App,
             UpcallCount<1>,
             AllowRoCount<{ ro_allow::COUNT }>,
             AllowRwCount<{ rw_allow::COUNT }>,
         >,
-    ) -> ShaDriver<'a, H, DIGEST_LEN> {
+    ) -> ShaDriver<'a, H, L> {
         ShaDriver {
             sha,
             active: Cell::new(false),
@@ -221,9 +221,9 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN> + digest::Sha256 + digest::Sha384 + digest::Sha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientData<DIGEST_LEN> for ShaDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::Sha256 + digest::Sha384 + digest::Sha512,
+        const L: usize,
+    > digest::ClientData<L> for ShaDriver<'a, H, L>
 {
     // Because data needs to be copied from a userspace buffer into a kernel (RAM) one,
     // we always pass mut data; this callback should never be invoked.
@@ -308,8 +308,9 @@ impl<
                     // If we get here we are ready to run the digest, reset the copied data
                     if app.op.get().unwrap() == UserSpaceOp::Run {
                         if let Err(e) = self.calculate_digest() {
-                            let _ =
-                                kernel_data.schedule_upcall(0, (into_statuscode(e.into()), 0, 0));
+                            kernel_data
+                                .schedule_upcall(0, (into_statuscode(e.into()), 0, 0))
+                                .ok();
                         }
                     } else if app.op.get().unwrap() == UserSpaceOp::Verify {
                         let _ = kernel_data
@@ -335,11 +336,12 @@ impl<
                             });
 
                         if let Err(e) = self.verify_digest() {
-                            let _ =
-                                kernel_data.schedule_upcall(1, (into_statuscode(e.into()), 0, 0));
+                            kernel_data
+                                .schedule_upcall(1, (into_statuscode(e.into()), 0, 0))
+                                .ok();
                         }
                     } else {
-                        let _ = kernel_data.schedule_upcall(0, (0, 0, 0));
+                        kernel_data.schedule_upcall(0, (0, 0, 0)).ok();
                     }
                 })
                 .map_err(|err| {
@@ -357,11 +359,11 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN> + digest::Sha256 + digest::Sha384 + digest::Sha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientHash<DIGEST_LEN> for ShaDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::Sha256 + digest::Sha384 + digest::Sha512,
+        const L: usize,
+    > digest::ClientHash<L> for ShaDriver<'a, H, L>
 {
-    fn hash_done(&self, result: Result<(), ErrorCode>, digest: &'static mut [u8; DIGEST_LEN]) {
+    fn hash_done(&self, result: Result<(), ErrorCode>, digest: &'static mut [u8; L]) {
         self.processid.map(|id| {
             self.apps
                 .enter(id, |_, kernel_data| {
@@ -375,18 +377,21 @@ impl<
                             dest.mut_enter(|dest| {
                                 let len = dest.len();
 
-                                if len < DIGEST_LEN {
+                                if len < L {
                                     dest.copy_from_slice(&digest[0..len]);
                                 } else {
-                                    dest[0..DIGEST_LEN].copy_from_slice(digest);
+                                    dest[0..L].copy_from_slice(digest);
                                 }
                             })
                         });
 
-                    let _ = match result {
-                        Ok(()) => kernel_data.schedule_upcall(0, (0, pointer as usize, 0)),
+                    match result {
+                        Ok(()) => kernel_data
+                            .schedule_upcall(0, (0, pointer as usize, 0))
+                            .ok(),
                         Err(e) => kernel_data
-                            .schedule_upcall(0, (into_statuscode(e.into()), pointer as usize, 0)),
+                            .schedule_upcall(0, (into_statuscode(e.into()), pointer as usize, 0))
+                            .ok(),
                     };
 
                     // Clear the current processid as it has finished running
@@ -408,24 +413,21 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN> + digest::Sha256 + digest::Sha384 + digest::Sha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientVerify<DIGEST_LEN> for ShaDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::Sha256 + digest::Sha384 + digest::Sha512,
+        const L: usize,
+    > digest::ClientVerify<L> for ShaDriver<'a, H, L>
 {
-    fn verification_done(
-        &self,
-        result: Result<bool, ErrorCode>,
-        compare: &'static mut [u8; DIGEST_LEN],
-    ) {
+    fn verification_done(&self, result: Result<bool, ErrorCode>, compare: &'static mut [u8; L]) {
         self.processid.map(|id| {
             self.apps
                 .enter(id, |_app, kernel_data| {
                     self.sha.clear_data();
 
-                    let _ = match result {
+                    match result {
                         Ok(equal) => kernel_data.schedule_upcall(1, (0, equal as usize, 0)),
                         Err(e) => kernel_data.schedule_upcall(1, (into_statuscode(e.into()), 0, 0)),
-                    };
+                    }
+                    .ok();
 
                     // Clear the current processid as it has finished running
                     self.processid.clear();
@@ -446,9 +448,9 @@ impl<
 
 impl<
         'a,
-        H: digest::Digest<'a, DIGEST_LEN> + digest::Sha256 + digest::Sha384 + digest::Sha512,
-        const DIGEST_LEN: usize,
-    > SyscallDriver for ShaDriver<'a, H, DIGEST_LEN>
+        H: digest::Digest<'a, L> + digest::Sha256 + digest::Sha384 + digest::Sha512,
+        const L: usize,
+    > SyscallDriver for ShaDriver<'a, H, L>
 {
     /// Setup and run the HMAC hardware
     ///
@@ -622,8 +624,9 @@ impl<
                     3 => {
                         if app_match {
                             if let Err(e) = self.calculate_digest() {
-                                let _ = kernel_data
-                                    .schedule_upcall(0, (into_statuscode(e.into()), 0, 0));
+                                kernel_data
+                                    .schedule_upcall(0, (into_statuscode(e.into()), 0, 0))
+                                    .ok();
                             }
                             CommandReturn::success()
                         } else {
@@ -676,8 +679,9 @@ impl<
                                 });
 
                             if let Err(e) = self.verify_digest() {
-                                let _ = kernel_data
-                                    .schedule_upcall(1, (into_statuscode(e.into()), 0, 0));
+                                kernel_data
+                                    .schedule_upcall(1, (into_statuscode(e.into()), 0, 0))
+                                    .ok();
                             }
                             CommandReturn::success()
                         } else {

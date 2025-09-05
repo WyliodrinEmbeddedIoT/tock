@@ -71,7 +71,7 @@ $(call check_defined, PLATFORM)
 $(call check_defined, TARGET)
 
 # Location of target-specific build.
-# Make sure we delete the ".json" extension if we are building a custom TARGET
+# Make sure we delete the ".json" extension if we are building a custon TARGET 
 # defined in a JSON file as cargo defines the target folder without ".json".
 TARGET_PATH := $(TARGET_DIRECTORY)$(subst .json,,$(TARGET))
 
@@ -115,8 +115,8 @@ endif
 MINIMUM_RUSTUP_VERSION := 1.23.0
 RUSTUP_VERSION := $(strip $(word 2, $(shell $(RUSTUP) --version 2> /dev/null)))
 # Check that the semver script exists.
-ifneq (,$(wildcard $(TOCK_ROOT_DIRECTORY)tools/build/semver.sh))
-ifeq ($(shell $(TOCK_ROOT_DIRECTORY)tools/build/semver.sh $(RUSTUP_VERSION) \< $(MINIMUM_RUSTUP_VERSION)), true)
+ifneq (,$(wildcard $(TOCK_ROOT_DIRECTORY)tools/semver.sh))
+ifeq ($(shell $(TOCK_ROOT_DIRECTORY)tools/semver.sh $(RUSTUP_VERSION) \< $(MINIMUM_RUSTUP_VERSION)), true)
   $(warning Required tool `$(RUSTUP)` is out-of-date.)
   $(warning Running `$(RUSTUP) update` in 3 seconds (ctrl-c to cancel))
   $(shell sleep 3)
@@ -136,26 +136,22 @@ ifneq ($(shell $(RUSTUP) target list | grep "$(TARGET) (installed)"),$(TARGET) (
   $(info If you are just doing some local testing, you can install the)
   $(info target manually for just your system with:)
   $(info )
-  $(info     $(RUSTUP) target add $(TARGET))
+  $(info     $(RUSTUP) target add $(TARGET))
   $(info )
   $(error Missing required target: $(TARGET))
 endif
 
 # If the board the user is compiling is using the stable toolchain, verify that
 # the user's stable rustc toolchain is new enough to compile the board. If the
-# toolchain is too old, wait 10 seconds and then install for the user.
+# toolchain is too old, wait 5 seconds and then install for the user.
 ifneq ($(shell $(RUSTUP) show active-toolchain | grep "stable"),)
   # If the error from running --version shows a version mismatch we know the
   # installed toolchain is too old.
   ifneq ($(shell $(CARGO) rustc -- --version 2>&1 | grep "is not supported by the following packages"),)
-    $(warning Your stable rustc is older than the MSRV of this board.)
-    $(warning )
-    $(warning make will run `$(RUSTUP) update` to update your stable rustc in 10s.)
-    $(shell sleep 10)
+    $(warning Your stable rustc is older than the MSRV of this board)
+    $(warning make will update your stable rustc in 5s)
+    $(shell sleep 5)
     DUMMY := $(shell $(RUSTUP) update)
-  endif
-  ifneq ($(shell $(CARGO) rustc -- --version 2>&1 | grep "is not supported by the following packages"),)
-    $(error Rustup update failed. Please fix your rustup or update your rustc manually.)
   endif
 endif
 endif # $(NO_RUSTUP)
@@ -205,7 +201,7 @@ PTMU_ARGS ?=
 ifeq (, $(shell sha256sum --version 2>/dev/null))
   ifeq (, $(shell shasum --version 2>/dev/null))
     # No system sha256sum available.
-    SHA256SUM := $(CARGO) run --manifest-path $(TOCK_ROOT_DIRECTORY)tools/build/sha256sum/Cargo.toml -- 2>/dev/null
+    SHA256SUM := $(CARGO) run --manifest-path $(TOCK_ROOT_DIRECTORY)tools/sha256sum/Cargo.toml -- 2>/dev/null
   else
     # Use shasum found on MacOS.
     SHA256SUM := shasum -a 256
@@ -293,10 +289,10 @@ show-target:
 	$(info $(TARGET))
 
 .PHONY: stack-analysis
-stack-analysis: $(TARGET_PATH)/release/$(PLATFORM).elf
+stack-analysis: $(TARGET_PATH)/release/$(PLATFORM)
 	@$ echo $(PLATFORM)
 	@$ echo ----------------------
-	$(Q)$(TOCK_ROOT_DIRECTORY)/tools/build/stack_analysis.sh $(TARGET_PATH)/release/$(PLATFORM).elf
+	$(Q)$(TOCK_ROOT_DIRECTORY)/tools/stack_analysis.sh $(TARGET_PATH)/release/$(PLATFORM).elf
 
 # Run the `print_tock_memory_usage.py` script for this board.
 .PHONY: memory
@@ -318,8 +314,8 @@ memory: $(TARGET_PATH)/release/$(PLATFORM).elf
 	$(Q)$(OBJDUMP) $(OBJDUMP_FLAGS) $< > $@
 
 
-$(TOCK_ROOT_DIRECTORY)tools/build/sha256sum/target/debug/sha256sum:
-	$(Q)$(CARGO) build $(VERBOSE_FLAGS) --manifest-path $(TOCK_ROOT_DIRECTORY)tools/build/sha256sum/Cargo.toml
+$(TOCK_ROOT_DIRECTORY)tools/sha256sum/target/debug/sha256sum:
+	$(Q)$(CARGO) build $(VERBOSE_FLAGS) --manifest-path $(TOCK_ROOT_DIRECTORY)tools/sha256sum/Cargo.toml
 
 
 # Cargo-drivers

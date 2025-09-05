@@ -445,7 +445,9 @@ impl<'a, S: spi::SpiMasterDevice<'a>> spi::SpiMasterClient for L3gd20Spi<'a, S> 
                         } else {
                             false
                         };
-                        let _ = upcalls.schedule_upcall(0, (1, usize::from(present), 0));
+                        upcalls
+                            .schedule_upcall(0, (1, usize::from(present), 0))
+                            .ok();
                         L3gd20Status::Idle
                     }
 
@@ -492,9 +494,9 @@ impl<'a, S: spi::SpiMasterDevice<'a>> spi::SpiMasterClient for L3gd20Spi<'a, S> 
                             false
                         };
                         if values {
-                            let _ = upcalls.schedule_upcall(0, (x, y, z));
+                            upcalls.schedule_upcall(0, (x, y, z)).ok();
                         } else {
-                            let _ = upcalls.schedule_upcall(0, (0, 0, 0));
+                            upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         }
                         L3gd20Status::Idle
                     }
@@ -518,15 +520,17 @@ impl<'a, S: spi::SpiMasterDevice<'a>> spi::SpiMasterClient for L3gd20Spi<'a, S> 
                             false
                         };
                         if value {
-                            let _ = upcalls.schedule_upcall(0, (temperature as usize, 0, 0));
+                            upcalls
+                                .schedule_upcall(0, (temperature as usize, 0, 0))
+                                .ok();
                         } else {
-                            let _ = upcalls.schedule_upcall(0, (0, 0, 0));
+                            upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         }
                         L3gd20Status::Idle
                     }
 
                     _ => {
-                        let _ = upcalls.schedule_upcall(0, (0, 0, 0));
+                        upcalls.schedule_upcall(0, (0, 0, 0)).ok();
                         L3gd20Status::Idle
                     }
                 });

@@ -313,7 +313,7 @@ impl<'a, S: SpiSlaveDevice<'a>> SpiSlaveClient for SpiPeripheral<'a, S> {
                     let len = app.len;
                     app.len = 0;
                     app.index = 0;
-                    let _ = kernel_data.schedule_upcall(0, (len, 0, 0));
+                    kernel_data.schedule_upcall(0, (len, 0, 0)).ok();
                 } else {
                     self.do_next_read_write(app, kernel_data);
                 }
@@ -326,7 +326,7 @@ impl<'a, S: SpiSlaveDevice<'a>> SpiSlaveClient for SpiPeripheral<'a, S> {
         self.current_process.map(|process_id| {
             let _ = self.grants.enter(process_id, move |app, kernel_data| {
                 let len = app.len;
-                let _ = kernel_data.schedule_upcall(1, (len, 0, 0));
+                kernel_data.schedule_upcall(1, (len, 0, 0)).ok();
             });
         });
     }

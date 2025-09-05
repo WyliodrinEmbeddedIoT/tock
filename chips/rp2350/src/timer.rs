@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright OxidOS Automotive 2025.
 
-use cortexm33::support::with_interrupts_disabled;
+use cortexm33::support::atomic;
 use kernel::hil;
 use kernel::hil::time::{Alarm, Ticks, Ticks32, Time};
 use kernel::utilities::cells::OptionalCell;
@@ -11,28 +11,31 @@ use kernel::utilities::registers::{register_bitfields, register_structs, ReadWri
 use kernel::utilities::StaticRef;
 use kernel::ErrorCode;
 
-use crate::interrupts::TIMER0_IRQ_0;
+use crate::interrupts::{TIMER0_IRQ_0, TIMER1_IRQ_0};
 
 register_structs! {
     /// Controls time and alarms
+    /// time is a 64 bit value indicating the time since power-on
+    /// timeh is the top 32 bits of time & timel is the bottom 32 bits to ch
+    /// An alarm is set by setting alarm_enable and writing to the correspon
     TimerRegisters {
         /// Write to bits 63:32 of time always write timelw before timehw
         (0x000 => timehw: ReadWrite<u32>),
-        /// Write to bits 31:0 of time writes do not get copied to time until timehw is written
+        /// Write to bits 31:0 of time writes do not get copied to time until timehw is writ
         (0x004 => timelw: ReadWrite<u32>),
         /// Read from bits 63:32 of time always read timelr before timehr
         (0x008 => timehr: ReadWrite<u32>),
         /// Read from bits 31:0 of time
         (0x00C => timelr: ReadWrite<u32>),
-        /// Arm alarm 0, and configure the time it will fire. Once armed, the alarm fires when TIMER_ALARM0 == TIMELR. The alarm will disarm itself once it fires, and can be disarmed early using the ARMED status register.
+        /// Arm alarm 0, and configure the time it will fire. Once armed, the alarm fires wh
         (0x010 => alarm0: ReadWrite<u32>),
-        /// Arm alarm 1, and configure the time it will fire. Once armed, the alarm fires when TIMER_ALARM1 == TIMELR. The alarm will disarm itself once it fires, and can be disarmed early using the ARMED status register.
+        /// Arm alarm 1, and configure the time it will fire. Once armed, the alarm fires wh
         (0x014 => alarm1: ReadWrite<u32>),
-        /// Arm alarm 2, and configure the time it will fire. Once armed, the alarm fires when TIMER_ALARM2 == TIMELR. The alarm will disarm itself once it fires, and can be disarmed early using the ARMED status register.
+        /// Arm alarm 2, and configure the time it will fire. Once armed, the alarm fires wh
         (0x018 => alarm2: ReadWrite<u32>),
-        /// Arm alarm 3, and configure the time it will fire. Once armed, the alarm fires when TIMER_ALARM3 == TIMELR. The alarm will disarm itself once it fires, and can be disarmed early using the ARMED status register.
+        /// Arm alarm 3, and configure the time it will fire. Once armed, the alarm fires wh
         (0x01C => alarm3: ReadWrite<u32>),
-        /// Indicates the armed/disarmed status of each alarm. A write to the corresponding ALARMx register arms the alarm. Alarms automatically disarm upon firing, but writing ones here will disarm immediately without waiting to fire.
+        /// Indicates the armed/disarmed status of each alarm. A write to the corresponding
         (0x020 => armed: ReadWrite<u32>),
         /// Raw read from bits 63:32 of time (no side effects)
         (0x024 => timerawh: ReadWrite<u32>),
@@ -42,9 +45,9 @@ register_structs! {
         (0x02C => dbgpause: ReadWrite<u32, DBGPAUSE::Register>),
         /// Set high to pause the timer
         (0x030 => pause: ReadWrite<u32>),
-        /// Set locked bit to disable write access to timer Once set, cannot be cleared (without a reset)
+        /// Set locked bit to disable write access to timer Once set, cannot be cleared (wit
         (0x034 => locked: ReadWrite<u32>),
-        /// Selects the source for the timer. Defaults to the normal tick configured in the ticks block (typically configured to 1 microsecond). Writing to 1 will ignore the tick and count clk_sys cycles instead.
+        /// Selects the source for the timer. Defaults to the normal tick configured in the
         (0x038 => source: ReadWrite<u32>),
         /// Raw Interrupts
         (0x03C => intr: ReadWrite<u32, INTR::Register>),
@@ -168,9 +171,18 @@ INTS [
 const TIMER0_BASE: StaticRef<TimerRegisters> =
     unsafe { StaticRef::new(0x400B0000 as *const TimerRegisters) };
 
+const TIMER1_BASE: StaticRef<TimerRegisters> =
+    unsafe { StaticRef::new(0x400B8000 as *const TimerRegisters) };
+
+enum Timer {
+    Timer0,
+    Timer1,
+}
+
 pub struct RPTimer<'a> {
     registers: StaticRef<TimerRegisters>,
     client: OptionalCell<&'a dyn hil::time::AlarmClient>,
+    timer: Timer,
 }
 
 impl<'a> RPTimer<'a> {
@@ -178,18 +190,27 @@ impl<'a> RPTimer<'a> {
         RPTimer {
             registers: TIMER0_BASE,
             client: OptionalCell::empty(),
+            timer: Timer::Timer0,
         }
     }
 
-    fn enable_interrupt0(&self) {
+    pub const fn new_timer1() -> RPTimer<'a> {
+        RPTimer {
+            registers: TIMER1_BASE,
+            client: OptionalCell::empty(),
+            timer: Timer::Timer1,
+        }
+    }
+
+    fn enable_interrupt(&self) {
         self.registers.inte.modify(INTE::ALARM_0::SET);
     }
 
-    fn disable_interrupt0(&self) {
+    fn disable_interrupt(&self) {
         self.registers.inte.modify(INTE::ALARM_0::CLEAR);
     }
 
-    fn enable_timer_interrupt0(&self) {
+    fn enable_timer_interrupt(&self) {
         // Even though setting the INTE::ALARM_0 bit should be enough to enable
         // the interrupt firing, it seems that RP2040 requires manual NVIC
         // enabling of the interrupt.
@@ -198,18 +219,25 @@ impl<'a> RPTimer<'a> {
         // not fired. This means that the interrupt will be handled whenever the
         // next kernel tasks are processed.
         unsafe {
-            with_interrupts_disabled(|| {
-                cortexm33::nvic::Nvic::new(TIMER0_IRQ_0).enable();
+            atomic(|| {
+                let n = match self.timer {
+                    Timer::Timer0 => cortexm33::nvic::Nvic::new(TIMER0_IRQ_0),
+                    Timer::Timer1 => cortexm33::nvic::Nvic::new(TIMER1_IRQ_0),
+                };
+                n.enable();
             })
         }
     }
 
-    fn disable_timer_interrupt0(&self) {
+    fn disable_timer_interrupt(&self) {
         // Even though clearing the INTE::ALARM_0 bit should be enough to disable
         // the interrupt firing, it seems that RP2040 requires manual NVIC
         // disabling of the interrupt.
         unsafe {
-            cortexm33::nvic::Nvic::new(TIMER0_IRQ_0).disable();
+            match self.timer {
+                Timer::Timer0 => cortexm33::nvic::Nvic::new(TIMER0_IRQ_0).disable(),
+                Timer::Timer1 => cortexm33::nvic::Nvic::new(TIMER1_IRQ_0).disable(),
+            }
         }
     }
 
@@ -245,8 +273,8 @@ impl<'a> Alarm<'a> for RPTimer<'a> {
         }
 
         self.registers.alarm0.set(expire.into_u32());
-        self.enable_timer_interrupt0();
-        self.enable_interrupt0();
+        self.enable_timer_interrupt();
+        self.enable_interrupt();
     }
 
     fn get_alarm(&self) -> Self::Ticks {
@@ -256,13 +284,16 @@ impl<'a> Alarm<'a> for RPTimer<'a> {
     fn disarm(&self) -> Result<(), ErrorCode> {
         self.registers.armed.set(1);
         unsafe {
-            with_interrupts_disabled(|| {
+            atomic(|| {
                 // Clear pending interrupts
-                cortexm33::nvic::Nvic::new(TIMER0_IRQ_0).clear_pending();
+                match self.timer {
+                    Timer::Timer0 => cortexm33::nvic::Nvic::new(TIMER0_IRQ_0).clear_pending(),
+                    Timer::Timer1 => cortexm33::nvic::Nvic::new(TIMER1_IRQ_0).clear_pending(),
+                }
             });
         }
-        self.disable_interrupt0();
-        self.disable_timer_interrupt0();
+        self.disable_interrupt();
+        self.disable_timer_interrupt();
         Ok(())
     }
 
