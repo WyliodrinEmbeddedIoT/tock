@@ -4219,13 +4219,6 @@ impl Iocon {
         match pin {
             LPCPin::P0_0 => self.registers.pio0_0.set(standard_value.into()),
             LPCPin::P0_1 => self.registers.pio0_1.set(standard_value.into()),
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
             // LPCPin::P0_2 => self.registers.pio0_2.set(standard_value.into()),
             // LPCPin::P0_3 => self.registers.pio0_3.set(standard_value.into()),
             // LPCPin::P0_4 => self.registers.pio0_4.set(standard_value.into()),
@@ -4260,10 +4253,6 @@ impl Iocon {
             // LPCPin::P1_1 => self.registers.pio1_1.set(standard_value.into()),
             // LPCPin::P1_2 => self.registers.pio1_2.set(standard_value.into()),
             // LPCPin::P1_3 => self.registers.pio1_3.set(standard_value.into()),
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
             LPCPin::P1_4 => self.registers.pio1_4.set(standard_value.into()), //BLUE LED ON THE BOARD
             // LPCPin::P1_5 => self.registers.pio1_5.set(standard_value.into()),
             LPCPin::P1_6 => self.registers.pio1_6.set(standard_value.into()),
@@ -4331,81 +4320,4 @@ impl Iocon {
         };
         self.configure_pin(pin, config);
     }
-<<<<<<< HEAD
-=======
-=======
-=======
->>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
-            LPCPin::P1_4 => self.registers.pio1_4.set(standard_value.into()), //BLUE LED ON THE BOARD
-            // LPCPin::P1_5 => self.registers.pio1_5.set(standard_value.into()),
-            LPCPin::P1_6 => self.registers.pio1_6.set(standard_value.into()),
-            // LPCPin::P1_7 => self.registers.pio1_7.set(standard_value.into()),
-            // LPCPin::P1_8 => self.registers.pio1_8.set(standard_value.into()),
-            LPCPin::P1_9 => self.registers.pio1_9.set(standard_value.into()), //USER BUTTON ON THE BOARD
-            // LPCPin::P1_10 => self.registers.pio1_10.set(standard_value.into()),
-            // LPCPin::P1_11 => self.registers.pio1_11.set(standard_value.into()),
-            // LPCPin::P1_12 => self.registers.pio1_12.set(standard_value.into()),
-            // LPCPin::P1_13 => self.registers.pio1_13.set(standard_value.into()),
-            // LPCPin::P1_14 => self.registers.pio1_14.set(standard_value.into()),
-            // LPCPin::P1_15 => self.registers.pio1_15.set(standard_value.into()),
-            // LPCPin::P1_16 => self.registers.pio1_16.set(standard_value.into()),
-            // LPCPin::P1_17 => self.registers.pio1_17.set(standard_value.into()),
-            // LPCPin::P1_18 => self.registers.pio1_18.set(standard_value.into()),
-            // LPCPin::P1_19 => self.registers.pio1_19.set(standard_value.into()),
-            // LPCPin::P1_20 => self.registers.pio1_20.set(standard_value.into()),
-            // LPCPin::P1_21 => self.registers.pio1_21.set(standard_value.into()),
-            // LPCPin::P1_22 => self.registers.pio1_22.set(standard_value.into()),
-            // LPCPin::P1_23 => self.registers.pio1_23.set(standard_value.into()),
-            // LPCPin::P1_24 => self.registers.pio1_24.set(standard_value.into()),
-            // LPCPin::P1_25 => self.registers.pio1_25.set(standard_value.into()),
-            // LPCPin::P1_26 => self.registers.pio1_26.set(standard_value.into()),
-            // LPCPin::P1_27 => self.registers.pio1_27.set(standard_value.into()),
-            // LPCPin::P1_28 => self.registers.pio1_28.set(standard_value.into()),
-            // LPCPin::P1_29 => self.registers.pio1_29.set(standard_value.into()),
-            // LPCPin::P1_30 => self.registers.pio1_30.set(standard_value.into()),
-            // LPCPin::P1_31 => self.registers.pio1_31.set(standard_value.into()),
-            _ => {}
-        }
-    }
-<<<<<<< HEAD
->>>>>>> 2cc808484 (Add initial code for the GPIO)
-=======
-
-    pub fn set_pull_none(&self, pin: LPCPin) {
-        let config = Config {
-            function: Function::GPIO,
-            pull: Pull::None,
-            slew: Slew::Standard,
-            invert: false,
-            digital_mode: true,
-            open_drain: false,
-        };
-        self.configure_pin(pin, config);
-    }
-
-    pub fn set_pull_up(&self, pin: LPCPin) {
-        let config = Config {
-            function: Function::GPIO,
-            pull: Pull::Up,
-            slew: Slew::Standard,
-            invert: false,
-            digital_mode: true,
-            open_drain: false,
-        };
-        self.configure_pin(pin, config);
-    }
-
-    pub fn set_pull_down(&self, pin: LPCPin) {
-        let config = Config {
-            function: Function::GPIO,
-            pull: Pull::Down,
-            slew: Slew::Standard,
-            invert: false,
-            digital_mode: true,
-            open_drain: false,
-        };
-        self.configure_pin(pin, config);
-    }
->>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 }

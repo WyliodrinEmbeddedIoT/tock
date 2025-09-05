@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 #![no_std]
 #![recursion_limit = "512"]
 
@@ -11,10 +6,6 @@ use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, Cor
 pub mod chip;
 pub mod clocks;
 pub mod ctimer0;
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 pub mod gpio;
 pub mod inputmux;
 pub mod interrupts;
@@ -23,37 +14,6 @@ pub mod pint;
 // pub mod rtc;
 pub mod syscon;
 
-<<<<<<< HEAD
-=======
-=======
-// Licensed under the Apache License, Version 2.0 or the MIT License.
-// SPDX-License-Identifier: Apache-2.0 OR MIT
-// Copyright Tock Contributors 2025.
-
-=======
->>>>>>> 2cc808484 (Add initial code for the GPIO)
-#![no_std]
-#![recursion_limit = "512"]
-
-use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, CortexMVariant};
-
-<<<<<<< HEAD
->>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
-=======
-pub mod chip;
-pub mod clocks;
-=======
->>>>>>> 06e1db1ac (add: lpc55 alarm support)
-pub mod gpio;
-pub mod inputmux;
-pub mod interrupts;
-pub mod iocon;
-pub mod pint;
-// pub mod rtc;
-pub mod syscon;
-
->>>>>>> 2cc808484 (Add initial code for the GPIO)
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 extern "C" {
     fn _estack();
 }
@@ -81,13 +41,6 @@ pub static BASE_VECTORS: [unsafe extern "C" fn(); 16] = [
     unhandled_interrupt,
     CortexM33::SYSTICK_HANDLER,
 ];
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 2cc808484 (Add initial code for the GPIO)
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), link_section = ".irqs")]
 #[cfg_attr(all(target_arch = "arm", target_os = "none"), used)]
@@ -162,11 +115,3 @@ pub unsafe fn init() {
 
     cortexm33::nvic::enable_all();
 }
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
-=======
->>>>>>> 2cc808484 (Add initial code for the GPIO)
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622

@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-=======
-// Licensed under the Apache License, Version 2.0 or the MIT License.
-// SPDX-License-Identifier: Apache-2.0 OR MIT
-// Copyright Tock Contributors 2025.
-
->>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 #![no_std]
 #![no_main]
 
@@ -41,66 +34,10 @@ pub static mut STACK_MEMORY: [u8; 0x4000] = [0; 0x4000];
 static mut PROCESS_PRINTER: Option<&'static capsules_system::process_printer::ProcessPrinterText> =
     None;
 
-// // --- Manual Register Definitions for System Initialization ---
-// const SYSCON_BASE: usize = 0x5000_0000; // Secure alias for SYSCON
-// const CTIMER0_BASE: usize = 0x50008000;
-// const AHBCLKCTRLSET0_ADDR: *mut u32 = (SYSCON_BASE + 0x200) as *mut u32;
-// const AHBCLKCTRLSET1_ADDR: *mut u32 = (SYSCON_BASE + 0x204) as *mut u32;
-// const TIMER: *mut u32 = (SYSCON_BASE + 0x26C) as *mut u32;
-// const INPUTMUX_BASE: usize = 0x5000_6000;
-// const PINTSEL0_ADDR: *mut u32 = (INPUTMUX_BASE + 0x0C0) as *mut u32;
-
-// // These are the bitmasks from the C code's SystemInit()
-// const SRAM1_CLK: u32 = 1 << 5; // Corresponds to SRAM_CTRL1
-// const SRAM2_CLK: u32 = 1 << 6; // Corresponds to SRAM_CTRL2
-// const SRAM3_CLK: u32 = 1 << 7; // Corresponds to SRAM_CTRL3
-// const SRAM4_CLK: u32 = 1 << 8; // Corresponds to SRAM_CTRL4
-// const IOCON_CLK: u32 = 1 << 13;
-// const GPIO1_CLK: u32 = 1 << 15;
-// const PINT_CLK: u32 = 1 << 18;
-// const INPUTMUX_CLK: u32 = 1 << 11;
-// const CTIMER0_CLK: u32 = 1 << 26;
-// const CTIMERCLKSEL0: u32 = 0;
-// const CTIMERCLKSEL0_ADDR: *mut u32 = (SYSCON_BASE + 0x26C) as *mut u32;
-// const INTPIN: u64 = 1 << 41;
-// const PRESETCTRLCLR1: *mut u32 = (SYSCON_BASE + 0x288) as *mut u32;
-
-// #[pre_init]
 fn system_init() {
-    // This is the absolute first code to run.
-    // We enable clocks for all the peripherals we will need, especially SRAM.
-    // If we don't enable SRAM clocks, the program will fault when the runtime
-    // tries to set up the stack.
-    // write_volatile(
-    //     AHBCLKCTRLSET0_ADDR,
-    //     SRAM1_CLK
-    //         | SRAM2_CLK
-    //         | SRAM3_CLK
-    //         | SRAM4_CLK
-    //         | IOCON_CLK
-    //         | GPIO1_CLK
-    //         | PINT_CLK
-    //         | INPUTMUX_CLK,
-    // );
-
-    // write_volatile(AHBCLKCTRLSET1_ADDR, CTIMER0_CLK);
-
-    // Gate clock
-
-    // core::ptr::write_volatile(CTIMERCLKSEL0_ADDR, 0);
-    // // 2) Gate clock on for CTIMER0.
-    // core::ptr::write_volatile(AHBCLKCTRLSET1_ADDR, CTIMER0_CLK);
-
-    // // 3) Release CTIMER0 reset.
-    // core::ptr::write_volatile(PRESETCTRLCLR1, CTIMER0_CLK);
-    // write_volatile(AHBCLKCTRLSET1_ADDR, ALARM_CLK);
     let clocks = Clock::new();
     clocks.start_gpio_clocks();
     clocks.start_timer_clocks();
-
-    // Add a memory barrier to ensure all writes are committed before proceeding.
-    // asm::dmb();
-    // asm::isb();
 }
 
 unsafe fn get_peripherals() -> &'static mut Lpc55s69DefaultPeripheral<'static> {
@@ -180,18 +117,8 @@ impl KernelResources<Lpc55s69<'static, Lpc55s69DefaultPeripheral<'static>>> for 
 #[no_mangle]
 unsafe fn main() -> ! {
     cortexm33::scb::set_vector_table_offset(0x00000000 as *const ());
-    // By the time we get here, `system_init` has already run.
-    // All necessary clocks are enabled.
-    // unsafe {
-    //     system_init();
-    // }
 
     system_init();
-
-    // let clocks = Clock::new();
-    // clocks.start_gpio_clocks();
-
-    // Create an array to hold process references.
 
     let peripherals = get_peripherals();
 
@@ -202,12 +129,7 @@ unsafe fn main() -> ! {
         Lpc55s69::new(peripherals)
     );
 
-    // Setup space to store the core kernel data structure.
-
-    // let pint = Pint::new();
     cortexm33::nvic::enable_all();
-
-    // lpc55s6x::init();
 
     let processes = components::process_array::ProcessArrayComponent::new()
         .finalize(components::process_array_component_static!(NUM_PROCS));
@@ -228,13 +150,6 @@ unsafe fn main() -> ! {
     .finalize(components::alarm_component_static!(
         lpc55s6x::ctimer0::LPCTimer
     ));
-
-    // let alarmTest = lpc55s6x::ctimer0::LPCTimer::new();
-    // // hprintln!("PR: {}", alarmTest.get_pr());
-    // // hprintln!("{}", alarmTest.is_armed());
-    // loop {
-    //     alarmTest.now();
-    // }
 
     // Allocate the GpioLPCPin statically so its reference is valid
     let gpio = components::gpio::GpioComponent::new(
@@ -336,17 +251,10 @@ unsafe fn main() -> ! {
     ));
 
     const INPUTMUX_SRC: u8 = 41;
-    // // unsafe {
-    // //     write_volatile(LPCPinTSEL0_ADDR, INPUTMUX_SRC.try_into().unwrap());
-    // // }
 
     peripherals.pins.inputmux.set_pintsel(0, INPUTMUX_SRC);
 
     peripherals.pins.pint.configure_interrupt(0, Edge::Rising);
-
-    // cortexm33::nvic::clear_all_pending();
-
-    // pint.configure_interrupt(0, Edge::Rising);
 
     // These symbols are defined in the linker script.
     extern "C" {
