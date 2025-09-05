@@ -13,10 +13,22 @@ PROBE_RS=probe-rs
 # probe-rs needs this to know what it's flashing.
 iCHIP=LPC55S69JBD100
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 APP=/home/pc1/Projects/libtock-c/examples/blink/build/cortex-m7/cortex-m7.tbf
 KERNEL=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM).elf
 KERNEL_WITH_APP=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)-app.elf
 
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 # Default target for installing the kernel.
 .PHONY: install
 install: flash
@@ -39,7 +51,61 @@ debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
 
 # An alias for the default `install` target.
 .PHONY: program
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
 program: release
 	arm-none-eabi-objcopy --set-section-flags .apps=LOAD,ALLOC $(KERNEL) $(KERNEL_WITH_APP)
 	arm-none-eabi-objcopy --update-section .apps=$(APP) $(KERNEL_WITH_APP)
 	$(PROBE_RS) run --chip $(iCHIP) $(KERNEL_WITH_APP)
+=======
+program: install
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
+=======
+# --- Paths to Artifacts ---
+DEBUG_ELF = $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM)
+RELEASE_ELF = $(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)
+=======
+APP=/home/pc1/Projects/libtock-c/examples/buttons/build/cortex-m7/cortex-m7.tbf
+=======
+APP=/home/pc1/Projects/libtock-c/examples/blink/build/cortex-m7/cortex-m7.tbf
+>>>>>>> 06e1db1ac (add: lpc55 alarm support)
+KERNEL=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM).elf
+KERNEL_WITH_APP=$(TOCK_ROOT_DIRECTORY)/target/$(TARGET)/release/$(PLATFORM)-app.elf
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
+
+# Default target for installing the kernel.
+.PHONY: install
+install: flash
+<<<<<<< HEAD
+program: debug
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
+=======
+
+# flash-debug is no longer needed as a separate target, but kept for
+# compatibility. `make debug` is the new recommended command.
+.PHONY: flash-debug
+flash-debug: debug
+
+# Flash the release version of the kernel to the board.
+.PHONY: flash
+flash: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).elf
+	$(PROBE_RS) flash --chip $(CHIP) --erase-all $<
+
+# Flash the debug version and attach an RTT console to view kernel logs.
+# This is the recommended command for debugging.
+.PHONY: debug
+debug: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/debug/$(PLATFORM).elf
+	$(PROBE_RS) run --chip $(iCHIP) $<
+
+# An alias for the default `install` target.
+.PHONY: program
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
+program: release
+	arm-none-eabi-objcopy --set-section-flags .apps=LOAD,ALLOC $(KERNEL) $(KERNEL_WITH_APP)
+	arm-none-eabi-objcopy --update-section .apps=$(APP) $(KERNEL_WITH_APP)
+	$(PROBE_RS) run --chip $(iCHIP) $(KERNEL_WITH_APP)
+<<<<<<< HEAD
+=======
+>>>>>>> 6eecc9169 (Add the posibility to upload a process to the board)
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622

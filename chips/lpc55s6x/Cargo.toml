@@ -1,3 +1,16 @@
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+# Licensed under the Apache License, Version 2.0 or the MIT License.
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+# Copyright Tock Contributors 2025.
+
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
+=======
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 [package]
 name = "lpc55s6x"
 version.workspace = true
@@ -8,8 +21,21 @@ edition.workspace = true
 cortexm33 = { path = "../../arch/cortex-m33" }
 kernel = { path = "../../kernel" }
 enum_primitive = { path = "../../libraries/enum_primitive" }
+<<<<<<< HEAD
 cortex-m = "0.7.7"
 cortex-m-semihosting = "0.5.0"
+=======
+<<<<<<< HEAD
+<<<<<<< HEAD
+cortex-m = "0.7.7"
+cortex-m-semihosting = "0.5.0"
+=======
+>>>>>>> 9d726ec54 (Adding support for NXP-LPC55)
+=======
+cortex-m = "0.7.7"
+cortex-m-semihosting = "0.5.0"
+>>>>>>> 2cc808484 (Add initial code for the GPIO)
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 
 [lints]
 workspace = true

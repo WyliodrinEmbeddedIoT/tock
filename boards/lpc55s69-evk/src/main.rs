@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+=======
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2025.
+
+>>>>>>> 2fdc59ab742fd1fac587e9ae8266e3bb55226622
 #![no_std]
 #![no_main]
 
