@@ -3,18 +3,15 @@
 // Copyright Tock Contributors 2024.
 
 use core::fmt::Write;
-use core::mem::MaybeUninit;
 
-use kernel::component::Component;
 use kernel::platform::chip::Chip;
-use kernel::static_init;
 use x86::mpu::PagingMPU;
 use x86::registers::bits32::paging::{PD, PT};
 use x86::support;
 use x86::{Boundary, InterruptPoller};
 
 use crate::pit::{Pit, RELOAD_1KHZ};
-use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
+use crate::serial::SerialPort;
 use crate::vga_uart_driver::VgaText;
 
 /// Interrupt constants for legacy PC peripherals
@@ -29,6 +26,24 @@ mod interrupt {
 
     /// Interrupt number shared by COM1 and COM3 serial devices
     pub(super) const COM1_COM3: u32 = (PIC1_OFFSET as u32) + 4;
+}
+
+/// Low-level CPU + PIC init. No allocations; safe to call once during boot.
+pub unsafe fn x86_low_level_init(_pd: &mut PD, _pt: &mut PT) {
+    unsafe {
+        // CPU, IDT, segmentation, etc.
+        x86::init();
+        // Remap/unmask legacy PIC
+        crate::pic::init();
+    }
+
+    // (VGA clear stays in the board; call x86_q35::vga::new_text_console(pd) there)
+}
+
+/// Optional convenience: expose VGA early clear via chip (still no allocations).
+/// Call this from the BOARD if you want the blank screen before first prints.
+pub fn vga_early_clear(pd: &mut PD) {
+    crate::vga::new_text_console(pd); // ensure new_text_console is `pub` in vga.rs
 }
 
 /// Representation of a generic PC platform.
@@ -159,108 +174,25 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
     }
 }
 
-/// Component helper for constructing a [`Pc`] chip instance.
-///
-/// During the call to `finalize()`, this helper will perform low-level initialization of the PC
-/// hardware to ensure a consistent CPU state. This includes initializing memory segmentation and
-/// interrupt handling. See [`x86::init`] for further details.
-pub struct PcComponent<'a> {
-    pd: &'a mut PD,
-    pt: &'a mut PT,
-}
-
-impl<'a> PcComponent<'a> {
-    /// Creates a new `PcComponent` instance.
-    ///
-    /// ## Safety
-    ///
-    /// It is unsafe to construct more than a single `PcComponent` during the entire lifetime of the
-    /// kernel.
-    ///
-    /// Before calling, memory must be identity-mapped. Otherwise, introduction of flat segmentation
-    /// will cause the kernel's code/data to move unexpectedly.
-    ///
-    /// See [`x86::init`] for further details.
-    pub unsafe fn new(pd: &'a mut PD, pt: &'a mut PT) -> Self {
-        Self { pd, pt }
-    }
-}
-
-impl Component for PcComponent<'static> {
-    type StaticInput = (
-        <SerialPortComponent as Component>::StaticInput,
-        <SerialPortComponent as Component>::StaticInput,
-        <SerialPortComponent as Component>::StaticInput,
-        <SerialPortComponent as Component>::StaticInput,
-        &'static mut MaybeUninit<Pc<'static>>,
-    );
-    type Output = &'static Pc<'static>;
-
-    fn finalize(self, s: Self::StaticInput) -> Self::Output {
-        // Low-level hardware initialization. We do this first to guarantee the CPU is in a
-        // predictable state before initializing the chip object.
-        unsafe {
-            x86::init();
-            crate::pic::init();
-            // Enable the VGA path by building or running with the feature flag, e.g.:
-            //   `cargo run -- -display none`
-            // A plain `make run` / `cargo run` keeps everything on COM1.
-            //
-            // Initialise VGA and clear BIOS text if VGA is enabled
-            // Clear BIOS banner: the real-mode BIOS leaves its text (and the cursor off-screen) in
-            // 0xB8000.  Wiping the full 80×25 buffer gives us a clean screen and a visible cursor
-            // before the kernel prints its first message.
-            // SAFETY: PAGE_DIR is identity-mapped, aligned, and unique
-            let pd: &mut PD = &mut *core::ptr::from_mut(self.pd);
-            crate::vga::new_text_console(pd);
-        }
-
-        let com1 = unsafe { SerialPortComponent::new(COM1_BASE).finalize(s.0) };
-        let com2 = unsafe { SerialPortComponent::new(COM2_BASE).finalize(s.1) };
-        let com3 = unsafe { SerialPortComponent::new(COM3_BASE).finalize(s.2) };
-        let com4 = unsafe { SerialPortComponent::new(COM4_BASE).finalize(s.3) };
-
-        let pit = unsafe { Pit::new() };
-
-        let vga = unsafe { static_init!(VgaText, VgaText::new()) };
-
-        kernel::deferred_call::DeferredCallClient::register(vga);
-
-        let paging = unsafe {
-            let pd_addr = core::ptr::from_ref(self.pd) as usize;
-            let pt_addr = core::ptr::from_ref(self.pt) as usize;
-            PagingMPU::new(self.pd, pd_addr, self.pt, pt_addr)
-        };
-
-        paging.init();
-
-        let syscall = Boundary::new();
-
-        let pc = s.4.write(Pc {
+impl<'a, const PR: u16> Pc<'a, PR> {
+    pub fn new(
+        com1: &'a SerialPort<'a>,
+        com2: &'a SerialPort<'a>,
+        com3: &'a SerialPort<'a>,
+        com4: &'a SerialPort<'a>,
+        pit: Pit<'a, PR>,
+        vga: &'a VgaText<'a>,
+        paging: PagingMPU<'a>,
+    ) -> Self {
+        Self {
             com1,
             com2,
             com3,
             com4,
             pit,
             vga,
-            syscall,
+            syscall: Boundary::new(),
             paging,
-        });
-
-        pc
+        }
     }
-}
-
-/// Provides static buffers needed for `PcComponent::finalize()`.
-#[macro_export]
-macro_rules! x86_q35_component_static {
-    () => {{
-        (
-            $crate::serial_port_component_static!(),
-            $crate::serial_port_component_static!(),
-            $crate::serial_port_component_static!(),
-            $crate::serial_port_component_static!(),
-            kernel::static_buf!($crate::Pc<'static>),
-        )
-    };};
 }

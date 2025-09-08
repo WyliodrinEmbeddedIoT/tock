@@ -27,10 +27,13 @@ use kernel::process::ProcessArray;
 use kernel::scheduler::cooperative::CooperativeSched;
 use kernel::syscall::SyscallDriver;
 use kernel::{create_capability, static_init};
+use x86::mpu::PagingMPU;
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
-use x86_q35::{Pc, PcComponent};
+use x86_q35::serial::{SerialPort, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
+use x86_q35::vga_uart_driver::VgaText;
+use x86_q35::{vga_early_clear, x86_low_level_init, Pc};
 
 mod multiboot;
 use multiboot::MultibootV1Header;
@@ -148,12 +151,53 @@ impl<C: Chip> KernelResources<C> for QemuI386Q35Platform {
 unsafe extern "cdecl" fn main() {
     // ---------- BASIC INITIALIZATION -----------
 
-    // Basic setup of the i486 platform
-    let chip = PcComponent::new(
-        &mut *ptr::addr_of_mut!(PAGE_DIR),
-        &mut *ptr::addr_of_mut!(PAGE_TABLE),
-    )
-    .finalize(x86_q35::x86_q35_component_static!());
+    // Low-level CPU + PIC (no allocations)
+    unsafe {
+        x86_low_level_init(
+            &mut *ptr::addr_of_mut!(PAGE_DIR),
+            &mut *ptr::addr_of_mut!(PAGE_TABLE),
+        );
+        // Optional: blank BIOS banner / enable text mode before first prints
+        vga_early_clear(&mut *ptr::addr_of_mut!(PAGE_DIR));
+    }
+
+    // Hardware peripherals (board-owned)
+    let com1 = static_init!(SerialPort<'static>, unsafe { SerialPort::new(COM1_BASE) });
+    kernel::deferred_call::DeferredCallClient::register(com1);
+
+    let com2 = static_init!(SerialPort<'static>, unsafe { SerialPort::new(COM2_BASE) });
+    kernel::deferred_call::DeferredCallClient::register(com2);
+
+    let com3 = static_init!(SerialPort<'static>, unsafe { SerialPort::new(COM3_BASE) });
+    kernel::deferred_call::DeferredCallClient::register(com3);
+
+    let com4 = static_init!(SerialPort<'static>, unsafe { SerialPort::new(COM4_BASE) });
+    kernel::deferred_call::DeferredCallClient::register(com4);
+
+    let pit = unsafe { Pit::new() };
+
+    let vga = static_init!(VgaText, VgaText::new());
+    kernel::deferred_call::DeferredCallClient::register(vga);
+
+    // MPU / paging
+    let paging = unsafe {
+        let pd_addr = ptr::addr_of!(PAGE_DIR) as usize;
+        let pt_addr = ptr::addr_of!(PAGE_TABLE) as usize;
+        PagingMPU::new(
+            &mut *ptr::addr_of_mut!(PAGE_DIR),
+            pd_addr,
+            &mut *ptr::addr_of_mut!(PAGE_TABLE),
+            pt_addr,
+        )
+    };
+    paging.init();
+
+    // Build the chip
+    let chip = static_init!(
+        Pc<'static>,
+        Pc::new(com1, com2, com3, com4, pit, vga, paging)
+    );
+    CHIP = Some(chip);
 
     // Acquire required capabilities
     let process_mgmt_cap = create_capability!(capabilities::ProcessManagementCapability);

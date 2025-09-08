@@ -1,6 +1,6 @@
 // Licensed under the Apache License, Version 2.0 or the MIT License.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-// Copyright Tock Contributors 2024.
+// Copyright Tock Contributors 2025.
 
 //! Support for traditional x86 PC hardware.
 //!
@@ -15,15 +15,13 @@
 #![no_std]
 
 mod chip;
-pub use chip::{Pc, PcComponent};
+pub use chip::Pc;
+pub use chip::{vga_early_clear, x86_low_level_init};
 
 mod interrupts;
-
 mod pic;
 
 pub mod pit;
-
 pub mod serial;
-
 pub mod vga;
 pub mod vga_uart_driver;

@@ -15,11 +15,9 @@
 
 use core::cell::Cell;
 use core::fmt::{self, Write};
-use core::mem::MaybeUninit;
 
 use x86::registers::io;
 
-use kernel::component::Component;
 use kernel::debug::IoWrite;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::uart::{
@@ -161,6 +159,26 @@ pub struct SerialPort<'a> {
 }
 
 impl SerialPort<'_> {
+    /// # Safety
+    /// - There must be an 8250-compatible UART at `base`.
+    /// - Only one SerialPort may access that base.
+    pub unsafe fn new(base: u16) -> Self {
+        Self {
+            base,
+            tx_client: OptionalCell::empty(),
+            tx_buffer: TakeCell::empty(),
+            tx_len: Cell::new(0),
+            tx_index: Cell::new(0),
+            tx_abort: Cell::new(false),
+            rx_client: OptionalCell::empty(),
+            rx_buffer: TakeCell::empty(),
+            rx_len: Cell::new(0),
+            rx_index: Cell::new(0),
+            rx_abort: Cell::new(false),
+            dc: DeferredCall::new(),
+        }
+    }
+
     /// Finishes out a long-running TX operation.
     fn finish_tx(&self, res: Result<(), ErrorCode>) {
         if let Some(b) = self.tx_buffer.take() {
@@ -422,61 +440,6 @@ impl DeferredCallClient for SerialPort<'_> {
     fn register(&'static self) {
         self.dc.register(self);
     }
-}
-
-/// Component interface used to instantiate a [`SerialPort`]
-pub struct SerialPortComponent {
-    base: u16,
-}
-
-impl SerialPortComponent {
-    /// Constructs and returns a new instance of `SerialPortComponent`.
-    ///
-    /// ## Safety
-    ///
-    /// An 8250-compatible serial port must exist at the specified address. Otherwise we could end
-    /// up spamming some unknown device with I/O operations.
-    ///
-    /// The specified serial port must not be in use by any other instance of `SerialPort` or any
-    /// other code.
-    pub unsafe fn new(base: u16) -> Self {
-        Self { base }
-    }
-}
-
-impl Component for SerialPortComponent {
-    type StaticInput = (&'static mut MaybeUninit<SerialPort<'static>>,);
-    type Output = &'static SerialPort<'static>;
-
-    fn finalize(self, s: Self::StaticInput) -> Self::Output {
-        let serial = s.0.write(SerialPort {
-            base: self.base,
-            tx_client: OptionalCell::empty(),
-            tx_buffer: TakeCell::empty(),
-            tx_len: Cell::new(0),
-            tx_index: Cell::new(0),
-            tx_abort: Cell::new(false),
-            rx_client: OptionalCell::empty(),
-            rx_buffer: TakeCell::empty(),
-            rx_len: Cell::new(0),
-            rx_index: Cell::new(0),
-            rx_abort: Cell::new(false),
-            dc: DeferredCall::new(),
-        });
-
-        // Deferred call registration
-        serial.register();
-
-        serial
-    }
-}
-
-/// Statically allocates the storage needed to finalize a [`SerialPortComponent`].
-#[macro_export]
-macro_rules! serial_port_component_static {
-    () => {{
-        (kernel::static_buf!($crate::serial::SerialPort<'static>),)
-    }};
 }
 
 /// Serial port handle for blocking I/O
