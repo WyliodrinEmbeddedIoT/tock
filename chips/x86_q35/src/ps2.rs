@@ -22,6 +22,8 @@ use tock_registers::LocalRegisterCopy;
 use x86::registers::io;
 use x86::support;
 
+use crate::dv_ms::Mouse as ms;
+
 /// PS/2 controller ports
 pub const PS2_DATA_PORT: u16 = 0x60;
 pub const PS2_STATUS_PORT: u16 = 0x64;
@@ -30,6 +32,9 @@ const PIC2_DATA_PORT: u16 = 0xA1; // added PIC2 (!!! check address)
 
 /// Depth of the scan-code ring buffer
 const BUFFER_SIZE: usize = 32;
+const MOUSE_BUFFER_SIZE: usize = 32;
+
+const MOUSE_PACKET_SIZE: usize = 3;
 
 /// Timeout limit for spin loops
 const TIMEOUT_LIMIT: usize = 1_000_000;
@@ -312,6 +317,14 @@ pub struct Ps2Controller {
 
     // optional client for keyboard capsule later on
     client: OptionalCell<&'static dyn Ps2Client>,
+
+    ms_buffer: RefCell<[[u8; MOUSE_PACKET_SIZE]; MOUSE_BUFFER_SIZE]>,
+    ms_head: Cell<usize>,
+    ms_tail: Cell<usize>,
+    ms_count: Cell<usize>, // new field to track number of valid entries
+    ms_packet: Cell<[u8; MOUSE_PACKET_SIZE]>,
+    ms_index: Cell<usize>,
+    ms_overruns: Cell<usize>,
 }
 
 impl Ps2Controller {
@@ -334,6 +347,14 @@ impl Ps2Controller {
             deferred_call: DeferredCall::new(),
             prev_log_bytes: Cell::new(0),
             client: OptionalCell::empty(),
+
+            ms_buffer: RefCell::new([[0; MOUSE_PACKET_SIZE]; BUFFER_SIZE]),
+            ms_head: Cell::new(0),
+            ms_tail: Cell::new(0),
+            ms_count: Cell::new(0),
+            ms_packet: Cell::new([0; MOUSE_PACKET_SIZE]),
+            ms_index: Cell::new(0),
+            ms_overruns: Cell::new(0),
         }
     }
 
@@ -400,6 +421,8 @@ impl Ps2Controller {
             0x00 => Ok(()), // BAT passed ?
             other => Err(Ps2Error::UnexpectedResponse(other)),
         }
+        // to add default attributes self-assign: sample rate 100 s/sec + res:4 counts/mm
+        // + scaling:1:1 + data reporting disabled
     }
 
     fn ms_enable_reporting(&self) -> Ps2Result<()> {
@@ -428,7 +451,7 @@ impl Ps2Controller {
             }
         }
     }
-
+    /// Send a byte to the mouse and wait for ACK (0xFA).
     pub fn send_mouse_with_ack(&self, byte: u8, tries: u8) -> Ps2Result<()> {
         let mut retries = 0;
         loop {
@@ -488,7 +511,7 @@ impl Ps2Controller {
 
         // device sequence (mouse)
         self.tally_timeout(self.ms_disable_reporting())?; // F5
-        self.tally_timeout(self.ms_reset_and_wait_bat())?; // FF -> BAT= 00 or AA
+        self.tally_timeout(self.ms_reset_and_wait_bat())?; // FF -> BAT=00 or AA
         self.tally_timeout(cfg_set_irq12(true))?; // turn on controller-side IRQ12 (PIC policy lives in chip)
         self.tally_timeout(self.ms_enable_reporting())?; // F4
 
@@ -561,8 +584,50 @@ impl Ps2Controller {
             self.deferred_call.set();
         }
     }
+    pub fn handle_mouse_interrupt(&self) {
+        let mut scheduled = false;
 
-    /// Pop the next scan-code, or None if buffer is empty.
+        loop {
+            let status = read_status();
+            if (status & 0x01) == 0 {
+                break; // nothing in OB
+            }
+
+            if (status & 0x20) == 0 {
+                break; // not from mouse
+            }
+
+            if (status & 0xC0) != 0 {
+                continue; // drop on parity/timeout errors
+            }
+
+            let b = unsafe { io::inb(PS2_DATA_PORT) };
+            let mut pkt = self.ms_packet.get();
+            let mut idx = self.ms_index.get();
+
+            if idx == 0 && (b & 0x08) == 0 {
+                continue; // resync
+            }
+
+            pkt[idx] = b;
+            idx += 1;
+
+            if idx == 3 {
+                self.push_mouse_packet(pkt);
+                idx = 0;
+                scheduled = true;
+            }
+
+            self.ms_packet.set(pkt);
+            self.ms_index.set(idx);
+        }
+
+        if scheduled {
+            self.deferred_call.set();
+        }
+    }
+
+    /// Internal: push a scan-code into the ring buffer, dropping oldest if full.
     #[inline(always)]
     fn push_code_atomic(&self, b: u8) {
         // Mask IRQs briefly while we mutate head/tail/count.
@@ -584,7 +649,7 @@ impl Ps2Controller {
             self.bytes_rx.set(self.bytes_rx.get().wrapping_add(1));
         })
     }
-    /// Internal: push a scan-code into the ring buffer, dropping oldest if full.
+    /// Pop the next scan-code, or None if buffer is empty.
     pub fn pop_scan_code(&self) -> Option<u8> {
         // Same tiny IRQ-masked critical section for the consumer.
 
@@ -600,7 +665,40 @@ impl Ps2Controller {
             }
         })
     }
+    /// Internal: push a mouse packet into the ring buffer, dropping oldest if full.
+    #[inline(always)]
+    fn push_mouse_packet(&self, pkt: [u8; MOUSE_PACKET_SIZE]) {
+        support::with_interrupts_disabled(|| {
+            if self.ms_count.get() < MOUSE_BUFFER_SIZE {
+                let tail = self.ms_tail.get();
+                self.ms_buffer.borrow_mut()[tail] = pkt;
+                self.ms_tail.set((tail + 1) % MOUSE_BUFFER_SIZE);
+                self.ms_count.set(self.ms_count.get() + 1);
+            } else {
+                self.ms_head
+                    .set((self.ms_head.get() + 1) % MOUSE_BUFFER_SIZE); // overwrite oldest
+                self.ms_tail
+                    .set((self.ms_tail.get() + 1) % MOUSE_BUFFER_SIZE);
+                self.ms_overruns.set(self.ms_overruns.get().wrapping_add(1));
+            }
+        });
+    }
+    /// Pop the next mouse packet, or None if buffer is empty.
+    pub fn pop_mouse_packet(&self) -> Option<[u8; MOUSE_PACKET_SIZE]> {
+        support::with_interrupts_disabled(|| {
+            if self.ms_count.get() == 0 {
+                None
+            } else {
+                let head = self.ms_head.get();
+                let pkt = self.ms_buffer.borrow()[head];
+                self.ms_head.set((head + 1) % MOUSE_BUFFER_SIZE);
+                self.ms_count.set(self.ms_count.get() - 1);
+                Some(pkt)
+            }
+        })
+    }
 }
+
 impl DeferredCallClient for Ps2Controller {
     fn handle_deferred_call(&self) {
         // drain and print MAKE/BREAKs

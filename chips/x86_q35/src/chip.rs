@@ -17,8 +17,6 @@ use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
 use crate::vga_uart_driver::VgaText;
 
-use crate::dv_ms::Mouse; // added mouse crate
-
 /// Interrupt constants for legacy PC peripherals
 mod interrupt {
     use crate::pic::PIC1_OFFSET;
@@ -69,7 +67,7 @@ pub struct Pc<'a, const PR: u16 = RELOAD_1KHZ> {
     pub ps2: &'a crate::ps2::Ps2Controller,
 
     /// PS/2 Mouse
-    pub ms: &'a crate::dv_ms::Mouse<'a>,
+    // pub ms: &'a crate::dv_ms::Mouse<'a>,
 
     /// System call context
     syscall: Boundary,
@@ -104,7 +102,7 @@ impl<'a, const PR: u16> Chip for Pc<'a, PR> {
                         self.ps2.handle_interrupt();
                     }
                     interrupt::MOUSE => {
-                        self.ms.handle_interrupt();
+                        self.ps2.handle_mouse_interrupt();
                     }
                     _ => unimplemented!("interrupt {num}"),
                 }
@@ -188,7 +186,7 @@ pub struct PcComponent<'a> {
     pt: &'a mut PT,
 
     ps2: Option<&'a crate::ps2::Ps2Controller>,
-    mouse: Option<&'a crate::dv_ms::Mouse<'a>>, // added 4 mouse!!!!!!
+    // mouse: Option<&'a crate::dv_ms::Mouse<'a>>, // added 4 mouse!!!!!!
 }
 
 impl<'a> PcComponent<'a> {
@@ -197,7 +195,7 @@ impl<'a> PcComponent<'a> {
             pd,
             pt,
             ps2: None,
-            mouse: None,
+            // mouse: None,
         }
     }
 
@@ -206,11 +204,11 @@ impl<'a> PcComponent<'a> {
         self
     }
 
-    pub fn with_mouse(mut self, mouse: &'a crate::dv_ms::Mouse<'a>) -> Self {
-        // ← new
-        self.mouse = Some(mouse);
-        self
-    }
+    // pub fn with_mouse(mut self, mouse: &'a crate::dv_ms::Mouse<'a>) -> Self {
+    //     // ← new
+    //     self.mouse = Some(mouse);
+    //     self
+    // }
 }
 
 impl Component for PcComponent<'static> {
@@ -262,7 +260,7 @@ impl Component for PcComponent<'static> {
 
         // PS/2 instance supplied via .with_ps2(...)
         let ps2 = self.ps2.expect("PcComponent::with_ps2 was not called");
-        let mouse = self.mouse.expect("PcComponent::with_mouse was not called"); // added new 4 the mouse
+        //let mouse = self.mouse.expect("PcComponent::with_mouse was not called"); // added new 4 the mouse
 
         kernel::deferred_call::DeferredCallClient::register(ps2);
 
@@ -277,7 +275,7 @@ impl Component for PcComponent<'static> {
             pit,
             vga,
             ps2,
-            ms: mouse, // ← pass the mouse
+            // ms: mouse, // ← pass the mouse
             syscall,
             paging,
         });
