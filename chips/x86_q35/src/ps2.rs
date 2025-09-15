@@ -325,6 +325,8 @@ pub struct Ps2Controller {
     ms_packet: Cell<[u8; MOUSE_PACKET_SIZE]>,
     ms_index: Cell<usize>,
     ms_overruns: Cell<usize>,
+
+    mouse_client: OptionalCell<&'static dyn Ps2MouseClient>, //added mouse client 4 cursor delete if needed, just for testing
 }
 
 impl Ps2Controller {
@@ -355,7 +357,12 @@ impl Ps2Controller {
             ms_packet: Cell::new([0; MOUSE_PACKET_SIZE]),
             ms_index: Cell::new(0),
             ms_overruns: Cell::new(0),
+            mouse_client: OptionalCell::empty(), //added mouse client 4 cursor delete if needed, just for testing
         }
+    }
+    ///int ms -> added mouse client 4 cursor delete if needed, just for testing
+    pub fn set_mouse_client(&self, client: &'static dyn Ps2MouseClient) {
+        self.mouse_client.set(client);
     }
 
     /// telemetry debugging for future devices
@@ -426,7 +433,7 @@ impl Ps2Controller {
     }
 
     fn ms_enable_reporting(&self) -> Ps2Result<()> {
-        self.send_mouse_with_ack(0xF5, 3)
+        self.send_mouse_with_ack(0xF4, 3) //changed
     }
 
     /// Send a byte to the device and wait for ACK (0xFA).
@@ -704,6 +711,11 @@ impl DeferredCallClient for Ps2Controller {
         // drain and print MAKE/BREAKs
         self.decode_and_log_stream();
 
+        // drain mouse packets and deliver to client
+        while let Some(pkt) = self.pop_mouse_packet() {
+            self.mouse_client.map(|c| c.handle_mouse_packet(pkt)); //added mouse packet drain
+        }
+
         // log health only when bytes_rx advanced
         let cur = self.bytes_rx.get();
         // print every N bytes so we don't spam the console
@@ -715,4 +727,7 @@ impl DeferredCallClient for Ps2Controller {
     fn register(&'static self) {
         self.deferred_call.register(self);
     }
+}
+pub trait Ps2MouseClient {
+    fn handle_mouse_packet(&self, pkt: [u8; 3]);
 }
