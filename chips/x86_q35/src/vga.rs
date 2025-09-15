@@ -145,8 +145,8 @@ pub enum VgaMode {
 
 const TEXT_BUFFER_ADDR: usize = 0xB8000;
 // Buffer dimensions
-const TEXT_BUFFER_WIDTH: usize = 80;
-const TEXT_BUFFER_HEIGHT: usize = 25;
+pub(crate) const TEXT_BUFFER_WIDTH: usize = 80;
+pub(crate) const TEXT_BUFFER_HEIGHT: usize = 25;
 /// Physical address where QEMU exposes the linear-frame-buffer BAR.
 const LFB_PHYS_BASE: u32 = 0xE0_00_0000;
 
