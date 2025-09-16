@@ -10,15 +10,16 @@
 //!
 //! This file intentionally contains **no** UART concepts. It is purely a TextScreen
 
-use crate::vga::{Vga, TEXT_BUFFER_HEIGHT, TEXT_BUFFER_WIDTH};
+use crate::vga::{TextMode, TextModeCap, Vga, TEXT_BUFFER_HEIGHT, TEXT_BUFFER_WIDTH};
 use core::cell::Cell;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::text_screen::{TextScreen as HilTextScreen, TextScreenClient};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::ErrorCode;
 
-pub struct VgaTextScreen<'a> {
-    vga: Vga,
+// Generic adapter. We only implement the HIL for M: TextModeCap
+pub struct VgaTextScreenImpl<'a, M: TextModeCap> {
+    vga: Vga<M>,
     client: OptionalCell<&'a dyn TextScreenClient>,
 
     // deferred completion for print()
@@ -28,10 +29,10 @@ pub struct VgaTextScreen<'a> {
     busy: Cell<bool>,
 }
 
-impl VgaTextScreen<'_> {
+impl<M: TextModeCap> VgaTextScreenImpl<'_, M> {
     pub fn new() -> Self {
         Self {
-            vga: Vga::new(),
+            vga: Vga::<M>::new(),
             client: OptionalCell::empty(),
             dcall: DeferredCall::new(),
             tx_buf: TakeCell::empty(),
@@ -44,14 +45,9 @@ impl VgaTextScreen<'_> {
     pub fn clear_screen(&self) {
         self.vga.clear();
     }
-
-    // Keep the board wiring simple
-    pub fn register_deferred_call(&'static self) {
-        self.dcall.register(self);
-    }
 }
 
-impl<'a> HilTextScreen<'a> for VgaTextScreen<'a> {
+impl<'a, M: TextModeCap> HilTextScreen<'a> for VgaTextScreenImpl<'a, M> {
     fn set_client(&self, client: Option<&'a dyn TextScreenClient>) {
         match client {
             Some(c) => self.client.set(c),
@@ -89,8 +85,9 @@ impl<'a> HilTextScreen<'a> for VgaTextScreen<'a> {
         Ok(())
     }
 
-    fn set_cursor(&self, _x: usize, _y: usize) -> Result<(), ErrorCode> {
-        // Minimal first pass: acknowledge immediately.
+    fn set_cursor(&self, x: usize, y: usize) -> Result<(), ErrorCode> {
+        // Forward to the writer; it bounds-checks and updates the HW cursor.
+        self.vga.set_cursor(x, y);
         self.client.map(|c| c.command_complete(Ok(())));
         Ok(())
     }
@@ -132,7 +129,7 @@ impl<'a> HilTextScreen<'a> for VgaTextScreen<'a> {
     }
 }
 
-impl DeferredCallClient for VgaTextScreen<'_> {
+impl<M: TextModeCap> DeferredCallClient for VgaTextScreenImpl<'_, M> {
     fn handle_deferred_call(&self) {
         if let Some(buf) = self.tx_buf.take() {
             let len = self.tx_len.get();
@@ -145,3 +142,6 @@ impl DeferredCallClient for VgaTextScreen<'_> {
         self.dcall.register(self);
     }
 }
+
+/// Public, concrete type the board uses: text-only screen.
+pub type VgaTextScreen<'a> = VgaTextScreenImpl<'a, TextMode>;

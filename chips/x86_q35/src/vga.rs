@@ -2,21 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright Tock Contributors 2025.
 
-//! Minimal VGA peripheral implementation for the Tock x86_q35 chip crate.
+//! Minimal VGA peripheral implementation for the x86_q35 chip.
 //!
-//! Supports classic 80×25 text mode out-of-the-box and exposes a stub for
-//! setting planar 16-colour graphics modes (640×480 and 800×600).  These
-//! extra modes will be filled in later once the driver is integrated with a
-//! future framebuffer capsule.
+//! This module exposes a **text-mode** VGA writer only. Mode selection is
+//! enforced at the type level via a capability trait (`TextModeCap`), and we
+//! provide a concrete alias `VgaText = Vga<TextMode>`.
 //!
+//! Graphics modes are intentionally not present yet; adding them will mean
+//! introducing a new capability type (e.g., `GraphicsMode`) and a separate
+//! adapter, so code that expects text-only APIs cannot accidentally compile
+//! against graphics.
 //!
 //! NOTE!!!
 //!
 //! This file compiles and provides working text-
 //! mode console support so the board can swap from the UART mux to a VGA
-//! console.  Graphical modes are *disabled at runtime* until a framebuffer
-//! capsule implementation lands.  The low-level register writes for 640×480 and 800×600 are
-//! nonetheless laid out so they can be enabled by flipping a constant.
+//! console.
 //!
 //! VGA peripheral driver for the x86_q35 chip.
 //!
@@ -28,6 +29,7 @@
 //! `ProcessConsole` to this driver or to the legacy serial mux.
 
 use core::cell::Cell;
+use core::marker::PhantomData;
 use kernel::utilities::StaticRef;
 use tock_cells::volatile_cell::VolatileCell;
 
@@ -130,14 +132,20 @@ impl ColorCode {
     }
 }
 
-/// All VGA modes supported by the x86_q35 chip crate.
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VgaMode {
-    Text80x25,
-    Graphics640x480_16,
-    Graphics800x600_16,
+// Capability marker traits (type-level gating)
+mod screen_cap {
+    // Sealed so only this module creates capabilities.
+    pub trait Sealed {}
+
+    /// Capability: this instance supports the text-plane writer.
+    pub trait TextModeCap: Sealed {}
+
+    /// The only mode we expose right now.
+    pub struct TextMode;
+    impl Sealed for TextMode {}
+    impl TextModeCap for TextMode {}
 }
+pub use screen_cap::{TextMode, TextModeCap};
 
 // Constants for memory-mapped text mode buffer
 
@@ -147,8 +155,6 @@ const TEXT_BUFFER_ADDR: usize = 0xB8000;
 // Buffer dimensions
 pub(crate) const TEXT_BUFFER_WIDTH: usize = 80;
 pub(crate) const TEXT_BUFFER_HEIGHT: usize = 25;
-/// Physical address where QEMU exposes the linear-frame-buffer BAR.
-const LFB_PHYS_BASE: u32 = 0xE0_00_0000;
 
 const VGA_CELLS: StaticRef<[VolatileCell<u16>; TEXT_BUFFER_WIDTH * TEXT_BUFFER_HEIGHT]> =
     unsafe { StaticRef::new(TEXT_BUFFER_ADDR as *const _) };
@@ -224,30 +230,9 @@ pub struct VgaDevice;
 impl VgaDevice {
     /// Global, row-major, bracket-indexable view.
     const TEXT: TextBuf = TextBuf::new();
-    /// Program the requested mode on the VGA controller.
-    pub fn set_mode(mode: VgaMode) {
-        match mode {
-            VgaMode::Text80x25 => Self::program_text_mode(),
-            VgaMode::Graphics640x480_16 => panic!("VGA 640×480 mode not implemented"),
-            VgaMode::Graphics800x600_16 => panic!("VGA 800×600 mode not implemented"),
-        }
-    }
 
-    /// Only needed for graphics modes (linear framebuffer @ LFB_PHYS_BASE).
-    pub fn map_for_mode(mode: VgaMode, page_dir: &mut x86::registers::bits32::paging::PD) {
-        use x86::registers::bits32::paging::{PAddr, PDEntry, PDFlags, PDFLAGS};
-
-        if matches!(
-            mode,
-            VgaMode::Graphics640x480_16 | VgaMode::Graphics800x600_16
-        ) {
-            let pde_idx = (LFB_PHYS_BASE >> 22) as usize;
-            let pa = PAddr::from(LFB_PHYS_BASE);
-            let mut flags = PDFlags::new(0);
-            flags.write(PDFLAGS::P::SET + PDFLAGS::RW::SET + PDFLAGS::PS::SET);
-            page_dir[pde_idx] = PDEntry::new(pa, flags);
-        }
-    }
+    // We only expose programming of the text controller here.
+    // (No graphics mode type/impl exists yet by design.)
 
     // --- private ---
 
@@ -308,9 +293,8 @@ impl VgaDevice {
 }
 
 // Public API - the VGA struct providing text console implementation
-
-/// Simple text-mode VGA console.
-pub struct Vga {
+// Generic over capability M. We only implement methods for M: TextModeCap.
+pub struct Vga<M> {
     col: Cell<usize>,
     row: Cell<usize>,
     /// Current VGA text attribute byte for newly written characters.
@@ -321,8 +305,9 @@ pub struct Vga {
     // UTF-8 decode state
     utf8_rem: Cell<u8>,  // remaining continuation bytes
     utf8_acc: Cell<u32>, // codepoint acc
+    _mode: PhantomData<M>,
 }
-impl Vga {
+impl<M: TextModeCap> Vga<M> {
     pub const fn new() -> Self {
         Self {
             col: Cell::new(0),
@@ -331,6 +316,7 @@ impl Vga {
             attr: Cell::new(ColorCode::new(Color::LightGray, Color::Black, false).as_u8()),
             utf8_rem: Cell::new(0),
             utf8_acc: Cell::new(0),
+            _mode: PhantomData,
         }
     }
 
@@ -571,14 +557,6 @@ impl Vga {
         self.update_hw_cursor();
     }
 }
-const _: () = {
-    // Exhaustively touch every current VgaMode variant
-    match VgaMode::Text80x25 {
-        VgaMode::Text80x25 => (),
-        VgaMode::Graphics640x480_16 => (),
-        VgaMode::Graphics800x600_16 => (),
-    }
-};
 
 // stub for future graphic options implementation
 pub fn framebuffer() -> Option<(*mut u8, usize)> {
@@ -588,7 +566,7 @@ pub fn framebuffer() -> Option<(*mut u8, usize)> {
 /// Initialise 80×25 text mode and start with a clean screen.
 pub(crate) fn new_text_console(_page_dir_ptr: &mut x86::registers::bits32::paging::PD) {
     // Program 80×25 text mode
-    VgaDevice::set_mode(VgaMode::Text80x25);
+    VgaDevice::program_text_mode();
 
     // Wipe the BIOS banner so the kernel starts on a blank page.
     let blank: u16 = 0x0720; // white-on-black space
@@ -596,3 +574,6 @@ pub(crate) fn new_text_console(_page_dir_ptr: &mut x86::registers::bits32::pagin
         cell.set(blank);
     }
 }
+
+/// Convenience alias: concrete text-mode VGA writer
+pub type VgaText = Vga<TextMode>;
