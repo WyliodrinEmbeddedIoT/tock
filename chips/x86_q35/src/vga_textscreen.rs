@@ -29,8 +29,6 @@ pub struct VgaTextScreen<'a> {
 }
 
 impl VgaTextScreen<'_> {
-    #[allow(dead_code)]
-    // WILL BE REMOVED IN THE FUTURE
     pub fn new() -> Self {
         Self {
             vga: Vga::new(),
@@ -42,17 +40,12 @@ impl VgaTextScreen<'_> {
         }
     }
 
-    #[allow(dead_code)]
-    // WILL BE REMOVED IN THE FUTURE
     /// (Optional) helpers the board may want to expose later.
     pub fn clear_screen(&self) {
         self.vga.clear();
     }
 
     // Keep the board wiring simple
-
-    #[allow(dead_code)]
-    // WILL BE REMOVED IN THE FUTURE
     pub fn register_deferred_call(&'static self) {
         self.dcall.register(self);
     }

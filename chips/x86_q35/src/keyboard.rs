@@ -43,10 +43,7 @@ pub struct KeyEvent {
     pub extended: bool,
 }
 
-/// Optional byte send for ASCII output (useful for a later capsule)
-/// Not used by the current ASCII-only console path. Subject to change.
-/// Called from the keyboard's deferred (bottom-half) context; keep it non-blocking.
-pub(crate) trait AsciiClient {
+pub trait AsciiClient {
     fn put_byte(&self, b: u8);
 }
 
@@ -193,7 +190,7 @@ impl<'a> Keyboard<'a> {
     /// Not used by the current ASCII-only console path. Subject to change.
     /// Will expand when writing a capsule for PC
     #[allow(dead_code)]
-    pub(crate) fn set_ascii_client(&self, c: &'static dyn AsciiClient) {
+    pub fn set_ascii_client(&self, c: &'static dyn AsciiClient) {
         self.ascii.set(c);
     }
 

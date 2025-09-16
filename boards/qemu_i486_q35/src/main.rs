@@ -11,6 +11,7 @@
 
 use capsules_core::alarm;
 use capsules_core::console::{self, Console};
+use capsules_core::text_screen_uart::TextConsoleUart;
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use components::console::ConsoleComponent;
 use components::debug_writer::DebugWriterComponent;
@@ -18,7 +19,9 @@ use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug;
+use kernel::deferred_call::DeferredCallClient;
 use kernel::hil;
+use kernel::hil::text_screen::TextScreen as HilTextScreen;
 use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
@@ -29,7 +32,9 @@ use kernel::syscall::SyscallDriver;
 use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
+use x86_q35::keyboard::AsciiClient;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::vga_textscreen::VgaTextScreen;
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
@@ -90,6 +95,17 @@ pub struct QemuI386Q35Platform {
     scheduler: &'static CooperativeSched<'static>,
     scheduler_timer:
         &'static VirtualSchedulerTimer<VirtualMuxAlarm<'static, Pit<'static, RELOAD_1KHZ>>>,
+}
+
+struct KbdToUart<'a, S: HilTextScreen<'a>> {
+    uart: &'a TextConsoleUart<'a, S>,
+}
+
+impl<'a, S: HilTextScreen<'a>> AsciiClient for KbdToUart<'a, S> {
+    #[inline]
+    fn put_byte(&self, b: u8) {
+        self.uart.inject_byte(b);
+    }
 }
 
 impl SyscallDriverLookup for QemuI386Q35Platform {
@@ -177,8 +193,31 @@ unsafe extern "cdecl" fn main() {
     let uart_mux = components::console::UartMuxComponent::new(chip.com1, 115_200)
         .finalize(components::uart_mux_component_static!());
 
-    // Alternative for VGA
-    let vga_uart_mux = components::console::UartMuxComponent::new(chip.vga, 115_200)
+    // VGA path: TextScreen (chip) + UART capsule over it
+    let vga_screen = static_init!(VgaTextScreen<'static>, VgaTextScreen::new());
+    // VgaTextScreen completes print() via deferred call
+    vga_screen.register();
+
+    let vga_text_uart = static_init!(
+        TextConsoleUart<'static, VgaTextScreen<'static>>,
+        TextConsoleUart::new(vga_screen)
+    );
+
+    let kbd_to_uart = static_init!(
+        KbdToUart<'static, VgaTextScreen<'static>>,
+        KbdToUart {
+            uart: vga_text_uart
+        }
+    );
+
+    chip.keyboard.set_ascii_client(kbd_to_uart);
+
+    // TextConsoleUart pumps RX via deferred call and needs screen callback
+    vga_text_uart.register();
+    vga_text_uart.set_as_screen_client();
+
+    // Build a UartMux on top of the TextConsoleUart so PC can attach
+    let vga_uart_mux = components::console::UartMuxComponent::new(vga_text_uart, 115_200)
         .finalize(components::uart_mux_component_static!());
 
     // Debug output uses VGA when available, otherwise COM1
