@@ -13,6 +13,7 @@ use x86::registers::bits32::paging::{PD, PT};
 use x86::support;
 use x86::{Boundary, InterruptPoller};
 
+use crate::keyboard::Keyboard;
 use crate::pic::PIC1_OFFSET;
 use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
@@ -80,6 +81,9 @@ pub struct Pc<'a, I: InterruptService + 'a, const PR: u16 = RELOAD_1KHZ> {
 
     /// PS/2 Controller
     pub ps2: &'a crate::ps2::Ps2Controller,
+
+    /// Keyboard device
+    pub keyboard: &'a Keyboard<'a>,
 
     /// System call context
     syscall: Boundary,
@@ -240,6 +244,7 @@ impl<I: InterruptService + 'static> Component for PcComponent<'static, I> {
         <SerialPortComponent as Component>::StaticInput,
         <SerialPortComponent as Component>::StaticInput,
         &'static mut MaybeUninit<Pc<'static, I>>,
+        &'static mut MaybeUninit<crate::keyboard::Keyboard<'static>>,
     );
     type Output = &'static Pc<'static, I>;
 
@@ -291,6 +296,17 @@ impl<I: InterruptService + 'static> Component for PcComponent<'static, I> {
         // controller bring-up owned by the chip
         let _ = ps2.init_early();
 
+        // keyboard device
+        let keyboard = s.5.write(Keyboard::new(ps2));
+        // connect keyboard as the ps/2 client, controller will call `receive_scancode`
+        ps2.set_client(keyboard);
+        keyboard.init_device();
+
+        // allow IRQ1 to fire
+        unsafe {
+            crate::pic::unmask(interrupt::KEYBOARD);
+        }
+
         let pc = s.4.write(Pc {
             com1,
             com2,
@@ -299,6 +315,7 @@ impl<I: InterruptService + 'static> Component for PcComponent<'static, I> {
             pit,
             vga,
             ps2,
+            keyboard,
             syscall,
             paging,
             int_svc: self.int_svc,
@@ -318,6 +335,7 @@ macro_rules! x86_q35_component_static {
             $crate::serial_port_component_static!(),
             $crate::serial_port_component_static!(),
             kernel::static_buf!($crate::Pc<'static, $isr_ty>),
+            kernel::static_buf!($crate::keyboard::Keyboard<'static>),
         )
     };};
 }

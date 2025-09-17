@@ -271,6 +271,12 @@ impl Ps2Controller {
         self.client.set(client);
     }
 
+    /// Send one byte to port 0x60 (device), small runtime spin budget.
+    #[inline(always)]
+    pub(crate) fn send_port1(&self, byte: u8) -> Ps2Result<()> {
+        write_data_with(byte, SPINS_RUNTIME)
+    }
+
     #[inline(always)]
     fn drain_and_deliver(&self) {
         while let Some(b) = self.pop_scan_code() {
