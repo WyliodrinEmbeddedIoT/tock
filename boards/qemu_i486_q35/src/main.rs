@@ -221,7 +221,7 @@ unsafe extern "cdecl" fn main() {
         .finalize(components::uart_mux_component_static!());
 
     // Debug output uses VGA when available, otherwise COM1
-    let debug_uart_device = vga_uart_mux;
+    let debug_uart_device = uart_mux;
 
     // Create a shared virtualization mux layer on top of a single hardware
     // alarm.
@@ -275,7 +275,7 @@ unsafe extern "cdecl" fn main() {
     // For now the ProcessConsole (interactive shell) is wired to COM1 so the user can
     // type commands over the serial port.  Once keyboard input is implemented
     // we can switch `console_uart_device` to `vga_uart_mux`.
-    let console_uart_device = uart_mux;
+    let console_uart_device = vga_uart_mux;
 
     // Initialize the kernel's process console.
     let pconsole = components::process_console::ProcessConsoleComponent::new(

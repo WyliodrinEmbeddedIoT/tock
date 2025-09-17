@@ -17,7 +17,6 @@ use crate::keyboard::Keyboard;
 use crate::pic::PIC1_OFFSET;
 use crate::pit::{Pit, RELOAD_1KHZ};
 use crate::serial::{SerialPort, SerialPortComponent, COM1_BASE, COM2_BASE, COM3_BASE, COM4_BASE};
-use crate::vga_uart_driver::VgaText;
 
 /// Interrupt constants for legacy PC peripherals
 mod interrupt {
@@ -75,9 +74,6 @@ pub struct Pc<'a, I: InterruptService + 'a, const PR: u16 = RELOAD_1KHZ> {
 
     /// Legacy PIT timer
     pub pit: Pit<'a, PR>,
-
-    /// Vga
-    pub vga: &'a VgaText<'a>,
 
     /// PS/2 Controller
     pub ps2: &'a crate::ps2::Ps2Controller,
@@ -274,10 +270,6 @@ impl<I: InterruptService + 'static> Component for PcComponent<'static, I> {
 
         let pit = unsafe { Pit::new() };
 
-        let vga = unsafe { static_init!(VgaText, VgaText::new()) };
-
-        kernel::deferred_call::DeferredCallClient::register(vga);
-
         let paging = unsafe {
             let pd_addr = core::ptr::from_ref(self.pd) as usize;
             let pt_addr = core::ptr::from_ref(self.pt) as usize;
@@ -307,7 +299,6 @@ impl<I: InterruptService + 'static> Component for PcComponent<'static, I> {
             com3,
             com4,
             pit,
-            vga,
             ps2,
             keyboard,
             syscall,
