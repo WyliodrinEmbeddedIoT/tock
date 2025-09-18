@@ -24,6 +24,7 @@ mod pic;
 pub mod pit;
 
 pub mod serial;
-
 pub mod vga;
+pub mod vga_textscreen;
+
 pub mod vga_uart_driver;

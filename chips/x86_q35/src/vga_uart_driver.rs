@@ -14,17 +14,17 @@
 //! - **Receive / abort / re-configure** operations just return
 //!   `ErrorCode::NOSUPPORT` — VGA is output-only.
 
-use crate::vga::Vga;
+use crate::vga::{TextMode, Vga};
 use core::{cell::Cell, cmp};
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::uart::{Configure, Parameters, Receive, ReceiveClient, Transmit, TransmitClient};
+use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::cells::TakeCell;
 use kernel::ErrorCode;
-use tock_cells::optional_cell::OptionalCell;
 
 /// UART-compatible wrapper around the VGA text writer.
 pub struct VgaText<'a> {
-    vga_buffer: Vga,
+    vga_buffer: Vga<TextMode>,
     tx_client: OptionalCell<&'a dyn TransmitClient>,
     rx_client: OptionalCell<&'a dyn ReceiveClient>,
     deferred_call: DeferredCall,
@@ -35,7 +35,7 @@ pub struct VgaText<'a> {
 impl VgaText<'_> {
     pub fn new() -> Self {
         Self {
-            vga_buffer: Vga::new(),
+            vga_buffer: Vga::<TextMode>::new(),
             tx_client: OptionalCell::empty(),
             rx_client: OptionalCell::empty(),
             deferred_call: DeferredCall::new(),
