@@ -21,7 +21,7 @@ use kernel::component::Component;
 use kernel::debug;
 use kernel::deferred_call::DeferredCallClient;
 use kernel::hil;
-use kernel::hil::text_screen::TextScreen as HilTextScreen;
+use kernel::hil::keyboard::Keyboard;
 use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
@@ -32,7 +32,6 @@ use kernel::syscall::SyscallDriver;
 use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
-use x86_q35::keyboard::AsciiClient;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
 use x86_q35::vga_textscreen::VgaTextScreen;
 use x86_q35::{Pc, PcComponent};
@@ -95,17 +94,6 @@ pub struct QemuI386Q35Platform {
     scheduler: &'static CooperativeSched<'static>,
     scheduler_timer:
         &'static VirtualSchedulerTimer<VirtualMuxAlarm<'static, Pit<'static, RELOAD_1KHZ>>>,
-}
-
-struct KbdToUart<'a, S: HilTextScreen<'a>> {
-    uart: &'a TextConsoleUart<'a, S>,
-}
-
-impl<'a, S: HilTextScreen<'a>> AsciiClient for KbdToUart<'a, S> {
-    #[inline]
-    fn put_byte(&self, b: u8) {
-        self.uart.inject_byte(b);
-    }
 }
 
 impl SyscallDriverLookup for QemuI386Q35Platform {
@@ -203,14 +191,9 @@ unsafe extern "cdecl" fn main() {
         TextConsoleUart::new(vga_screen)
     );
 
-    let kbd_to_uart = static_init!(
-        KbdToUart<'static, VgaTextScreen<'static>>,
-        KbdToUart {
-            uart: vga_text_uart
-        }
-    );
-
-    chip.keyboard.set_ascii_client(kbd_to_uart);
+    // Wire the PS/2 keyboard into the text console via the Keyboard HIL.
+    chip.keyboard.init_device();
+    chip.keyboard.set_client(vga_text_uart);
 
     // TextConsoleUart pumps RX via deferred call and needs screen callback
     vga_text_uart.register();

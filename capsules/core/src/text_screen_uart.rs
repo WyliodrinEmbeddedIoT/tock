@@ -8,10 +8,9 @@
 //! `TextScreenClient::write_complete()`. RX: producers call `inject_byte()`;
 //! bytes are buffered and completes on `\n` or when full.
 
-// ONLY FOR NOW, WILL BE REMOVED LATER
-#[allow(dead_code)]
 use core::cell::{Cell, RefCell};
 use core::cmp;
+use kernel::hil::keyboard::KeyboardClient as HilKeyboardClient;
 
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::text_screen::{TextScreen as HilTextScreen, TextScreenClient};
@@ -28,6 +27,10 @@ pub struct TextConsoleUart<'a, S: HilTextScreen<'a>> {
     // where we output
     screen: &'a S,
 
+    kbd_shift_l: Cell<bool>,
+    kbd_shift_r: Cell<bool>,
+    kbd_caps: Cell<bool>,
+
     // UART clients
     tx_client: OptionalCell<&'a dyn TransmitClient>,
     rx_client: OptionalCell<&'a dyn ReceiveClient>,
@@ -43,8 +46,6 @@ pub struct TextConsoleUart<'a, S: HilTextScreen<'a>> {
 
     // Type-ahead FIFO (drop-oldest on overflow
     rx_fifo: RefCell<[u8; RX_FIFO_SIZE]>,
-    // ONLY FOR NOW, WILL BE REMOVED LATER
-    #[allow(dead_code)]
     rx_head: Cell<usize>,
     rx_tail: Cell<usize>,
     rx_count: Cell<usize>,
@@ -58,12 +59,13 @@ pub struct TextConsoleUart<'a, S: HilTextScreen<'a>> {
     skip_next_lf: Cell<bool>, // if we just wrote '\n' because we saw '\r'
 }
 
-// ONLY FOR NOW, WILL BE REMOVED LATER
-#[allow(dead_code)]
 impl<'a, S: HilTextScreen<'a>> TextConsoleUart<'a, S> {
     pub fn new(screen: &'a S) -> Self {
         Self {
             screen,
+            kbd_shift_l: Cell::new(false),
+            kbd_shift_r: Cell::new(false),
+            kbd_caps: Cell::new(false),
             tx_client: OptionalCell::empty(),
             rx_client: OptionalCell::empty(),
 
@@ -84,13 +86,129 @@ impl<'a, S: HilTextScreen<'a>> TextConsoleUart<'a, S> {
         }
     }
 
+    #[inline(always)]
+    fn shift_active(&self) -> bool {
+        self.kbd_shift_l.get() || self.kbd_shift_r.get()
+    }
+
+    // ADD
+    fn map_keycode_to_ascii(&self, code: u16, pressed: bool) -> Option<u8> {
+        if !pressed {
+            return None;
+        }
+
+        // Update and ignore modifier keys here
+        match code {
+            42 => {
+                // LEFTSHIFT
+                self.kbd_shift_l.set(true);
+                return None;
+            }
+            54 => {
+                // RIGHTSHIFT
+                self.kbd_shift_r.set(true);
+                return None;
+            }
+            58 => {
+                // CAPSLOCK toggles on press
+                self.kbd_caps.set(!self.kbd_caps.get());
+                return None;
+            }
+            _ => {}
+        }
+
+        // Basics
+        match code {
+            28 => return Some(b'\n'), // ENTER
+            14 => return Some(0x08),  // BACKSPACE
+            15 => return Some(b'\t'), // TAB
+            57 => return Some(b' '),  // SPACE
+            _ => {}
+        }
+
+        // Digits row 1..0
+        if (2..=11).contains(&code) {
+            let normal = [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0'];
+            let shifted = [b'!', b'@', b'#', b'$', b'%', b'^', b'&', b'*', b'(', b')'];
+            let idx = (code - 2) as usize;
+            return Some(if self.shift_active() {
+                shifted[idx]
+            } else {
+                normal[idx]
+            });
+        }
+
+        // Letters (Linux keycode set)
+        let letter = match code {
+            30 => b'a',
+            48 => b'b',
+            46 => b'c',
+            32 => b'd',
+            18 => b'e',
+            33 => b'f',
+            34 => b'g',
+            35 => b'h',
+            23 => b'i',
+            36 => b'j',
+            37 => b'k',
+            38 => b'l',
+            50 => b'm',
+            49 => b'n',
+            24 => b'o',
+            25 => b'p',
+            16 => b'q',
+            19 => b'r',
+            31 => b's',
+            20 => b't',
+            22 => b'u',
+            47 => b'v',
+            17 => b'w',
+            45 => b'x',
+            21 => b'y',
+            44 => b'z',
+            _ => 0,
+        };
+        if letter != 0 {
+            let upper = self.shift_active() ^ self.kbd_caps.get();
+            return Some(if upper {
+                letter.to_ascii_uppercase()
+            } else {
+                letter
+            });
+        }
+
+        // (Optional) extend with punctuation if needed later.
+
+        None
+    }
+    pub fn inject_key_event(&self, code: u16, pressed: bool) {
+        // Track release of shift
+        if !pressed {
+            match code {
+                42 => {
+                    self.kbd_shift_l.set(false);
+                    return;
+                } // LShift up
+                54 => {
+                    self.kbd_shift_r.set(false);
+                    return;
+                } // RShift up
+                _ => {}
+            }
+        }
+
+        if let Some(b) = self.map_keycode_to_ascii(code, pressed) {
+            self.inject_byte(b);
+        }
+    }
+
     /// Must be called by the board after construction to receive screen callbacks
     /// (Call: screen.set_client(Some(capsule)) )
     pub fn set_as_screen_client(&'static self) {
         self.screen.set_client(Some(self));
     }
 
-    /// Feed one input byte (from keyboard glue). Safe from deferred context
+    /// Feed one input byte. Safe from deferred context
     pub fn inject_byte(&self, b: u8) {
         self.fifo_push(b);
         self.dcall.set();
@@ -283,5 +401,13 @@ impl<'a, S: HilTextScreen<'a>> TextScreenClient for TextConsoleUart<'a, S> {
 impl<'a, S: HilTextScreen<'a>> Configure for TextConsoleUart<'a, S> {
     fn configure(&self, _params: Parameters) -> Result<(), ErrorCode> {
         Ok(())
+    }
+}
+
+impl<'a, S: HilTextScreen<'a>> HilKeyboardClient for TextConsoleUart<'a, S> {
+    fn keys_pressed(&self, events: &[(u16, bool)], _r: Result<(), ErrorCode>) {
+        for &(code, pressed) in events {
+            self.inject_key_event(code, pressed);
+        }
     }
 }

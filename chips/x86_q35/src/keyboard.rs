@@ -404,8 +404,18 @@ impl Ps2Client for Keyboard<'_> {
                 }
             }
         }
-        // No command in flight: ignore device-only responses that aren’t keystrokes.
-        if byte == RESP_ACK || byte == RESP_RESEND || byte == RESP_BAT_OK {
+        // No command in flight: ignore device-only responses that aren’t keystrokes,
+        // but use BAT(AA) as a chance to reset local decode/modifier state.
+        if byte == RESP_ACK || byte == RESP_RESEND {
+            return;
+        }
+        if byte == RESP_BAT_OK {
+            self.got_e0.set(false);
+            self.got_f0.set(false);
+            self.swallow_e1.set(0);
+            self.shift_l.set(false);
+            self.shift_r.set(false);
+            self.caps.set(false);
             return;
         }
         self.decode_byte(byte);

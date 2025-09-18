@@ -293,36 +293,6 @@ impl Ps2Controller {
         r
     }
 
-    /// Keyboard device commands (port 0x60)
-    /// Thin wrappers over `send_with_ack`. Kept as methods so they can use the
-    /// controller’s counters/state.
-
-    /// Send a device command and wait for ACK (0xFA).
-    /// Retries on RESEND (0xFE) up to `tries - 1` times and increments `self.resends`.
-    /// Returns:
-    /// `Ok(())` on ACK
-    /// `Err(Ps2Error::AckError)` if RESEND persists after all retries
-    /// `Err(Ps2Error::UnexpectedResponse(_))` for any other response byte
-    fn send_with_ack_limit(&self, byte: u8, tries: u8, limit: usize) -> Ps2Result<()> {
-        let mut attempts = 0;
-        loop {
-            attempts += 1;
-            write_data_with(byte, limit)?;
-            match read_data_with(limit)? {
-                0xFA => return Ok(()),
-                0xFE if attempts < tries => {
-                    self.resends.set(self.resends.get().wrapping_add(1));
-                    continue;
-                }
-                0xFE => {
-                    self.resends.set(self.resends.get().wrapping_add(1));
-                    return Err(Ps2Error::AckError);
-                }
-                other => return Err(Ps2Error::UnexpectedResponse(other)),
-            }
-        }
-    }
-
     /// Pure controller + device bring-up.
     /// No logging, no PIC masking/unmasking, no CPU-IRQ enabling. (hopefully)
     /// Called by PcComponent::finalize() (chip layer).
