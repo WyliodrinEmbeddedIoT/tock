@@ -293,36 +293,6 @@ impl Ps2Controller {
         r
     }
 
-    /// Keyboard device commands (port 0x60)
-    /// Thin wrappers over `send_with_ack`. Kept as methods so they can use the
-    /// controller’s counters/state.
-
-    /// Send a device command and wait for ACK (0xFA).
-    /// Retries on RESEND (0xFE) up to `tries - 1` times and increments `self.resends`.
-    /// Returns:
-    /// `Ok(())` on ACK
-    /// `Err(Ps2Error::AckError)` if RESEND persists after all retries
-    /// `Err(Ps2Error::UnexpectedResponse(_))` for any other response byte
-    fn send_with_ack_limit(&self, byte: u8, tries: u8, limit: usize) -> Ps2Result<()> {
-        let mut attempts = 0;
-        loop {
-            attempts += 1;
-            write_data_with(byte, limit)?;
-            match read_data_with(limit)? {
-                0xFA => return Ok(()),
-                0xFE if attempts < tries => {
-                    self.resends.set(self.resends.get().wrapping_add(1));
-                    continue;
-                }
-                0xFE => {
-                    self.resends.set(self.resends.get().wrapping_add(1));
-                    return Err(Ps2Error::AckError);
-                }
-                other => return Err(Ps2Error::UnexpectedResponse(other)),
-            }
-        }
-    }
-
     /// Pure controller + device bring-up.
     /// No logging, no PIC masking/unmasking, no CPU-IRQ enabling. (hopefully)
     /// Called by PcComponent::finalize() (chip layer).
@@ -381,22 +351,10 @@ impl Ps2Controller {
         self.tally_timeout(write_command_with(0xAE, spins))?;
 
         // device sequence (keyboard)
-        self.tally_timeout(self.send_with_ack_limit(0xF5, 3, spins))?; // F5 disable scan
-        self.tally_timeout(self.send_with_ack_limit(0xFF, 3, spins))?; // FF reset
-        self.tally_timeout({
-            match read_data_with(spins)? {
-                0xAA => Ok(()), // BAT passed
-                other => Err(Ps2Error::UnexpectedResponse(other)),
-            }
-        })?;
-        self.tally_timeout(self.send_with_ack_limit(0xF0, 3, spins))?; // select set
-        self.tally_timeout(self.send_with_ack_limit(0x02, 3, spins))?; // set-2
         self.tally_timeout(update_config_with(spins, |mut c| {
             c.modify(CONFIG::IRQ1::SET);
             c
         }))?;
-        self.tally_timeout(self.send_with_ack_limit(0xF4, 3, spins))?; // enable scan
-
         Ok(())
     }
 

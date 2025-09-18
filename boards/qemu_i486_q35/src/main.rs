@@ -11,6 +11,7 @@
 
 use capsules_core::alarm;
 use capsules_core::console::{self, Console};
+use capsules_core::text_screen_uart::TextConsoleUart;
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use components::console::ConsoleComponent;
 use components::debug_writer::DebugWriterComponent;
@@ -18,7 +19,9 @@ use core::ptr;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug;
+use kernel::deferred_call::DeferredCallClient;
 use kernel::hil;
+use kernel::hil::keyboard::Keyboard;
 use kernel::ipc::IPC;
 use kernel::platform::chip::Chip;
 use kernel::platform::scheduler_timer::VirtualSchedulerTimer;
@@ -30,6 +33,7 @@ use kernel::{create_capability, static_init};
 use x86::registers::bits32::paging::{PDEntry, PTEntry, PD, PT};
 use x86::registers::irq;
 use x86_q35::pit::{Pit, RELOAD_1KHZ};
+use x86_q35::vga_textscreen::VgaTextScreen;
 use x86_q35::{Pc, PcComponent};
 
 mod multiboot;
@@ -177,12 +181,30 @@ unsafe extern "cdecl" fn main() {
     let uart_mux = components::console::UartMuxComponent::new(chip.com1, 115_200)
         .finalize(components::uart_mux_component_static!());
 
-    // Alternative for VGA
-    let vga_uart_mux = components::console::UartMuxComponent::new(chip.vga, 115_200)
+    // VGA path: TextScreen (chip) + UART capsule over it
+    let vga_screen = static_init!(VgaTextScreen<'static>, VgaTextScreen::new());
+    // VgaTextScreen completes print() via deferred call
+    vga_screen.register();
+
+    let vga_text_uart = static_init!(
+        TextConsoleUart<'static, VgaTextScreen<'static>>,
+        TextConsoleUart::new(vga_screen)
+    );
+
+    // Wire the PS/2 keyboard into the text console via the Keyboard HIL.
+    chip.keyboard.init_device();
+    chip.keyboard.set_client(vga_text_uart);
+
+    // TextConsoleUart pumps RX via deferred call and needs screen callback
+    vga_text_uart.register();
+    vga_text_uart.set_as_screen_client();
+
+    // Build a UartMux on top of the TextConsoleUart so PC can attach
+    let vga_uart_mux = components::console::UartMuxComponent::new(vga_text_uart, 115_200)
         .finalize(components::uart_mux_component_static!());
 
     // Debug output uses VGA when available, otherwise COM1
-    let debug_uart_device = vga_uart_mux;
+    let debug_uart_device = uart_mux;
 
     // Create a shared virtualization mux layer on top of a single hardware
     // alarm.
@@ -236,7 +258,7 @@ unsafe extern "cdecl" fn main() {
     // For now the ProcessConsole (interactive shell) is wired to COM1 so the user can
     // type commands over the serial port.  Once keyboard input is implemented
     // we can switch `console_uart_device` to `vga_uart_mux`.
-    let console_uart_device = uart_mux;
+    let console_uart_device = vga_uart_mux;
 
     // Initialize the kernel's process console.
     let pconsole = components::process_console::ProcessConsoleComponent::new(

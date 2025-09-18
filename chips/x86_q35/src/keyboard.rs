@@ -216,12 +216,17 @@ impl<'a> Keyboard<'a> {
         }
     }
 
-    /// Device-level init hook. No-op for now since the `init_early()`
-    /// already runs in the controller. After capsule lands, we will enqueue:
-    ///  F5 (disable scan) -> FF (reset; expect FA then AA) - F0 02 (Set-2) - F4 (enable).
     /// This will use the command engine (ACK/RESEND) and can run with IRQ1 enabled.
+    ///
+    /// Device init sequence (runs in bottom-half via the command engine):
+    /// F5 (disable scan) - FF (reset; expect FA then AA) - F0 02 (Set-2) - F4 (enable scan)
+    /// The command engine handles ACK(FA)/RESEND(FE); BAT(AA) is ignored by decode path.
+
     pub fn init_device(&self) {
-        // TODO
+        let _ = self.enqueue_command(&[0xF5]);
+        let _ = self.enqueue_command(&[0xFF]);
+        let _ = self.enqueue_command(&[0xF0, 0x02]);
+        let _ = self.enqueue_command(&[0xF4]);
     }
 
     /// Command engine public API
@@ -399,8 +404,18 @@ impl Ps2Client for Keyboard<'_> {
                 }
             }
         }
-        // No command in flight: ignore device-only responses that aren’t keystrokes.
-        if byte == RESP_ACK || byte == RESP_RESEND || byte == RESP_BAT_OK {
+        // No command in flight: ignore device-only responses that aren’t keystrokes,
+        // but use BAT(AA) as a chance to reset local decode/modifier state.
+        if byte == RESP_ACK || byte == RESP_RESEND {
+            return;
+        }
+        if byte == RESP_BAT_OK {
+            self.got_e0.set(false);
+            self.got_f0.set(false);
+            self.swallow_e1.set(0);
+            self.shift_l.set(false);
+            self.shift_r.set(false);
+            self.caps.set(false);
             return;
         }
         self.decode_byte(byte);
