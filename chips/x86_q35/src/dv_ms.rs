@@ -2,11 +2,9 @@ use core::cell::{Cell, RefCell};
 use core::marker::PhantomData;
 use kernel::errorcode::ErrorCode;
 
-use crate::ps2::Ps2Controller;
-use crate::ps2::{read_data, wait_ob_full, write_command, write_data};
-
-use crate::ps2::{PS2_DATA_PORT, PS2_STATUS_PORT};
-use x86::registers::io;
+use crate::ps2::{
+    read_data, wait_ob_full, write_command, write_data, Ps2Controller, Ps2MouseClient,
+}; // change after it
 
 const RAW_BUF_SIZE: usize = 32; //rawbuf size
 const PACKET_BUF_SIZE: usize = 16; // packetbuf size
@@ -161,6 +159,7 @@ fn send_mouse(cmd: &[u8], resp_len: usize) -> Result<Resp, ErrorCode> {
         return Ok(r);
     }
 }
+
 //mouse driver
 pub struct Mouse<'a> {
     controller: &'a Ps2Controller,
@@ -183,56 +182,16 @@ impl<'a> Mouse<'a> {
         }
     }
 
-    /// Top-half: call from the PIC IRQ stub for mouse/PS2.
-    /// Drains a byte from the shared controller buffer and assembles 3-byte packets.
-    pub fn handle_interrupt(&self) {
-        loop {
-            let status = unsafe { io::inb(PS2_STATUS_PORT) };
-            // no data?
-            if (status & 0x01) == 0 {
-                break;
-            }
-            // not from mouse? leave it for the keyboard ISR
-            if (status & 0x20) == 0 {
-                return; // changed break; to return;
-            } // bit5 = AUX
-
-            // this byte is mouse data
-            let b = unsafe { io::inb(PS2_DATA_PORT) };
-
-            // assemble 3-byte packets with header resync
-            let mut st = self.state.get();
-            let mut cur = self.pkt.get();
-
-            if st == 0 {
-                // byte 0 must have bit3 set in standard PS/2 packets
-                if (b & 0x08) == 0 {
-                    // desync, drop until we see a header
-                    continue;
-                }
-            }
-
-            cur[st] = b;
-            st += 1;
-
-            if st == 3 {
-                self.packet_fifo.borrow_mut().push(cur);
-                st = 0;
-            }
-            self.pkt.set(cur);
-            self.state.set(st);
-        }
-    }
-
     /// Bottom-half: try to decode one packet into a `MouseEvent` (non-blocking).
     pub fn poll(&self) -> Option<MouseEvent> {
         let pkt = self.packet_fifo.borrow_mut().pop()?;
         Some(MouseEvent {
             buttons: pkt[0] & 0x07,
             x_movement: pkt[1] as i8,
-            y_movement: -(pkt[2] as i8), // old: y_movement: pkt[2] as i8
+            y_movement: -(pkt[2] as i8), // screen coords: +Y down // change after it
         })
     }
+
     // dv cmd helpers
     pub fn enable_streaming(&self) -> Result<(), ErrorCode> {
         send_mouse(&[0xF4], 0).map(|_| ())
@@ -275,5 +234,117 @@ impl<'a> Mouse<'a> {
         }
     }
 }
-//must fix issue where the kernel freezes!
-//must review the mouse driver and ensure it does not block or cause deadlocks
+
+impl Ps2MouseClient for Mouse<'_> {
+    fn handle_mouse_packet(&self, pkt: [u8; 3]) {
+        self.packet_fifo.borrow_mut().push(pkt);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk(b0: u8, b1: u8, b2: u8) -> [u8; 3] {
+        [b0, b1, b2]
+    }
+
+    #[test]
+    fn mouse_client_to_poll_basic() {
+        // Create a dummy controller (we won't touch hardware in tests)
+        let ctrl = Ps2Controller::new();
+        let mouse = Mouse::new(&ctrl);
+
+        // Simulate one well-formed 3-byte packet delivered by the controller BH
+        // byte0: bit3 must be set (0x08), buttons low 3 bits; dx, dy are 2’s complement.
+        mouse.handle_mouse_packet(mk(0x0B, 0x05, 0xFB)); // buttons=0b011, dx=+5, dy=-5
+
+        // Poll should return one event; Y should be inverted (+5 on screen)
+        let ev = mouse.poll().expect("expected one MouseEvent");
+        assert_eq!(ev.buttons, 0b011);
+        assert_eq!(ev.x_movement, 5);
+        assert_eq!(ev.y_movement, 5);
+
+        // And then empty
+        assert!(mouse.poll().is_none());
+    }
+
+    #[test]
+    fn mouse_packet_ordering_multiple() {
+        let ctrl = Ps2Controller::new();
+        let mouse = Mouse::new(&ctrl);
+
+        // Push three packets in order
+        let p1 = mk(0x08, 1, 2);
+        let p2 = mk(0x09, 3, 4);
+        let p3 = mk(0x0A, 5, 6);
+
+        mouse.handle_mouse_packet(p1);
+        mouse.handle_mouse_packet(p2);
+        mouse.handle_mouse_packet(p3);
+
+        // Pop them back in FIFO order
+        let e1 = mouse.poll().unwrap();
+        assert_eq!(e1.buttons, p1[0] & 0x07);
+        assert_eq!(e1.x_movement, p1[1] as i8);
+        assert_eq!(e1.y_movement, -(p1[2] as i8));
+
+        let e2 = mouse.poll().unwrap();
+        assert_eq!(e2.buttons, p2[0] & 0x07);
+        assert_eq!(e2.x_movement, p2[1] as i8);
+        assert_eq!(e2.y_movement, -(p2[2] as i8));
+
+        let e3 = mouse.poll().unwrap();
+        assert_eq!(e3.buttons, p3[0] & 0x07);
+        assert_eq!(e3.x_movement, p3[1] as i8);
+        assert_eq!(e3.y_movement, -(p3[2] as i8));
+
+        assert!(mouse.poll().is_none());
+    }
+
+    #[test]
+    fn packet_fifo_overflow_drops_oldest() {
+        // Directly exercise PacketFifo overflow behavior
+        let mut q = PacketFifo::new();
+
+        // Fill to capacity
+        for i in 0..PACKET_BUF_SIZE {
+            q.push([0x08, i as u8, i as u8]);
+        }
+        // Push one more distinct packet; this should drop the oldest
+        let extra = [0x08, 0xFE, 0xEF];
+        q.push(extra);
+
+        // First popped should be the second inserted element (index 1)
+        for i in 1..PACKET_BUF_SIZE {
+            let pkt = q.pop().expect("packet expected");
+            assert_eq!(pkt, [0x08, i as u8, i as u8]);
+        }
+        // Then the extra packet
+        assert_eq!(q.pop().unwrap(), extra);
+        // Now empty
+        assert!(q.pop().is_none());
+    }
+
+    #[test]
+    fn raw_fifo_basic_and_overflow() {
+        let mut q = RawFifo::new();
+
+        assert!(q.pop().is_none());
+
+        q.push(0xAA);
+        assert_eq!(q.pop(), Some(0xAA));
+        assert!(q.pop().is_none());
+
+        for i in 0..RAW_BUF_SIZE {
+            q.push(i as u8);
+        }
+        q.push(0xFF); 
+
+        for i in 1..RAW_BUF_SIZE {
+            assert_eq!(q.pop(), Some(i as u8));
+        }
+        assert_eq!(q.pop(), Some(0xFF));
+        assert!(q.pop().is_none());
+    }
+}
