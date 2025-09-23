@@ -350,7 +350,7 @@ impl Ps2Controller {
             prev_log_bytes: Cell::new(0),
             client: OptionalCell::empty(),
 
-            ms_buffer: RefCell::new([[0; MOUSE_PACKET_SIZE]; BUFFER_SIZE]),
+            ms_buffer: RefCell::new([[0; MOUSE_PACKET_SIZE]; MOUSE_BUFFER_SIZE]),
             ms_head: Cell::new(0),
             ms_tail: Cell::new(0),
             ms_count: Cell::new(0),
@@ -553,6 +553,15 @@ impl Ps2Controller {
             }
         }
     }
+    /// Drain queued mouse packets and print the raw three bytes.
+    /// Runs in the deferred bottom-half (not in IRQ context), so it's safe to call `debug!`.
+    #[inline(always)]
+    fn decode_and_log_mouse_stream(&self) {
+        while let Some(pkt) = self.pop_mouse_packet() {
+            // Print the raw packet bytes in hex, similar style to keyboard logs.
+            debug!("ps2: MOUSE [{:02X} {:02X} {:02X}]", pkt[0], pkt[1], pkt[2]);
+        }
+    }
     pub fn handle_interrupt(&self) {
         let mut scheduled = false;
 
@@ -710,6 +719,9 @@ impl DeferredCallClient for Ps2Controller {
     fn handle_deferred_call(&self) {
         // drain and print MAKE/BREAKs
         self.decode_and_log_stream();
+
+        // drain and print mouse packets as raw hex triples
+        self.decode_and_log_mouse_stream();
 
         // drain mouse packets and deliver to client
         while let Some(pkt) = self.pop_mouse_packet() {
