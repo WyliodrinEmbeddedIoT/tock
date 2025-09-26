@@ -55,6 +55,11 @@ various elements of Tock.
   low-level debugging tasks, such as debugging toolchain and relocation issues.
 - **[Process Console](src/process_console.rs)**: Provide a UART console to
   inspect the status of process and stop/start them.
+- **[TextScreen UART](src/text_screen_uart.rs)**: UART HIL adapter that runs over a
+    `TextScreen`, allowing boards to drive `ProcessConsole` (and other UART clients)
+    on displays like VGA without changing those clients. TX forwards to `print()`,
+    RX buffers keystrokes and completes on newline/full. Not a userspace syscall driver.
+
 
 Virtualized Hardware Resources
 ------------------------------
