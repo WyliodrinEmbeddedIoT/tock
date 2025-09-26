@@ -26,4 +26,5 @@ pub mod process_console;
 pub mod rng;
 pub mod spi_controller;
 pub mod spi_peripheral;
+pub mod text_screen_uart;
 pub mod virtualizers;
