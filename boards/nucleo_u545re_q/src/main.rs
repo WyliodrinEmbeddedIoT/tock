@@ -234,7 +234,7 @@ unsafe fn start() -> (
             )
         ),
     )
-    .finalize(components::gpio_component_static!(stm32u545::gpio::Pin));
+    .finalize(components::button_component_static!(stm32u545::gpio::Pin));
     let gpio = GpioComponent::new(
         board_kernel,
         capsules_core::gpio::DRIVER_NUM,
