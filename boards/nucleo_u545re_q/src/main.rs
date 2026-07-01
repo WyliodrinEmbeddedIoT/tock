@@ -6,6 +6,7 @@
 #![no_std]
 #![no_main]
 
+use components::gpio::GpioComponent;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
@@ -44,6 +45,7 @@ struct NucleoU545RE {
         kernel::hil::led::LedHigh<'static, stm32u545::gpio::Pin<'static>>,
         1,
     >,
+    gpio: &'static capsules_core::gpio::GPIO<'static, stm32u545::gpio::Pin<'static>>,
     button: &'static capsules_core::button::Button<'static, stm32u545::gpio::Pin<'static>>,
     alarm: &'static capsules_core::alarm::AlarmDriver<
         'static,
@@ -64,6 +66,7 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules_core::gpio::DRIVER_NUM => f(Some(self.gpio)),
             _ => f(None),
         }
     }
@@ -231,7 +234,33 @@ unsafe fn start() -> (
             )
         ),
     )
-    .finalize(components::button_component_static!(stm32u545::gpio::Pin));
+    .finalize(components::gpio_component_static!(stm32u545::gpio::Pin));
+    let gpio = GpioComponent::new(
+        board_kernel,
+        capsules_core::gpio::DRIVER_NUM,
+        components::gpio_component_helper!(
+            stm32u545::gpio::Pin,
+            // Arduino like RX/TX
+            // 0 => static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin03)), //D0
+            // 1 => static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin02)), //D1
+
+            2 => static_init!(stm32u545::gpio::Pin,periphs.gpio_c.pin(PinId::Pin08)),//D2
+            3 => static_init!(stm32u545::gpio::Pin, periphs.gpio_b.pin(PinId::Pin03)), //D3
+            4 => static_init!(stm32u545::gpio::Pin,periphs.gpio_b.pin(PinId::Pin05)), //D4
+            5 => static_init!(stm32u545::gpio::Pin, periphs.gpio_b.pin(PinId::Pin04)), //D5
+            6 => static_init!(stm32u545::gpio::Pin, periphs.gpio_b.pin(PinId::Pin10)), //D6
+            7 => static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin08)), //D7
+            8 => static_init!(stm32u545::gpio::Pin, periphs.gpio_c.pin(PinId::Pin07)), //D8
+            9 => static_init!(stm32u545::gpio::Pin, periphs.gpio_c.pin(PinId::Pin06)), //D9
+            10 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_c.pin(PinId::Pin09)), //D10
+            11 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin07)), //D11
+            12 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin06)), //D12
+            13 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin05)), //D13
+            14 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_b.pin(PinId::Pin07)), //D14
+            15 =>  static_init!(stm32u545::gpio::Pin, periphs.gpio_b.pin(PinId::Pin06)), //D15
+        ),
+    )
+    .finalize(components::gpio_component_static!(stm32u545::gpio::Pin));
 
     // Platform and Interrupts
     let platform = static_init!(
@@ -244,6 +273,7 @@ unsafe fn start() -> (
             led,
             button,
             alarm,
+            gpio
         }
     );
 
