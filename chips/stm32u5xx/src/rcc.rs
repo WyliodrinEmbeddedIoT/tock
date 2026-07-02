@@ -4,7 +4,7 @@
 // Copyright OxidOS Automotive 2026.
 
 use kernel::utilities::StaticRef;
-use kernel::utilities::registers::interfaces::ReadWriteable;
+use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
 use kernel::utilities::registers::{ReadWrite, register_bitfields, register_structs};
 
 register_structs! {
@@ -18,20 +18,23 @@ register_structs! {
         (0x08C => ahb2enr1: ReadWrite<u32, AHB2ENR1::Register>),
         (0x090 => _reserved1: [u32; 1]), //this would be AHB2ENR2, but unused for now
         (0x94 => ahb3enr: ReadWrite<u32, AHB3ENR::Register>),
-        (0x98 => _reserved4: [u32; 1]), //just padding
+        (0x98 => _reserved2: [u32; 1]), //just padding
         /// APB1 peripheral clock enable register 1
         (0x09C => apb1enr1: ReadWrite<u32, APB1ENR1::Register>),
-        (0x0A0 => _reserved2: [u32; 1]), //this would be APB1ENR2, but unused for now
+        (0x0A0 => _reserved3: [u32; 1]), //this would be APB1ENR2, but unused for now
         /// APB2 peripheral clock enable register
         (0x0A4 => apb2enr: ReadWrite<u32, APB2ENR::Register>),
         /// APB3 peripheral clock enable register
         (0x0A8 => apb3enr: ReadWrite<u32, APB3ENR::Register>),
-        (0x0AC => _reserved3: [u32; 13]), //this is for padding
+        (0x0AC => _reserved4: [u32; 13]), //this is for padding
         /// Peripherals independent clock configuration register 1
         (0x0E0 => ccipr1: ReadWrite<u32, CCIPR1::Register>),
         (0x0E4 => ccipr2: ReadWrite<u32, CCIPR1::Register>),
         (0x0E8 => ccipr3: ReadWrite<u32, CCIPR3::Register>),
-        (0x0EC => @END),
+        (0x0EC => _reserved5: [u32; 1]),
+        /// RCC backup domain control register
+        (0x0F0 => bdcr: ReadWrite<u32, BDCR::Register>),
+        (0x0F4 => @END),
     }
 }
 
@@ -58,7 +61,9 @@ register_bitfields![u32,
         USART1EN OFFSET(14) NUMBITS(1) []
     ],
     pub APB3ENR [
-        SYSCFGEN OFFSET(1) NUMBITS(1) []
+        SYSCFGEN OFFSET(1) NUMBITS(1) [],
+        PWREN OFFSET(2) NUMBITS(1) [],
+        RTCAPBEN OFFSET(21) NUMBITS(1) [],
     ],
     pub CCIPR1 [
         USART1SEL OFFSET(0) NUMBITS(2) [
@@ -83,8 +88,25 @@ register_bitfields![u32,
         ]
     ],
     pub AHB3ENR [
-        DAC1EN OFFSET(6) NUMBITS(1) []
+        DAC1EN OFFSET(6) NUMBITS(1) [],
+        /// PWR clock enable
+        PWREN OFFSET(2) NUMBITS(1) []
     ],
+    pub BDCR [
+        /// LSI oscillator enable
+        LSION OFFSET(26) NUMBITS(1) [],
+        /// LSI oscillator ready
+        LSIRDY OFFSET(27) NUMBITS(1) [],
+        /// RTC and TAMP clock enable
+        RTCEN OFFSET(15) NUMBITS(1) [],
+        /// RTC and TAMP clock source selection
+        RTCSEL OFFSET(8) NUMBITS(2) [
+            NO_CLK = 0,
+            LSE = 1,
+            LSI = 2,
+            HSE = 3,
+        ]
+    ]
 ];
 
 /// Base address for RCC in Secure mode.
@@ -130,5 +152,29 @@ impl Rcc {
 
     pub fn enable_dac1(&self) {
         self.registers.ahb3enr.modify(AHB3ENR::DAC1EN::SET);
+    }
+    // Enable the power clock on the 3rd bus, used by RTC peripheral
+    pub fn enable_ahb3_pwrclk(&self) {
+        self.registers.ahb3enr.modify(AHB3ENR::PWREN::SET);
+    }
+    // Enable the APB3 bus clock for the RTC and TAMP peripherals
+    pub fn enable_apb3_bus_clk(&self) {
+        self.registers.apb3enr.modify(APB3ENR::RTCAPBEN::SET);
+    }
+    // Enabling the LSI oscillator
+    pub fn enable_lsi(&self) {
+        self.registers.bdcr.modify(BDCR::LSION::SET);
+    }
+    // Check if LSI is ready
+    pub fn is_lsi_ready(&self) -> bool {
+        self.registers.bdcr.is_set(BDCR::LSIRDY)
+    }
+    // Select LSI (2) as the RTC clock source
+    pub fn select_rtc_source_lsi(&self) {
+        self.registers.bdcr.modify(BDCR::RTCSEL::LSI);
+    }
+    // Enable the RTC clock
+    pub fn enable_rtc(&self) {
+        self.registers.bdcr.modify(BDCR::RTCEN::SET);
     }
 }
