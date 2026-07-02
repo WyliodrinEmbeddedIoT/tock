@@ -95,7 +95,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
         &self.systick
     }
     fn watchdog(&self) -> &Self::WatchDog {
-        &self.watchdog
+        self.watchdog
     }
     fn context_switch_callback(&self) -> &Self::ContextSwitchCallback {
         &()
