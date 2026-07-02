@@ -52,6 +52,7 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
+    watchdog: &'static stm32u545::iwdg::Iwdg,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -75,7 +76,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
     type ProcessFault = ();
     type Scheduler = components::sched::round_robin::RoundRobinComponentType;
     type SchedulerTimer = cortexm33::systick::SysTick;
-    type WatchDog = ();
+    type WatchDog = stm32u545::iwdg::Iwdg;
     type ContextSwitchCallback = ();
 
     fn syscall_driver_lookup(&self) -> &Self::SyscallDriverLookup {
@@ -94,7 +95,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
         &self.systick
     }
     fn watchdog(&self) -> &Self::WatchDog {
-        &()
+        &self.watchdog
     }
     fn context_switch_callback(&self) -> &Self::ContextSwitchCallback {
         &()
@@ -151,6 +152,7 @@ unsafe fn start() -> (
         stm32u545::usart::Usart::new(stm32u545::usart::USART1_BASE)
     );
     usart1.register();
+    let iwdg = static_init!(stm32u545::iwdg::Iwdg, stm32u545::iwdg::Iwdg::new());
 
     // Load Peripherals Bundle
     let periphs = static_init!(
@@ -244,6 +246,7 @@ unsafe fn start() -> (
             led,
             button,
             alarm,
+            watchdog: iwdg,
         }
     );
 
