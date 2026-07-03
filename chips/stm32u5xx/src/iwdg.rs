@@ -33,6 +33,7 @@ register_bitfields! [u32,
             Reload = 0xAAAA, // Reset the timer
             Unlock = 0x5555, // Unlock registers for writing
             Start = 0xCCCC, // Start timer
+            Reset = 0x0000, // Reset value
         ],
     ],
 
@@ -115,7 +116,7 @@ impl WatchDog for Iwdg {
             // Block the executor until hardware is ready
         }
 
-        // 1 second
+        // 32hz / 32 = 1hz => one tick per ms => 1000 to RL register means 1 second timeout before reboot
         self.registers.pr.write(PR::PR::DivideBy32);
         self.registers.rlr.write(RLR::RL::Thousand);
 
