@@ -60,6 +60,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
         // Power and Wires
         self.rcc.enable_dma1();
         self.rcc.enable_gpioa();
+        self.rcc.enable_gpiob();
         self.rcc.enable_gpioc();
         self.rcc.enable_usart1();
         self.rcc.enable_syscfg();
