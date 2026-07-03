@@ -33,7 +33,6 @@ register_bitfields! [u32,
             Reload = 0xAAAA, // Reset the timer
             Unlock = 0x5555, // Unlock registers for writing
             Start = 0xCCCC, // Start timer
-            Reset = 0x0000, // Reset value
         ],
     ],
 
