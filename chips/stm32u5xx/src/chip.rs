@@ -51,7 +51,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             exti,
             dma1,
             gpio_a: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortA),
-            gpio_b: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortB),
+            gpio_b: gpio::Port::new(gpio::GPIO_B_BASE, exti, gpio::GpioPort::PortB),
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
         }
     }
