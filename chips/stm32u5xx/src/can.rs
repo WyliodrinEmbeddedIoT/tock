@@ -692,7 +692,7 @@ impl<'a> Can<'a> {
             self.registers.fdcan_nbtp.modify(FDCAN_NBTP::NTSEG1.val(bit_timing_settings.segment1 as u32));            
             self.registers.fdcan_nbtp.modify(FDCAN_NBTP::NTSEG2.val(bit_timing_settings.segment2 as u32));
             self.registers.fdcan_nbtp.modify(FDCAN_NBTP::NSJW.val(bit_timing_settings.sync_jump_width as u32));            
-            self.registers.fdcan_nbtp.modify(FDCAN_DBTP::NBRP.val(bit_timing_settings.baud_rate_prescaler as u32));
+            self.registers.fdcan_nbtp.modify(FDCAN_NBTP::NBRP.val(bit_timing_settings.baud_rate_prescaler as u32));
         }
         else {
             self.enter_sleep_mode();
