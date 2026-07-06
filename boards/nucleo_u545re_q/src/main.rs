@@ -236,7 +236,7 @@ unsafe fn start() -> (
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
 
-    /// Initialization of GPIO ports A,B,C
+    // Initialization of GPIO ports A,B,C
     let gpio = GpioComponent::new(
         board_kernel,
         capsules_core::gpio::DRIVER_NUM,
