@@ -347,13 +347,13 @@ register_bitfields![u32,
         AF15 OFFSET(28) NUMBITS(4) []
     ]
 ];
-
+/// Secure base address for GPIO Port A registers.
 pub const GPIO_A_BASE: StaticRef<GpioRegisters> =
     unsafe { StaticRef::new(0x52020000 as *const GpioRegisters) };
-
+/// Secure base address for GPIO Port B registers.
 pub const GPIO_B_BASE: StaticRef<GpioRegisters> =
     unsafe { StaticRef::new(0x52020400 as *const GpioRegisters) };
-
+/// Secure base address for GPIO Port C registers.
 pub const GPIO_C_BASE: StaticRef<GpioRegisters> =
     unsafe { StaticRef::new(0x52020800 as *const GpioRegisters) };
 
