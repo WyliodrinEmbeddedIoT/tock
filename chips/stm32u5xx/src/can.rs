@@ -383,9 +383,17 @@ FDCAN_RXGFC [
     /// Reject Remote Frames
     RRFS OFFSET(1) NUMBITS(1) [],
     /// Accept Non-matching Frames
-    ANFE OFFSET(2) NUMBITS(2) [],
+    ANFE OFFSET(2) NUMBITS(2) [
+        ACCEPT_FIFO0,
+        ACCEPT_FIFO1,
+        REJECT,
+    ],
     /// Accept Non-matching Frames
-    ANFS OFFSET(4) NUMBITS(2) [],
+    ANFS OFFSET(4) NUMBITS(2) [
+        ACCEPT_FIFO0,
+        ACCEPT_FIFO1,
+        REJECT
+    ],
     /// F1OM
     F1OM OFFSET(8) NUMBITS(1) [],
     /// F0OM
@@ -631,7 +639,7 @@ impl<'a> Can<'a> {
     /// This function is used for busy waiting and checks if the closure
     /// received as an argument returns a true value for `times` times.
     ///
-    /// Usage: check is the INAK bit in the CAN_MSR is set for 200_000 times.
+    /// Usage: check is the INIT bit in the FDCAN_CCCR is set for 200_000 times
     /// ```ignore
     ///    Can::wait_for(200_000, || self.registers.can_msr.is_set(CAN_MSR::INAK))
     /// ```
@@ -660,7 +668,6 @@ impl<'a> Can<'a> {
         //we are doing a standard CAN driver for now, just making sure
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::FDOE::CLEAR);
 
-        //set comms mode
         
         // here we set it to overwrite if full on both RX FIFOs
         self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::F0OM::SET);
@@ -701,6 +708,147 @@ impl<'a> Can<'a> {
 
         Ok(())
     }
+
+
+    
+    
+    pub fn config_filter(&self, filter_info: can::FilterParameters, enable: bool) {
+        //the u5 has 28 standard filters and 8 extended filters. accessible in message
+        // ram. for our purposes we use the standard ones
+
+        //note: the FilterParameters struct doesn't provide any ID?! on the old f4
+        // this function set up all the filter parameters except id, which was set to
+        // let everything through?! unlike the f4,. we dont need to do that to receive
+        // messages. so this function kinda remains empty for now, until the HIL is updated, we write into rxgfc to allow EVERYTHING to go to fifo0
+        if filter_info.number > 28 || filter_info.number < 0 {
+            return Err(kernel::ErrorCode::FAIL);
+        }
+        
+        self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFS::ACCEPT_FIFO0);
+        self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFE::ACCEPT_FIFO0);
+        
+        /*self.fdcan1messageram.flssa[filter_info.number as usize].write(
+            
+        )*/
+    }
+
+    pub fn enable_filter_config(&self) {
+        //nop
+    }
+
+    pub fn enter_normal_mode(&self) -> Result<(), kernel::ErrorCode> {
+        //clear init which automatically clears CCE (we disable configuration) and then wait
+        self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::CLEAR);
+        if !Can::wait_for(20000, || self.registers.fdcan_cccr.is_cleared(FDCAN_CCCR::INIT)) {
+            return Err(kernel::ErrorCode::FAIL);
+        }
+
+        //move the FSM to Normal
+        self.can_state.set(CanState::Normal);
+    }
+
+    pub fn disable() {
+        //equivalent to enter_sleep_mode in the f4 driver, we could also stop the clock
+        // with CSA but that only brings a bit of power savings in exchange for
+        // potential bugs, so i'll do it later
+        // setting init stops the peripheral from going on the bus, which is similar behavior to sleep on the bxCAN f4 peripheral
+        self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::SET);
+        self.can_state.set(CanState::Sleep);
+    }
+
+    pub fn enable_irq(&self, interrupt: CanInterrupt) {
+        match interrupt {
+            CanInterruptMode::TransmitInterrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::TFEE::SET);
+            }
+            CanInterruptMode::Fifo0Interrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0NE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0FE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0LE::SET);
+            }
+            CanInterruptMode::Fifo1Interrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1NE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1FE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1LE::SET);
+            }
+            CanInterruptMode::ErrorAndStatusChangeInterrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::EPE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::EWE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::BOE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::MRAFE::SET);
+            }
+        }
+    }
+
+    
+    pub fn disable_irq(&self, interrupt: CanInterrupt) {
+        match interrupt {
+            CanInterruptMode::TransmitInterrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::TFEE::CLEAR);
+            }
+            CanInterruptMode::Fifo0Interrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0NE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0FE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF0LE::CLEAR);
+            }
+            CanInterruptMode::Fifo1Interrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1NE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1FE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::RF1LE::CLEAR);
+            }
+            CanInterruptMode::ErrorAndStatusChangeInterrupt => {
+                self.registers.fdcan_ie.modify(FDCAN_IE::EPE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::EWE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::BOE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::MRAFE::CLEAR);
+            }
+        }
+    }
+
+    pub fn enable_irqs(&self) {
+        self.enable_irq(CanInterruptMode::TransmitInterrupt);
+        self.enable_irq(CanInterruptMode::Fifo0Interrupt);
+        self.enable_irq(CanInterruptMode::Fifo1Interrupt);
+        self.enable_irq(CanInterruptMode::ErrorAndStatusChangeInterrupt);
+    }
+
+    pub fn disable_irqs(&self) {
+        self.disable_irq(CanInterruptMode::TransmitInterrupt);
+        self.disable_irq(CanInterruptMode::Fifo0Interrupt);
+        self.disable_irq(CanInterruptMode::Fifo1Interrupt);
+        self.disable_irq(CanInterruptMode::ErrorAndStatusChangeInterrupt);
+    }
+
+    pub fn send_8byte_message (
+        &self,
+        id: can::Id,
+        dlc: usize,
+        rtr:u8,
+    ) -> Result<(), kernel::ErrorCode> {
+        self.enable_irq(CanInterruptMode::ErrorAndStatusChangeInterrupt);
+    }
+
+    pub fn 
 }
 
 
+register_structs! {
+    Fdcan1MessageRam {
+        (0x0000 => _reserved_filters),
+        (0x00B0 => rxfifo0: [ReadWrite<u32, RXFIFO0>; N]),
+        (0x0188 => _reserved_fifo1_and_events),
+        (0x0278 => txbuf:   [ReadWrite<u32, ...>; M]),
+        (0x0350 => @END),
+    }
+}
+
+//message ram structure as its easiest to work with it with tock registers
+register_bitfields![u32,
+    /*STD_FILTER [
+        SFID2 OFFSET(0)  NUMBITS(11) [],   // ID2 or mask
+        SFID1 OFFSET(16) NUMBITS(11) [],   // ID1
+        SFEC  OFFSET(27) NUMBITS(3)  [],   // what a match does (store FIFO0/1, reject…)
+        SFT   OFFSET(30) NUMBITS(2)  [],   //
+    ],*/
+    RXFIFO0
+];
