@@ -3,14 +3,15 @@
 // Copyright Tock Contributors 2024.
 // Copyright OxidOS Automotive 2026.
 
+use crate::can::{self, Can};
 use crate::dma::{ChannelId, Dma};
 use crate::exti;
 use crate::gpio;
 use crate::nvic::{
-    EXTI13_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ,
-    GPDMA1_CH14_IRQ, GPDMA1_CH15_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ,
-    GPDMA1_CH4_IRQ, GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ, GPDMA1_CH9_IRQ,
-    TIM2_IRQ, USART1_IRQ,
+    EXTI13_IRQ, FDCAN1_IT0_IRQ, FDCAN1_IT1_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ,
+    GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ, GPDMA1_CH14_IRQ, GPDMA1_CH15_IRQ, GPDMA1_CH1_IRQ,
+    GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ, GPDMA1_CH4_IRQ, GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ,
+    GPDMA1_CH8_IRQ, GPDMA1_CH9_IRQ, TIM2_IRQ, USART1_IRQ,
 };
 use crate::rcc;
 use crate::tim;
@@ -34,11 +35,17 @@ pub struct Stm32u5xxDefaultPeripherals<'a> {
     pub dma1: &'a Dma,
     pub gpio_a: gpio::Port<'a>,
     pub gpio_c: gpio::Port<'a>,
+    pub can1: can::Can,
 }
 
 fn enable_tim2_clock() {
     let rcc = rcc::Rcc::new(rcc::RCC_BASE);
     rcc.enable_tim2();
+}
+
+fn enable_fdcan_clock() {
+    let rcc = rcc::Rcc::new(rcc::RCC_BASE);
+    rcc.enable_fdcan();
 }
 
 impl<'a> Stm32u5xxDefaultPeripherals<'a> {
@@ -51,6 +58,11 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             dma1,
             gpio_a: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortA),
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
+            can1: Can::new(
+                can::SEC_FDCAN1_BASE,
+                can::SEC_FDCAN1_RAM_BASE,
+                enable_fdcan_clock,
+            ),
         }
     }
 
@@ -153,6 +165,14 @@ impl InterruptService for Stm32u5xxDefaultPeripherals<'_> {
             }
             GPDMA1_CH15_IRQ => {
                 self.dma1.handle_interrupt(ChannelId::Channel15);
+                true
+            }
+            FDCAN1_IT0_IRQ => {
+                self.can1.handle_interrupt();
+                true
+            }
+            FDCAN1_IT1_IRQ => {
+                self.can1.handle_interrupt();
                 true
             }
             _ => false,

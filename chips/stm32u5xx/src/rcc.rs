@@ -10,7 +10,7 @@ use kernel::utilities::StaticRef;
 register_structs! {
     pub RccRegisters {
         /// Control register
-        (0x000 => cr: ReadWrite<u32>),
+        (0x000 => cr: ReadWrite<u32, CR::Register>),
         (0x004 => _reserved0: [u32; 33]),
         /// AHB1 peripheral clock enable register
         (0x088 => ahb1enr: ReadWrite<u32, AHB1ENR::Register>),
@@ -19,7 +19,7 @@ register_structs! {
         (0x090 => _reserved1: [u32; 3]),
         /// APB1 peripheral clock enable register 1
         (0x09C => apb1enr1: ReadWrite<u32, APB1ENR1::Register>),
-        (0x0A0 => _reserved2: [u32; 1]),
+        (0x0A0 => apb1enr2: ReadWrite<u32, APB1ENR2::Register>),
         /// APB2 peripheral clock enable register
         (0x0A4 => apb2enr: ReadWrite<u32, APB2ENR::Register>),
         /// APB3 peripheral clock enable register
@@ -32,6 +32,9 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    pub CR [
+        HSEON OFFSET(16) NUMBITS(1) []
+    ],
     pub AHB1ENR [
         GPDMA1EN OFFSET(0) NUMBITS(1) []
     ],
@@ -48,7 +51,10 @@ register_bitfields![u32,
         GPIOJEN OFFSET(9) NUMBITS(1) []
     ],
     pub APB1ENR1 [
-        TIM2EN OFFSET(0) NUMBITS(1) []
+        TIM2EN OFFSET(0) NUMBITS(1) [],
+    ],
+    pub APB1ENR2 [
+        FDCAN1EN OFFSET(9) NUMBITS(1) [],
     ],
     pub APB2ENR [
         USART1EN OFFSET(14) NUMBITS(1) []
@@ -62,6 +68,11 @@ register_bitfields![u32,
             SYSCLK = 1,
             HSI16 = 2,
             LSE = 3
+        ],
+        FDCAN1SEL OFFSET(24) NUMBITS(2) [
+            HSE = 0,
+            PLL1_Q = 1,
+            PLL2_P = 2,
         ]
     ]
 ];
@@ -105,5 +116,11 @@ impl Rcc {
 
     pub fn set_usart1_source_pclk(&self) {
         self.registers.ccipr1.modify(CCIPR1::USART1SEL::PCLK);
+    }
+
+    pub fn enable_fdcan(&self) {
+        self.registers.cr.modify(CR::HSEON::SET);
+        self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::HSE);
+        self.registers.apb1enr2.modify(APB1ENR2::FDCAN1EN::SET);
     }
 }

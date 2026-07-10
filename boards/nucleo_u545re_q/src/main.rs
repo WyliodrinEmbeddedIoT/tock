@@ -15,6 +15,7 @@ use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{create_capability, static_init};
 
+use stm32u545::can;
 use stm32u545::gpio::PinId;
 
 pub mod io;
@@ -52,6 +53,7 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
+    can: &'static capsules_extra::can::CanCapsule<'static, stm32u545::can::Can>,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -64,6 +66,7 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules_extra::can::DRIVER_NUM => f(Some(self.can)),
             _ => f(None),
         }
     }
@@ -150,6 +153,7 @@ unsafe fn start() -> (
         stm32u545::usart::Usart<'static>,
         stm32u545::usart::Usart::new(stm32u545::usart::USART1_BASE)
     );
+
     usart1.register();
 
     // Load Peripherals Bundle
@@ -160,6 +164,8 @@ unsafe fn start() -> (
 
     // Initialize wiring (DMA, clocks)
     periphs.init();
+
+    periphs.can1.register();
 
     // Board specific wiring
     periphs.tim2.start();
@@ -233,6 +239,13 @@ unsafe fn start() -> (
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
 
+    let can = components::can::CanComponent::new(
+        board_kernel,
+        capsules_extra::can::DRIVER_NUM,
+        &periphs.can1,
+    )
+    .finalize(components::can_component_static!(stm32u545::can::Can));
+
     // Platform and Interrupts
     let platform = static_init!(
         NucleoU545RE,
@@ -244,6 +257,7 @@ unsafe fn start() -> (
             led,
             button,
             alarm,
+            can
         }
     );
 
