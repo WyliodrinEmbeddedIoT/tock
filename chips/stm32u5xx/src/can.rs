@@ -612,6 +612,8 @@ pub struct Can<'a> {
 
     //deffered call action task
     deferred_action: OptionalCell<AsyncAction>,
+
+    msg_ram: StaticRef<Fdcan1MessageRam>,
 }
 
 impl<'a> Can<'a> {
@@ -633,6 +635,7 @@ impl<'a> Can<'a> {
             tx_buffer: TakeCell::empty(),
             deferred_call: DeferredCall::new(),
             deferred_action: OptionalCell::empty(),
+            msg_ram,
         }
     }
 
@@ -825,30 +828,197 @@ impl<'a> Can<'a> {
         dlc: usize,
         rtr:u8,
     ) -> Result<(), kernel::ErrorCode> {
-        self.enable_irq(CanInterruptMode::ErrorAndStatusChangeInterrupt);
-    }
+        if self.can_state.get() == CanState::Normal {
+            self.enable_irqs(CanInterruptMode::ErrorAndStatusChangeInterrupt);
+            if self.registers.fdcan_txfqs.is_set(FDCAN_TXFQS::TFQF) {
+                return Err(kernel::ErrorCode::BUSY);
+            }
 
-    pub fn 
+            //get the index of the free space in message ram where we have to store the message
+            let put_index = self.registers.fdcan_txfqs.read(FDCAN_TXFQS::TFQPI) as usize;
+
+
+            //compute where to put the data
+
+
+            //compute the t0 header
+            let mut t0 = match id {
+                can::Id::Standard(id) => {
+                    TX_ELEMENT_T0::ID.val(id<<18)
+                }
+                can::Id::Extended(id) => {
+                    TX_ELEMENT_T0::XTD::SET + TX_ELEMENT_T0::ID.val(id)
+               }            
+            };
+
+
+            //set the rtr bit (weird that its u8 in the api)
+            t0 += TX_ELEMENT_T0::RTR.val(rtr.into());
+        
+
+            let t1 = TX_ELEMENT_T1::DLC.val((dlc as u32));
+
+            //write the data itself
+            let words = self.tx_buffer.map(|tx| {
+                let word0 =(tx[0] as u32) | ((tx[1] as u32) << 8)
+                    | ((tx[2] as u32) << 16)
+                    | ((tx[3] as u32) << 24);
+                let word1 =(tx[4] as u32) | ((tx[5] as u32) << 8)
+                    | ((tx[6] as u32) << 16)
+                    | ((tx[7] as u32) << 24);
+                (word0, word1)
+            });
+            let (word0, word1) = match words {
+                Some(w) => w,
+                None => return Err(kernel::ErrorCode::FAIL),
+            };
+
+            //put data in msgbuf
+            let el = &self.msg_ram.tx_buffers[put_index];
+            el.t0.write(t0);
+            el.t1.write(t1);
+            el.data[0].set(word0);
+            el.data[1].set(word1);
+
+            //request transfer
+            self.registers.fdcan_txbar.set(1 << put_index);
+            Ok(())
+        }
+        else {
+            Err(kernel::ErrorCode::OFF)
+        }
+
+        pub fn handle_transmit_interrupt(&self) {
+            let mut state = Ok(());
+            //we check if we received a request for a transition to bus off
+            if self.registers.fdcan_ir.is_set(FDCAN_IR::BO) {
+                state = Err(can::Error::BusOff)
+            } else {
+                 Ok(())
+            };
+
+            if let Err(err) = state {
+                self.can_state.set(CanState::RunningError(err));
+            }
+
+            self.transmit_client.map(|client| {
+                if let Some(buf) = self.tx_buffer.take() {
+                    client.transmit_complete(state, buf);
+                }
+            });
+        }
+
+        pub fn handle_interrupt(&self) {
+            let ir = self.registers.fdcan_ir.extract();
+            if ir.is_set(FDCAN_IR::TC) {self.handle_transmit_interrupt();}
+            if ir.is_set(FDCAN_IR::RF0N) {self.handle_fifo0_interrupt();}
+            
+        }
+
+        pub fn handle_fifo0_interrupt(&self) {
+
+        }
+}
+
+     
 }
 
 
 register_structs! {
+    RxElement {                                   // 18 words
+        (0x00 => r0: ReadWrite<u32, RX_ELEMENT_R0::Register>),   // ID + XTD/RTR/ESI
+        (0x04 => r1: ReadWrite<u32, RX_ELEMENT_R1::Register>),   // DLC + flags + timestamp
+        (0x08 => data: [ReadWrite<u32>; 16]),                    // 64 B; classic uses data[0..2]
+        (0x48 => @END),
+    }
+}
+register_structs! {
+    TxElement {                                   // 18 words
+        (0x00 => t0: ReadWrite<u32, TX_ELEMENT_T0::Register>),
+        (0x04 => t1: ReadWrite<u32, TX_ELEMENT_T1::Register>),
+        (0x08 => data: [ReadWrite<u32>; 16]),
+        (0x48 => @END),
+    }
+}
+register_structs! {
+    TxEventElement {                              // 2 words
+        (0x00 => e0: ReadWrite<u32>),
+        (0x04 => e1: ReadWrite<u32>),
+        (0x08 => @END),
+    }
+}
+register_structs! {
+    ExtFilter {                                   // 2 words
+        (0x00 => f0: ReadWrite<u32, EXT_FILTER_F0::Register>),
+        (0x04 => f1: ReadWrite<u32, EXT_FILTER_F1::Register>),
+        (0x08 => @END),
+    }
+}
+register_structs! {
     Fdcan1MessageRam {
-        (0x0000 => _reserved_filters),
-        (0x00B0 => rxfifo0: [ReadWrite<u32, RXFIFO0>; N]),
-        (0x0188 => _reserved_fifo1_and_events),
-        (0x0278 => txbuf:   [ReadWrite<u32, ...>; M]),
+        (0x0000 => std_filters: [ReadWrite<u32, STD_FILTER::Register>; 28]),  // 28 w
+        (0x0070 => ext_filters: [ExtFilter; 8]),        // 8 × 2  = 16 w
+        (0x00B0 => rx_fifo0:    [RxElement; 3]),        // 3 × 18 = 54 w
+        (0x0188 => rx_fifo1:    [RxElement; 3]),        // 3 × 18 = 54 w
+        (0x0260 => tx_event:    [TxEventElement; 3]),   // 3 × 2  = 6 w
+        (0x0278 => tx_buffers:  [TxElement; 3]),        // 3 × 18 = 54 w
         (0x0350 => @END),
     }
 }
 
 //message ram structure as its easiest to work with it with tock registers
 register_bitfields![u32,
-    /*STD_FILTER [
-        SFID2 OFFSET(0)  NUMBITS(11) [],   // ID2 or mask
-        SFID1 OFFSET(16) NUMBITS(11) [],   // ID1
-        SFEC  OFFSET(27) NUMBITS(3)  [],   // what a match does (store FIFO0/1, reject…)
-        SFT   OFFSET(30) NUMBITS(2)  [],   //
-    ],*/
-    RXFIFO0
+    STD_FILTER [
+        SFID2 OFFSET(0)  NUMBITS(11) [],           
+        SFID1 OFFSET(16) NUMBITS(11) [],
+        SFEC  OFFSET(27) NUMBITS(3) [
+            DISABLE = 0, FIFO0 = 1, FIFO1 = 2, REJECT = 3,
+            PRIORITY = 4, PRIORITY_FIFO0 = 5, PRIORITY_FIFO1 = 6,
+        ],
+        SFT   OFFSET(30) NUMBITS(2) [
+            RANGE = 0, DUAL = 1, CLASSIC = 2, DISABLED = 3,
+        ],
+    ],
+
+    EXT_FILTER_F0 [
+        EFID1 OFFSET(0)  NUMBITS(29) [],
+        EFEC  OFFSET(29) NUMBITS(3) [
+            DISABLE = 0, FIFO0 = 1, FIFO1 = 2, REJECT = 3,
+            PRIORITY = 4, PRIORITY_FIFO0 = 5, PRIORITY_FIFO1 = 6,
+        ],
+    ],
+    EXT_FILTER_F1 [
+        EFID2 OFFSET(0)  NUMBITS(29) [],
+        EFT   OFFSET(30) NUMBITS(2) [
+            RANGE = 0, DUAL = 1, CLASSIC = 2, RANGE_NO_XIDAM = 3,
+        ],
+    ],
+
+    RX_ELEMENT_R0 [
+        ID  OFFSET(0)  NUMBITS(29) [],  
+        RTR OFFSET(29) NUMBITS(1)  [],
+        XTD OFFSET(30) NUMBITS(1)  [],   // 0 = standard, 1 = extended
+        ESI OFFSET(31) NUMBITS(1)  [],
+    ],
+    RX_ELEMENT_R1 [
+        RXTS OFFSET(0)  NUMBITS(16) [],  // rx timestamp
+        DLC  OFFSET(16) NUMBITS(4)  [],
+        BRS  OFFSET(20) NUMBITS(1)  [],
+        FDF  OFFSET(21) NUMBITS(1)  [],
+        FIDX OFFSET(24) NUMBITS(7)  [],  // matching filter index
+        ANMF OFFSET(31) NUMBITS(1)  [],  // accepted non-matching frame
+    ],
+    TX_ELEMENT_T0 [
+        ID  OFFSET(0)  NUMBITS(29) [],  
+        RTR OFFSET(29) NUMBITS(1)  [],
+        XTD OFFSET(30) NUMBITS(1)  [],
+        ESI OFFSET(31) NUMBITS(1)  [],
+    ],
+    TX_ELEMENT_T1 [
+        DLC OFFSET(16) NUMBITS(4) [],
+        BRS OFFSET(20) NUMBITS(1) [],
+        FDF OFFSET(21) NUMBITS(1) [],
+        EFC OFFSET(23) NUMBITS(1) [],    // 1 = store a Tx event FIFO entry
+        MM  OFFSET(24) NUMBITS(8) [],    // message marker (echoed in the event)
+    ],
 ];
