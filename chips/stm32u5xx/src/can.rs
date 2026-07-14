@@ -8,6 +8,7 @@ use kernel::utilities::registers::{
 use kernel::utilities::StaticRef;
 
 use core::cell::Cell;
+use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::can::{self, StandardBitTiming};
 use kernel::platform::chip::ClockInterface;
@@ -646,7 +647,7 @@ impl Can {
     ///
     /// Usage: check is the INIT bit in the FDCAN_CCCR is set for 200_000 times
     /// ```ignore
-    ///    Can::wait_for(200_000, || self.registers.can_msr.is_set(CAN_MSR::INAK))
+    ///    //Can::wait_for(200_000, || self.registers.can_msr.is_set(CAN_MSR::INAK))
     /// ```
     fn wait_for(times: usize, f: impl Fn() -> bool) -> bool {
         for _ in 0..times {
@@ -659,6 +660,8 @@ impl Can {
     }
 
     pub fn enable(&self) -> Result<(), kernel::ErrorCode> {
+        self.enable_irqs();
+        debug!("i am being enabled!");
         //initialize the peripheral
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::SET);
         //we wait for init to be written as specified in rm0456 70.4.5
@@ -669,7 +672,7 @@ impl Can {
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::CCE::SET);
 
         self.can_state.set(CanState::Initialization);
-
+        debug!("i set my state to enabled!");
         //we are doing a standard CAN driver for now, just making sure
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::FDOE::CLEAR);
 
@@ -679,11 +682,14 @@ impl Can {
 
         //set transmit order priority (fifo vs queue)
         self.registers.fdcan_txbc.modify(FDCAN_TXBC::TFQM::SET);
+        self.registers.fdcan_txbtie.set(1 << 0);
 
         match self.automatic_retransmission.get() {
             true => self.registers.fdcan_cccr.modify(FDCAN_CCCR::DAR::CLEAR),
             false => self.registers.fdcan_cccr.modify(FDCAN_CCCR::DAR::SET),
         }
+
+        debug!("i configured automatic retransmission!");
 
         if let Some(operating_mode_settings) = self.operating_mode.get() {
             match operating_mode_settings {
@@ -718,7 +724,7 @@ impl Can {
             self.disable();
             return Err(kernel::ErrorCode::INVAL);
         }
-
+        debug!("i fully finished enabling!");
         Ok(())
     }
 
@@ -758,15 +764,17 @@ impl Can {
     pub fn enter_normal_mode(&self) -> Result<(), kernel::ErrorCode> {
         //clear init which automatically clears CCE (we disable configuration) and then wait
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::CLEAR);
-        if !Can::wait_for(20000, || {
+        /*if !Can::wait_for(1000000, || {
             !self.registers.fdcan_cccr.is_set(FDCAN_CCCR::INIT)
         }) {
             return Err(kernel::ErrorCode::FAIL);
-        }
-
+        }*/
+        debug!("waiting to exit init");
+        while self.registers.fdcan_cccr.is_set(FDCAN_CCCR::INIT) {}
+        debug!("exit init");
         //move the FSM to Normal
         self.can_state.set(CanState::Normal);
-
+        debug!("i entered normal mode");
         Ok(())
     }
 
@@ -777,12 +785,14 @@ impl Can {
         // setting init stops the peripheral from going on the bus, which is similar behavior to sleep on the bxCAN f4 peripheral
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::SET);
         self.can_state.set(CanState::Sleep);
+        self.disable_irqs();
+        debug!("i went to sleep");
     }
 
     pub fn enable_irq(&self, interrupt: CanInterruptMode) {
         match interrupt {
             CanInterruptMode::TransmitInterrupt => {
-                self.registers.fdcan_ie.modify(FDCAN_IE::TEFE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::TCE::SET);
             }
             CanInterruptMode::Fifo0Interrupt => {
                 self.registers.fdcan_ie.modify(FDCAN_IE::RF0NE::SET);
@@ -801,6 +811,8 @@ impl Can {
                 self.registers.fdcan_ie.modify(FDCAN_IE::MRAFE::SET);
             }
         }
+        self.registers.fdcan_ile.modify(FDCAN_ILE::EINT0::SET);
+        debug!("i enabled all my irqs");
     }
 
     pub fn disable_irq(&self, interrupt: CanInterruptMode) {
@@ -847,8 +859,8 @@ impl Can {
         dlc: usize,
         rtr: u8,
     ) -> Result<(), kernel::ErrorCode> {
+        debug!("i am sending an 8 byte message");
         if self.can_state.get() == CanState::Normal {
-            self.enable_irqs();
             if self.registers.fdcan_txfqs.is_set(FDCAN_TXFQS::TFQF) {
                 return Err(kernel::ErrorCode::BUSY);
             }
@@ -893,6 +905,10 @@ impl Can {
             element.data[0].set(word0);
             element.data[1].set(word1);
 
+            if self.registers.fdcan_txbrp.get() & (1 << put_index) != 0 {
+                return Err(kernel::ErrorCode::BUSY);
+            }
+
             //request transfer
             self.registers.fdcan_txbar.set(1 << put_index);
             Ok(())
@@ -902,34 +918,67 @@ impl Can {
     }
 
     pub fn handle_transmit_interrupt(&self) {
+        debug!(
+            "TX handler: client={} tx_buf={}",
+            self.transmit_client.is_some(),
+            self.tx_buffer.is_some()
+        );
         let mut state = Ok(());
-        //we check if we received a request for a transition to bus off
         if self.registers.fdcan_ir.is_set(FDCAN_IR::BO) {
-            state = Err(can::Error::BusOff)
+            state = Err(can::Error::BusOff);
         }
         if let Err(err) = state {
             self.can_state.set(CanState::RunningError(err));
         }
-
         self.transmit_client.map(|client| {
             if let Some(buf) = self.tx_buffer.take() {
+                debug!("calling transmit_complete");
                 client.transmit_complete(state, buf);
+            } else {
+                debug!("TX handler: tx_buffer was EMPTY");
             }
         });
     }
 
     pub fn handle_interrupt(&self) {
+        debug!("i am handling an interrupt");
         let ir = self.registers.fdcan_ir.extract();
+        debug!("handle_interrupt IR={:#x}", ir.get());
         if ir.is_set(FDCAN_IR::TC) {
+            debug!("dispatching TC");
             self.handle_transmit_interrupt();
         }
         if ir.is_set(FDCAN_IR::RF0N) {
             self.handle_fifo0_interrupt();
         }
+        if ir.is_set(FDCAN_IR::MRAF) {
+            debug!(
+                "MRAF! txfqs_pi={} rxf0s_gi={} txbto={:#x}",
+                self.registers.fdcan_txfqs.read(FDCAN_TXFQS::TFQPI),
+                self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0GI),
+                self.registers.fdcan_txbto.get()
+            );
+            if self.registers.fdcan_txbto.get() & (1 << 0) == 0 {
+                // transmit was lost to the RAM fault — fail it back so we don't deadlock
+                self.transmit_client.map(|client| {
+                    if let Some(buf) = self.tx_buffer.take() {
+                        client.transmit_complete(Err(can::Error::Transmission), buf);
+                    }
+                });
+            }
+        }
         self.registers.fdcan_ir.set(ir.get());
     }
 
     pub fn handle_fifo0_interrupt(&self) {
+        //debug!("rx_buffer present: {}", self.rx_buffer.is_some());
+        debug!("i am handling a fifo0 interrupt");
+        debug!(
+            "TC={} TXBTO={:#x} IR={:#x}",
+            self.registers.fdcan_ir.is_set(FDCAN_IR::TC),
+            self.registers.fdcan_txbto.get(),
+            self.registers.fdcan_ir.get()
+        );
         let get_index = self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0GI);
         //let put_index = self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0PI);
         let element = &self.msg_ram.rx_fifo0[get_index as usize];
@@ -957,8 +1006,9 @@ impl Can {
         });
 
         self.registers.fdcan_rxf0a.set(get_index as u32);
+        debug!("wrote {} as get_index", get_index);
         self.receive_client.map(|client| {
-            self.rx_buffer.take().map(|buf| {
+            self.rx_buffer.map(|buf| {
                 client.message_received(id, buf, dlc, Ok(()));
             });
         });
@@ -973,13 +1023,17 @@ impl DeferredCallClient for Can {
         match self.deferred_action.take() {
             Some(action) => match action {
                 AsyncAction::Enable => {
+                    debug!("i am being asked to enable thru an async action");
                     if let Err(enable_err) = self.enter_normal_mode() {
+                        debug!("enabling thru an async action bugged tf out");
+                        debug!("error code is {:?}", enable_err);
                         self.controller_client.map(|controller_client| {
                             controller_client.state_changed(self.can_state.get().into());
                             controller_client.enabled(Err(enable_err));
                         });
                     }
                     self.controller_client.map(|controller_client| {
+                        debug!("enabling thru an async action worked");
                         controller_client.state_changed(can::State::Running);
                         controller_client.enabled(Ok(()));
                     });

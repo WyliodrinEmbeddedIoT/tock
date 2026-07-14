@@ -81,6 +81,10 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
         if let (Some(tx), Some(rx)) = (usart1_channel_tx, usart1_channel_rx) {
             usart::Usart::set_dma(self.usart1, self.dma1, tx, rx);
         }
+
+        kernel::debug!("i am enabling fdcan clock");
+        self.rcc.enable_fdcan();
+        kernel::debug!("i enabled fdcan clock");
     }
 }
 

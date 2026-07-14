@@ -10,6 +10,7 @@ use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::deferred_call::DeferredCallClient;
+use kernel::hil::can::{Configure, Controller};
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
@@ -238,6 +239,13 @@ unsafe fn start() -> (
         ),
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
+
+    /*let caan = &periphs.can1;
+    caan.set_bitrate(125000).unwrap();
+    caan.set_operation_mode(kernel::hil::can::OperationMode::Loopback)
+        .unwrap();
+    caan.enable().unwrap(); // enters init + configures
+    caan.enter_normal_mode().unwrap();*/
 
     let can = components::can::CanComponent::new(
         board_kernel,
