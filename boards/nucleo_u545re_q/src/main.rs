@@ -10,13 +10,11 @@ use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
 use kernel::deferred_call::DeferredCallClient;
-use kernel::hil::can::{Configure, Controller};
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{create_capability, static_init};
 
-use stm32u545::can;
 use stm32u545::gpio::PinId;
 
 pub mod io;

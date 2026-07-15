@@ -3,14 +3,10 @@
 // Copyright Tock Contributors 2024.
 // Copyright OxidOS Automotive 2026.
 
-use kernel::debug;
 use kernel::utilities::registers::interfaces::ReadWriteable;
 use kernel::utilities::registers::interfaces::Readable;
-use kernel::utilities::registers::interfaces::Writeable;
 use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
 use kernel::utilities::StaticRef;
-
-use crate::rcc::PLL1CFGR::PLL1M;
 
 register_structs! {
     pub RccRegisters {

@@ -43,11 +43,6 @@ fn enable_tim2_clock() {
     rcc.enable_tim2();
 }
 
-fn enable_fdcan_clock() {
-    let rcc = rcc::Rcc::new(rcc::RCC_BASE);
-    rcc.enable_fdcan();
-}
-
 impl<'a> Stm32u5xxDefaultPeripherals<'a> {
     pub fn new(usart1: &'a usart::Usart<'a>, exti: &'a exti::Exti<'a>, dma1: &'a Dma) -> Self {
         Self {
@@ -58,11 +53,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             dma1,
             gpio_a: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortA),
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
-            can1: Can::new(
-                can::SEC_FDCAN1_BASE,
-                can::SEC_FDCAN1_RAM_BASE,
-                enable_fdcan_clock,
-            ),
+            can1: Can::new(can::SEC_FDCAN1_BASE, can::SEC_FDCAN1_RAM_BASE),
         }
     }
 

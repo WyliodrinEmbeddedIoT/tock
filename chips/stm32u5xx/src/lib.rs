@@ -4,6 +4,7 @@
 
 #![no_std]
 
+pub mod can;
 pub mod chip;
 pub mod dma;
 pub mod exti;
@@ -12,7 +13,6 @@ pub mod nvic;
 pub mod rcc;
 pub mod tim;
 pub mod usart;
-pub mod can;
 
 use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, CortexMVariant};
 
