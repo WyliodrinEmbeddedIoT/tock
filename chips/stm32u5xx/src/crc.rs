@@ -93,7 +93,7 @@ pub struct CRC<'a> {
     current_algorithm: OptionalCell<CrcAlgorithm>,
 }
 
-impl<'a> CRC<'a> {
+impl CRC<'_> {
     pub fn new(base_addr: StaticRef<CrcRegisters>) -> Self {
         Self {
             registers: base_addr,
@@ -254,7 +254,7 @@ impl<'a> Crc<'a> for CRC<'a> {
     }
 }
 
-impl<'a> DeferredCallClient for CRC<'a> {
+impl DeferredCallClient for CRC<'_> {
     fn handle_deferred_call(&self) {
         debug!("CRC: handle_deferred_call fired!");
 
