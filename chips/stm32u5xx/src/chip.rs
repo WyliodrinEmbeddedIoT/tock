@@ -15,6 +15,7 @@ use crate::nvic::{
 use crate::rcc;
 use crate::tim;
 use crate::usart;
+use crate::crc::{self, CRC_BASE};
 
 use core::fmt::Write;
 use kernel::platform::chip::Chip;
@@ -34,6 +35,7 @@ pub struct Stm32u5xxDefaultPeripherals<'a> {
     pub dma1: &'a Dma,
     pub gpio_a: gpio::Port<'a>,
     pub gpio_c: gpio::Port<'a>,
+    pub crc: crc::CRC<'a>,
 }
 
 fn enable_tim2_clock() {
@@ -51,6 +53,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             dma1,
             gpio_a: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortA),
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
+            crc: crc::CRC::new(CRC_BASE),
         }
     }
 
@@ -62,6 +65,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
         self.rcc.enable_usart1();
         self.rcc.enable_syscfg();
         self.rcc.set_usart1_source_pclk();
+        self.rcc.enable_crc();
         // Link DMA to USART1
         let usart1_channel_tx = self.dma1.request_channel();
         let usart1_channel_rx = self.dma1.request_channel();

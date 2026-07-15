@@ -12,6 +12,7 @@ pub mod nvic;
 pub mod rcc;
 pub mod tim;
 pub mod usart;
+pub mod crc;
 
 use cortexm33::{initialize_ram_jump_to_main, unhandled_interrupt, CortexM33, CortexMVariant};
 

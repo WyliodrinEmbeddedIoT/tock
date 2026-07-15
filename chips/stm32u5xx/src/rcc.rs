@@ -33,7 +33,8 @@ register_structs! {
 
 register_bitfields![u32,
     pub AHB1ENR [
-        GPDMA1EN OFFSET(0) NUMBITS(1) []
+        GPDMA1EN OFFSET(0) NUMBITS(1) [],
+        CRCEN OFFSET(12) NUMBITS(1) [],
     ],
     pub AHB2ENR1 [
         GPIOAEN OFFSET(0) NUMBITS(1) [],
@@ -77,6 +78,10 @@ pub struct Rcc {
 impl Rcc {
     pub const fn new(base: StaticRef<RccRegisters>) -> Rcc {
         Rcc { registers: base }
+    }
+
+    pub fn enable_crc(&self) {
+        self.registers.ahb1enr.modify(AHB1ENR::CRCEN::SET);
     }
 
     pub fn enable_dma1(&self) {

@@ -1,4 +1,5 @@
 use core::cell::Cell;
+use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::crc::{Client, Crc, CrcAlgorithm, CrcOutput};
 use kernel::utilities::cells::OptionalCell;
@@ -89,6 +90,7 @@ pub struct CRC<'a> {
     alg_state: Cell<AlgSet>,
     buffer: OptionalCell<SubSliceMut<'static, u8>>,
     request: Cell<Request>,
+    current_algorithm: OptionalCell<CrcAlgorithm>,
 }
 
 impl<'a> CRC<'a> {
@@ -101,6 +103,7 @@ impl<'a> CRC<'a> {
             alg_state: Cell::new(AlgSet::Uninitialised),
             buffer: OptionalCell::empty(),
             request: Cell::new(Request::None),
+            current_algorithm: OptionalCell::empty(),
         }
     }
 }
@@ -111,10 +114,15 @@ impl<'a> Crc<'a> for CRC<'a> {
     }
 
     fn algorithm_supported(&self, algorithm: CrcAlgorithm) -> bool {
-        matches!(algorithm, CrcAlgorithm::Crc32)
+        matches!(
+            algorithm,
+            CrcAlgorithm::Crc32 | CrcAlgorithm::Crc32C | CrcAlgorithm::Crc16CCITT
+        )
     }
 
     fn set_algorithm(&self, algorithm: CrcAlgorithm) -> Result<(), ErrorCode> {
+        debug!("CRC: set_algorithm called!");
+
         if !self.algorithm_supported(algorithm) {
             return Err(ErrorCode::NOSUPPORT);
         }
@@ -125,50 +133,60 @@ impl<'a> Crc<'a> for CRC<'a> {
 
         // The STM32U5xx features programable parameters, in order to accomodate for
         // multiple CRC algorithms, enforceable by the user
-        // All the following parameters have been configured as per the
-        // CRC32 Ethernet algorithm
 
-        // initial value of the CRC, on the STM32U5xx the CRC_DR's first value is
-        // set by the CR_INIT; it can be used for both writing and reading;
-        self.registers.init.write(INIT::INIT.val(0xFFFFFFFF));
+        // INIT configurees the initial value of the CRC
 
-        // These bits control the size of the polynomial.
+        // PSIZE controls the size of the polynomial.
         // 00: 32 byt polynomial
         // 10: 8 bit polynomial
         // 01: 16 bit polynomial
         // 00: 32 bit polynomial
-        // as per the CRC32 Ethernet algorithm, this one was set to 32 bits
-        self.registers.cr.modify(CR::PSIZE.val(0b00));
 
-        // This bitfield controls the reversal of the bit order of the input data.
+        // REVIN controls the reversal of the bit order of the input data.
         // 00: Bit order not affected
         // 01: Bit reversal done by byte
         // 10: Bit reversal done by half-word
         // 11: Bit reversal done by word
         // as per the CRC32 Ethernet algorithm, this one was set to byte by reversal
-        self.registers.cr.modify(CR::REVIN.val(0b01));
 
-        // Reverse output data
+        // REVOUT controls the reversal of the bit order of the input data.
         // This bit controls the reversal of the bit order of the output data.
         // 0: Bit order not affected
         // 1: Bit-reversed output format
-        // as per the CRC32 Ethernet algorithm, reversed-bit output was selected
-        self.registers.cr.modify(CR::REVOUT.val(0b01));
 
-        // Programmable polynomial
-        // This register is used to write the coefficients of the polynomial to be
-        // used for CRC calculation.
-        // If the polynomial size is less than 32 bits, the least significant bits
-        // have to be used to program the correct value.
-        // As mentioned in the reference manual, the default polynomial value for the
-        // CRC-32 Ethernet polynomial is 0x4C11DB7.
-        self.registers.pol.write(POL::POL.val(0x4C11DB7));
+        // POL is used to write the coefficients of the polynomial to be used
+
+        match algorithm {
+            CrcAlgorithm::Crc32 => {
+                self.registers.init.write(INIT::INIT.val(0xFFFFFFFF));
+                self.registers.cr.modify(CR::PSIZE.val(0b00));
+                self.registers.cr.modify(CR::REVIN.val(0b01));
+                self.registers.cr.modify(CR::REVOUT.val(0b01));
+                self.registers.pol.write(POL::POL.val(0x4C11DB7));
+            }
+
+            CrcAlgorithm::Crc32C => {
+                self.registers.init.write(INIT::INIT.val(0xFFFFFFFF));
+                self.registers.cr.modify(CR::PSIZE.val(0b00));
+                self.registers.cr.modify(CR::REVIN.val(0b01));
+                self.registers.cr.modify(CR::REVOUT.val(0b1));
+                self.registers.pol.write(POL::POL.val(0x1EDC6F41));
+            }
+
+            CrcAlgorithm::Crc16CCITT => {
+                self.registers.init.write(INIT::INIT.val(0x0000FFFF));
+                self.registers.cr.modify(CR::PSIZE.val(0b01));
+                self.registers.cr.modify(CR::REVIN.val(0b01));
+                self.registers.cr.modify(CR::REVOUT.val(0b0));
+                self.registers.pol.write(POL::POL.val(0x1021));
+            }
+        }
 
         // Initialising the CRC engine as per the manual, by setting the RESET Bit
         self.registers.cr.modify(CR::RESET::SET);
-
         self.state.set(State::Idle);
         self.alg_state.set(AlgSet::Initialised);
+        self.current_algorithm.set(algorithm);
 
         Ok(())
     }
@@ -177,6 +195,8 @@ impl<'a> Crc<'a> for CRC<'a> {
         &self,
         data: SubSliceMut<'static, u8>,
     ) -> Result<(), (ErrorCode, SubSliceMut<'static, u8>)> {
+        debug!("CRC: input() called with {} bytes", data.len());
+
         if self.alg_state.get() == AlgSet::Uninitialised {
             return Err((ErrorCode::RESERVE, data));
         }
@@ -193,8 +213,16 @@ impl<'a> Crc<'a> for CRC<'a> {
             // should use set? or write
             self.registers.dr.set(byte as u32);
         }
+        //reinterpret cast array de u32 uri
 
-        self.buffer.set(data);
+        debug!("CRC: Finished writing to DR, triggering deferred call");
+
+        // pots and pans technology
+        let mut consumed_data = data;
+        let len = consumed_data.len();
+        consumed_data.slice(len..len);
+
+        self.buffer.set(consumed_data);
         self.request.set(Request::Input);
         self.deferred_call.set();
 
@@ -228,28 +256,40 @@ impl<'a> Crc<'a> for CRC<'a> {
 
 impl<'a> DeferredCallClient for CRC<'a> {
     fn handle_deferred_call(&self) {
+        debug!("CRC: handle_deferred_call fired!");
+
+        let current_request = self.request.get();
+        self.request.set(Request::None);
         self.state.set(State::Idle);
 
-        self.client.map(|client| {
-            match self.request.get() {
-                Request::Input => {
-                    if let Some(data) = self.buffer.take() {
-                        client.input_done(Ok(()), data);
-                    }
+        self.client.map(|client| match current_request {
+            Request::Input => {
+                debug!("CRC: Request::Input");
+                if let Some(data) = self.buffer.take() {
+                    debug!("CRC: client.input_done(Ok(()), data);");
+                    client.input_done(Ok(()), data);
                 }
-
-                Request::Compute => {
-                    // the CRC32 Ethernet algorithm requires a final XOR on the data
-                    // the STM's CRC does not have one such option built in,
-                    // so we use a regular software XOR
-                    let result = self.registers.dr.get() ^ 0xFFFFFFFF;
-                    client.crc_done(Ok(CrcOutput::Crc32(result)));
-                }
-
-                Request::None => {}
             }
 
-            self.request.set(Request::None);
+            Request::Compute => {
+                let unprocessed_result = self.registers.dr.get();
+                debug!("CRC: Request::Compute; client.crc_done...");
+                let result = match self.current_algorithm.get() {
+                    Some(CrcAlgorithm::Crc32) => CrcOutput::Crc32(unprocessed_result ^ 0xFFFFFFFF),
+                    Some(CrcAlgorithm::Crc32C) => {
+                        CrcOutput::Crc32C(unprocessed_result ^ 0xFFFFFFFF)
+                    }
+                    Some(CrcAlgorithm::Crc16CCITT) => {
+                        CrcOutput::Crc16CCITT((unprocessed_result & 0xFFFF) as u16)
+                    }
+                    None => unreachable!("No algorithm has been set."),
+                };
+                client.crc_done(Ok(result));
+            }
+
+            Request::None => {
+                debug!("CRC: Request::None");
+            }
         });
     }
 
