@@ -31,7 +31,7 @@ register_structs! {
 pub const CRC_BASE: StaticRef<CrcRegisters> =
     unsafe { StaticRef::new(0x50023000 as *const CrcRegisters) };
 
-/// Adress needed for writing inputs as u8, as the DR supports both read/write.
+/// Address needed for writing inputs as u8, as the DR supports both read/write.
 /// Reading is easily done, but the writing proved difficult, as
 /// inserting data that is not a multiple of 32 bits should also be supported.
 /// This solves this by defining a pointer that allows us to solve this.
