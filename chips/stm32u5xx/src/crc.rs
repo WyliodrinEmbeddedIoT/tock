@@ -1,5 +1,5 @@
 use core::cell::Cell;
-use kernel::debug;
+//use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::crc::{Client, Crc, CrcAlgorithm, CrcOutput};
 use kernel::utilities::cells::OptionalCell;
@@ -31,14 +31,21 @@ register_structs! {
 pub const CRC_BASE: StaticRef<CrcRegisters> =
     unsafe { StaticRef::new(0x50023000 as *const CrcRegisters) };
 
+/// Adress needed for writing inputs as u8, as the DR supports both read/write.
+/// Reading is easily done, but the writing proved difficult, as
+/// inserting data that is not a multiple of 32 bits should also be supported.
+/// This solves this by defining a pointer that allows us to solve this.
+const CRC_DR_BYTE: StaticRef<ReadWrite<u8>> =
+    unsafe { StaticRef::new(0x50023000 as *const ReadWrite<u8>) };
+
 register_bitfields![u32,
      pub DR [
         /// Data register
-        DR OFFSET(0) NUMBITS(32) []
+        DR OFFSET(0) NUMBITS(32) [],
     ],
     pub IDR [
         /// Temporary 4 byte storage
-        DR OFFSET(0) NUMBITS(32) []
+        IDR OFFSET(0) NUMBITS(32) []
     ],
     pub CR [
         /// Reset bit, used for initialising and resetting
@@ -121,7 +128,7 @@ impl<'a> Crc<'a> for CRC<'a> {
     }
 
     fn set_algorithm(&self, algorithm: CrcAlgorithm) -> Result<(), ErrorCode> {
-        debug!("CRC: set_algorithm called!");
+        //debug!("CRC: set_algorithm called!");
 
         if !self.algorithm_supported(algorithm) {
             return Err(ErrorCode::NOSUPPORT);
@@ -154,7 +161,7 @@ impl<'a> Crc<'a> for CRC<'a> {
         // 0: Bit order not affected
         // 1: Bit-reversed output format
 
-        // POL is used to write the coefficients of the polynomial to be used
+        // POL is used to write the coefficients of the polynomial to be used.
 
         match algorithm {
             CrcAlgorithm::Crc32 => {
@@ -182,7 +189,7 @@ impl<'a> Crc<'a> for CRC<'a> {
             }
         }
 
-        // Initialising the CRC engine as per the manual, by setting the RESET Bit
+        // Initialising the CRC engine as per the manual, by setting the RESET Bit.
         self.registers.cr.modify(CR::RESET::SET);
         self.state.set(State::Idle);
         self.alg_state.set(AlgSet::Initialised);
@@ -195,7 +202,7 @@ impl<'a> Crc<'a> for CRC<'a> {
         &self,
         data: SubSliceMut<'static, u8>,
     ) -> Result<(), (ErrorCode, SubSliceMut<'static, u8>)> {
-        debug!("CRC: input() called with {} bytes", data.len());
+        //debug!("CRC: input() called with {} bytes", data.len());
 
         if self.alg_state.get() == AlgSet::Uninitialised {
             return Err((ErrorCode::RESERVE, data));
@@ -207,17 +214,22 @@ impl<'a> Crc<'a> for CRC<'a> {
 
         self.state.set(State::Processing);
 
-        // wrote them as mut_slice and iter_mut first, realised that I only read them
-        // so would not need it
+        // The DR registers requires 8-bit writes when inputting data.
+        // Writing the whole 32 bits causes incorrect results, so we cannot use the regular register.
+        // We need to read it as 32 bits at the end, to retrieve the CRC result.
         for &byte in data.as_slice().iter() {
-            // should use set? or write
-            self.registers.dr.set(byte as u32);
+            CRC_DR_BYTE.set(byte);
         }
-        //reinterpret cast array de u32 uri
 
-        debug!("CRC: Finished writing to DR, triggering deferred call");
+        /*
+        debug!(
+            "CRC: Finished writing to DR, triggering deferred call (read back: {:08X})",
+            self.registers.dr.get()
+        );
+        */
 
-        // pots and pans technology
+        // Shrink the buffer window accordingly, as to confirm that the data
+        // has been completely been completely processed.
         let mut consumed_data = data;
         let len = consumed_data.len();
         consumed_data.slice(len..len);
@@ -256,25 +268,28 @@ impl<'a> Crc<'a> for CRC<'a> {
 
 impl DeferredCallClient for CRC<'_> {
     fn handle_deferred_call(&self) {
-        debug!("CRC: handle_deferred_call fired!");
+        //debug!("CRC: handle_deferred_call fired!");
 
         let current_request = self.request.get();
         self.request.set(Request::None);
         self.state.set(State::Idle);
 
+        // Mapping the client as per the HIL
         self.client.map(|client| match current_request {
             Request::Input => {
-                debug!("CRC: Request::Input");
+                //debug!("CRC: Request::Input");
                 if let Some(data) = self.buffer.take() {
-                    debug!("CRC: client.input_done(Ok(()), data);");
+                    //debug!("CRC: client.input_done(Ok(()), data);");
                     client.input_done(Ok(()), data);
                 }
             }
 
             Request::Compute => {
                 let unprocessed_result = self.registers.dr.get();
-                debug!("CRC: Request::Compute; client.crc_done...");
+                //debug!("CRC: Request::Compute; client.crc_done...");
                 let result = match self.current_algorithm.get() {
+                    // As the STM's CRC does not offer the option of a final XOR on the value, as some
+                    // CRC algorithms do, we do it in software, when needed.
                     Some(CrcAlgorithm::Crc32) => CrcOutput::Crc32(unprocessed_result ^ 0xFFFFFFFF),
                     Some(CrcAlgorithm::Crc32C) => {
                         CrcOutput::Crc32C(unprocessed_result ^ 0xFFFFFFFF)
@@ -288,7 +303,7 @@ impl DeferredCallClient for CRC<'_> {
             }
 
             Request::None => {
-                debug!("CRC: Request::None");
+                //debug!("CRC: Request::None");
             }
         });
     }
