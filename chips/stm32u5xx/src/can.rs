@@ -669,7 +669,7 @@ register_bitfields![u32,
     ],
 ];
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 enum CanState {
     Initialization,
     Normal,
@@ -724,7 +724,7 @@ impl From<CanState> for can::State {
 pub struct Can {
     registers: StaticRef<Registers>,
     can_state: Cell<CanState>,
-    _error_interrupt_counter: Cell<u32>,
+    error_interrupt_counter: Cell<u32>,
     failed_messages: Cell<u32>,
 
     // communication params
@@ -757,9 +757,9 @@ impl Can {
         Can {
             registers,
             can_state: Cell::new(CanState::Sleep),
-            _error_interrupt_counter: Cell::new(0),
+            error_interrupt_counter: Cell::new(0),
             failed_messages: Cell::new(0),
-            automatic_retransmission: Cell::new(true),
+            automatic_retransmission: Cell::new(false),
             //automatic_wake_up: Cell::new(false),
             operating_mode: OptionalCell::empty(),
             bit_timing: OptionalCell::empty(),
@@ -929,6 +929,7 @@ impl Can {
         match interrupt {
             CanInterruptMode::TransmitInterrupt => {
                 self.registers.fdcan_ie.modify(FDCAN_IE::TCE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::TCFE::SET);
             }
             CanInterruptMode::Fifo0Interrupt => {
                 self.registers.fdcan_ie.modify(FDCAN_IE::RF0NE::SET);
@@ -945,16 +946,21 @@ impl Can {
                 self.registers.fdcan_ie.modify(FDCAN_IE::EWE::SET);
                 self.registers.fdcan_ie.modify(FDCAN_IE::BOE::SET);
                 self.registers.fdcan_ie.modify(FDCAN_IE::MRAFE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::PEAE::SET);
+                self.registers.fdcan_ie.modify(FDCAN_IE::PEDE::SET);
             }
         }
         self.registers.fdcan_ile.modify(FDCAN_ILE::EINT0::SET);
+
+        self.registers.fdcan_ils.modify(FDCAN_ILS::PERR::CLEAR);
         debug!("i enabled all my irqs");
     }
 
     pub fn disable_irq(&self, interrupt: CanInterruptMode) {
         match interrupt {
             CanInterruptMode::TransmitInterrupt => {
-                self.registers.fdcan_ie.modify(FDCAN_IE::TEFE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::TCE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::TCFE::CLEAR);
             }
             CanInterruptMode::Fifo0Interrupt => {
                 self.registers.fdcan_ie.modify(FDCAN_IE::RF0NE::CLEAR);
@@ -971,6 +977,8 @@ impl Can {
                 self.registers.fdcan_ie.modify(FDCAN_IE::EWE::CLEAR);
                 self.registers.fdcan_ie.modify(FDCAN_IE::BOE::CLEAR);
                 self.registers.fdcan_ie.modify(FDCAN_IE::MRAFE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::PEAE::CLEAR);
+                self.registers.fdcan_ie.modify(FDCAN_IE::PEDE::CLEAR);
             }
         }
     }
@@ -1050,6 +1058,11 @@ impl Can {
                 .fdcan_txbtie
                 .set(current_txbtie | (1 << put_index));
 
+            let current_txbcie = self.registers.fdcan_txbcie.get();
+            self.registers
+                .fdcan_txbcie
+                .set(current_txbcie | (1 << put_index));
+
             //request transfer
             self.registers.fdcan_txbar.set(1 << put_index);
             Ok(())
@@ -1069,6 +1082,10 @@ impl Can {
         //check if the bus is off, error if yes
         if self.registers.fdcan_ir.is_set(FDCAN_IR::BO) {
             state = Err(can::Error::BusOff);
+        } else if self.registers.fdcan_txbto.get() & (1 << 0) != 0 {
+            state = Ok(());
+        } else {
+            state = Err(can::Error::Transmission);
         }
         if let Err(err) = state {
             self.can_state.set(CanState::RunningError(err));
@@ -1091,7 +1108,7 @@ impl Can {
         //debug!("handle_interrupt IR={:#x}", ir.get());
 
         //transmit completed
-        if ir.is_set(FDCAN_IR::TC) {
+        if ir.is_set(FDCAN_IR::TC) || ir.is_set(FDCAN_IR::TCF) {
             //debug!("dispatching TC");
             self.handle_transmit_interrupt();
         }
@@ -1121,6 +1138,14 @@ impl Can {
                 });
             }
         }
+        if ir.is_set(FDCAN_IR::BO)
+            || ir.is_set(FDCAN_IR::EW)
+            || ir.is_set(FDCAN_IR::EP)
+            || ir.is_set(FDCAN_IR::PEA)
+            || ir.is_set(FDCAN_IR::PED)
+        {
+            self.handle_error_interrupt();
+        }
         debug!(
             "TEC={} REC={} PSR.LEC={} EP={} BO={}",
             self.registers.fdcan_ecr.read(FDCAN_ECR::TEC),
@@ -1132,6 +1157,61 @@ impl Can {
 
         //set the bits in IR to ack the fact that we handled the interrupt
         self.registers.fdcan_ir.set(ir.get());
+    }
+
+    pub fn handle_error_interrupt(&self) {
+        let psr = self.registers.fdcan_psr.extract();
+
+        if psr.is_set(FDCAN_PSR::BO) {
+            self.can_state
+                .set(CanState::RunningError(can::Error::BusOff));
+            //pass the buffer back to the client
+            self.transmit_client.map(|client| {
+                if let Some(buf) = self.tx_buffer.take() {
+                    debug!("calling transmit_complete");
+                    client.transmit_complete(Err(can::Error::BusOff), buf);
+                } else {
+                    debug!("TX handler: tx_buffer was EMPTY");
+                }
+            });
+        }
+        if psr.is_set(FDCAN_PSR::EP) {
+            self.can_state
+                .set(CanState::RunningError(can::Error::Passive));
+        }
+        if psr.is_set(FDCAN_PSR::EW) {
+            self.can_state
+                .set(CanState::RunningError(can::Error::Warning));
+        }
+        match psr.read(FDCAN_PSR::LEC) {
+            0b001 => self
+                .can_state
+                .set(CanState::RunningError(can::Error::Stuff)),
+            0b010 => self.can_state.set(CanState::RunningError(can::Error::Form)),
+            0b011 => self.can_state.set(CanState::RunningError(can::Error::Ack)),
+            0b100 => self
+                .can_state
+                .set(CanState::RunningError(can::Error::BitRecessive)),
+            0b101 => self
+                .can_state
+                .set(CanState::RunningError(can::Error::BitDominant)),
+            0b110 => self.can_state.set(CanState::RunningError(can::Error::Crc)),
+            0b111 | _ => {}
+        }
+
+        debug!(
+            "Error Interrupt Fired! Can state: {:?}",
+            self.can_state.get()
+        );
+
+        self.error_interrupt_counter
+            .replace(self.error_interrupt_counter.get() + 1);
+
+        if let CanState::RunningError(err) = self.can_state.get() {
+            self.controller_client.map(|controller_client| {
+                controller_client.state_changed(kernel::hil::can::State::Error(err));
+            });
+        }
     }
 
     pub fn handle_fifo0_interrupt(&self) {
