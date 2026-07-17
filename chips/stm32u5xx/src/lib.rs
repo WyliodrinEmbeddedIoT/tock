@@ -4,6 +4,7 @@
 
 #![no_std]
 
+pub mod can;
 pub mod chip;
 pub mod dma;
 pub mod exti;

@@ -52,6 +52,7 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
+    can: &'static capsules_extra::can::CanCapsule<'static, stm32u545::can::Can>,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -64,6 +65,7 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules_extra::can::DRIVER_NUM => f(Some(self.can)),
             _ => f(None),
         }
     }
@@ -122,6 +124,16 @@ unsafe fn set_pin_primary_functions(periphs: &stm32u545::chip::Stm32u5xxDefaultP
     let btn = periphs.gpio_c.pin(PinId::Pin13);
     btn.make_input();
     btn.set_floating_state(kernel::hil::gpio::FloatingState::PullDown);
+
+    //FDCAN Pins
+    let tx = periphs.gpio_a.pin(PinId::Pin12);
+    let rx = periphs.gpio_a.pin(PinId::Pin11);
+    tx.set_alternate_function(9);
+    tx.set_speed_high();
+    tx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
+    rx.set_alternate_function(9);
+    rx.set_speed_high();
+    rx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
 }
 
 #[inline(never)]
@@ -150,6 +162,7 @@ unsafe fn start() -> (
         stm32u545::usart::Usart<'static>,
         stm32u545::usart::Usart::new(stm32u545::usart::USART1_BASE)
     );
+
     usart1.register();
 
     // Load Peripherals Bundle
@@ -160,6 +173,8 @@ unsafe fn start() -> (
 
     // Initialize wiring (DMA, clocks)
     periphs.init();
+
+    periphs.can1.register();
 
     // Board specific wiring
     periphs.tim2.start();
@@ -233,6 +248,20 @@ unsafe fn start() -> (
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
 
+    /*let caan = &periphs.can1;
+    caan.set_bitrate(125000).unwrap();
+    caan.set_operation_mode(kernel::hil::can::OperationMode::Loopback)
+        .unwrap();
+    caan.enable().unwrap(); // enters init + configures
+    caan.enter_normal_mode().unwrap();*/
+
+    let can = components::can::CanComponent::new(
+        board_kernel,
+        capsules_extra::can::DRIVER_NUM,
+        &periphs.can1,
+    )
+    .finalize(components::can_component_static!(stm32u545::can::Can));
+
     // Platform and Interrupts
     let platform = static_init!(
         NucleoU545RE,
@@ -244,6 +273,7 @@ unsafe fn start() -> (
             led,
             button,
             alarm,
+            can
         }
     );
 
