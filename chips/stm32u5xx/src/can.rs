@@ -759,7 +759,7 @@ impl Can {
             can_state: Cell::new(CanState::Sleep),
             _error_interrupt_counter: Cell::new(0),
             failed_messages: Cell::new(0),
-            automatic_retransmission: Cell::new(false),
+            automatic_retransmission: Cell::new(true),
             //automatic_wake_up: Cell::new(false),
             operating_mode: OptionalCell::empty(),
             bit_timing: OptionalCell::empty(),
@@ -808,14 +808,14 @@ impl Can {
         //we are doing a standard CAN driver for now, FDOE=0 disables FD support
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::FDOE::CLEAR);
 
-        //here we set it to overwrite if full on both RX FIFOs
+        //here we set it to overwrite if full on both RX FIFOs (even if we only use one)
         self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::F0OM::SET);
         self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::F1OM::SET);
 
         //set transmit order priority (fifo vs queue), we set TXBC=1 so we use queue mode
         self.registers.fdcan_txbc.modify(FDCAN_TXBC::TFQM::SET);
         //we enable transmission interrupt for the first TX buffer only, this driver only sends ONE CAN message at a time.
-        self.registers.fdcan_txbtie.set(1 << 0);
+        //self.registers.fdcan_txbtie.set(1 << 0);
 
         //we flip the DAR (disable automatic retransmission register) depending on the parameter passed into the struct
         match self.automatic_retransmission.get() {
@@ -1045,6 +1045,11 @@ impl Can {
                 return Err(kernel::ErrorCode::BUSY);
             }
 
+            let current_txbtie = self.registers.fdcan_txbtie.get();
+            self.registers
+                .fdcan_txbtie
+                .set(current_txbtie | (1 << put_index));
+
             //request transfer
             self.registers.fdcan_txbar.set(1 << put_index);
             Ok(())
@@ -1116,6 +1121,14 @@ impl Can {
                 });
             }
         }
+        debug!(
+            "TEC={} REC={} PSR.LEC={} EP={} BO={}",
+            self.registers.fdcan_ecr.read(FDCAN_ECR::TEC),
+            self.registers.fdcan_ecr.read(FDCAN_ECR::REC),
+            self.registers.fdcan_psr.read(FDCAN_PSR::LEC),
+            self.registers.fdcan_psr.is_set(FDCAN_PSR::EP),
+            self.registers.fdcan_psr.is_set(FDCAN_PSR::BO)
+        );
 
         //set the bits in IR to ack the fact that we handled the interrupt
         self.registers.fdcan_ir.set(ir.get());

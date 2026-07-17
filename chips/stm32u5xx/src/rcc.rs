@@ -45,6 +45,7 @@ register_bitfields![u32,
         HSEON OFFSET(16) NUMBITS(1) [],
         HSERDY OFFSET(17) NUMBITS(1) [],
         HSEBYP OFFSET(18) NUMBITS(1) [],
+        HSEEXT OFFSET(20) NUMBITS(1) [],
         PLL1ON OFFSET(24) NUMBITS(1) [],
         PLL1RDY OFFSET(25) NUMBITS(1) [],
     ],
@@ -154,28 +155,29 @@ impl Rcc {
     }
 
     pub fn enable_fdcan(&self) {
-        /*
         //debug!("enable clock called!");
-        self.registers.cr.modify(CR::HSEON::CLEAR);
+        /*self.registers.cr.modify(CR::HSEON::CLEAR);
         self.registers.cr.modify(CR::HSEBYP::SET);
+        self.registers.cr.modify(CR::HSEEXT::SET);
         self.registers.cr.modify(CR::HSEON::SET);
         while !self.registers.cr.is_set(CR::HSERDY) {}
         //debug!("HSE READY");
         self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::HSE);
-        self.registers.apb1enr2.modify(APB1ENR2::FDCAN1EN::SET);
-        */
+        self.registers.apb1enr2.modify(APB1ENR2::FDCAN1EN::SET);*/
+
         self.registers.cr.modify(CR::HSION::SET);
         while !self.registers.cr.is_set(CR::HSIRDY) {}
         //debug!("HSE READY");
         self.registers.pll1cfgr.modify(PLL1CFGR::PLL1SRC::HSI16);
         self.registers.pll1cfgr.modify(PLL1CFGR::PLL1M.val(0));
-        self.registers.pll1divr.modify(PLL1DIVR::PLL1N.val(9));
-        self.registers.pll1divr.modify(PLL1DIVR::PLL1Q.val(20));
+        self.registers.pll1divr.modify(PLL1DIVR::PLL1N.val(7));
+        self.registers.pll1divr.modify(PLL1DIVR::PLL1Q.val(15));
         self.registers.pll1cfgr.modify(PLL1CFGR::PLL1QEN::SET);
         self.registers.pll1cfgr.modify(PLL1CFGR::PLL1RGE::HIGH);
         self.registers.cr.modify(CR::PLL1ON::SET);
         while !self.registers.cr.is_set(CR::PLL1RDY) {}
         self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::PLL1_Q);
+        //self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::HSE);
         self.registers.apb1enr2.modify(APB1ENR2::FDCAN1EN::SET);
     }
 }

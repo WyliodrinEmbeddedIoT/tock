@@ -124,6 +124,16 @@ unsafe fn set_pin_primary_functions(periphs: &stm32u545::chip::Stm32u5xxDefaultP
     let btn = periphs.gpio_c.pin(PinId::Pin13);
     btn.make_input();
     btn.set_floating_state(kernel::hil::gpio::FloatingState::PullDown);
+
+    //FDCAN Pins
+    let tx = periphs.gpio_a.pin(PinId::Pin12);
+    let rx = periphs.gpio_a.pin(PinId::Pin11);
+    tx.set_alternate_function(9);
+    tx.set_speed_high();
+    tx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
+    rx.set_alternate_function(9);
+    rx.set_speed_high();
+    rx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
 }
 
 #[inline(never)]
