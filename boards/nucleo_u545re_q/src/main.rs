@@ -237,8 +237,14 @@ unsafe fn start() -> (
 
     kernel::deferred_call::DeferredCallClient::register(&periphs.crc);
 
-    let crc = components::crc::CrcComponent::new(board_kernel, capsules_extra::crc::DRIVER_NUM, &periphs.crc)
-        .finalize(components::crc_component_static!(stm32u545::crc::CRC<'static>));
+    let crc = components::crc::CrcComponent::new(
+        board_kernel,
+        capsules_extra::crc::DRIVER_NUM,
+        &periphs.crc,
+    )
+    .finalize(components::crc_component_static!(
+        stm32u545::crc::CRC<'static>
+    ));
 
     // Platform and Interrupts
     let platform = static_init!(

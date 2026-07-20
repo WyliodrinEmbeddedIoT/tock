@@ -3,6 +3,7 @@
 // Copyright Tock Contributors 2024.
 // Copyright OxidOS Automotive 2026.
 
+use crate::crc::{self, CRC_BASE};
 use crate::dma::{ChannelId, Dma};
 use crate::exti;
 use crate::gpio;
@@ -15,7 +16,6 @@ use crate::nvic::{
 use crate::rcc;
 use crate::tim;
 use crate::usart;
-use crate::crc::{self, CRC_BASE};
 
 use core::fmt::Write;
 use kernel::platform::chip::Chip;
