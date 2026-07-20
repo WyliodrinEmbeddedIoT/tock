@@ -8,7 +8,7 @@ use kernel::hil::crc::{Client, Crc, CrcAlgorithm, CrcOutput};
 use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::leasable_buffer::SubSliceMut;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
-use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite};
+use kernel::utilities::registers::{register_bitfields, register_structs, ReadWrite, WriteOnly};
 use kernel::utilities::StaticRef;
 use kernel::ErrorCode;
 
@@ -34,12 +34,13 @@ register_structs! {
 pub const CRC_BASE: StaticRef<CrcRegisters> =
     unsafe { StaticRef::new(0x50023000 as *const CrcRegisters) };
 
-/// Address needed for writing inputs as u8, as the DR supports both read/write.
-/// Reading is easily done, but the writing proved difficult, as
-/// inserting data that is not a multiple of 32 bits should also be supported.
-/// This solves this by defining a pointer that allows us to solve this.
-const CRC_DR_BYTE: StaticRef<ReadWrite<u8>> =
-    unsafe { StaticRef::new(0x50023000 as *const ReadWrite<u8>) };
+/// Byte-width alias into the CRC data register.
+/// The STM32 CRC hardware supports sub-word writes.
+/// Byte-wide writes are required when input length isn't a multiple of 4,
+/// as writing full 32-bit words would pad with extra bytes and corrupt the
+/// resulting checksum.
+const CRC_DR_BYTE: StaticRef<WriteOnly<u8>> =
+    unsafe { StaticRef::new(0x50023000 as *const WriteOnly<u8>) };
 
 register_bitfields![u32,
      pub DR [
@@ -267,9 +268,7 @@ impl DeferredCallClient for CRC<'_> {
         // Mapping the client as per the HIL
         self.client.map(|client| match current_request {
             Request::Input => {
-                //debug!("CRC: Request::Input");
                 if let Some(data) = self.buffer.take() {
-                    //debug!("CRC: client.input_done(Ok(()), data);");
                     client.input_done(Ok(()), data);
                 }
             }
