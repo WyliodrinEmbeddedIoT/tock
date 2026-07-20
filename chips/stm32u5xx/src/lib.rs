@@ -5,6 +5,7 @@
 #![no_std]
 
 pub mod chip;
+pub mod crc;
 pub mod dma;
 pub mod exti;
 pub mod gpio;

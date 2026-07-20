@@ -52,6 +52,7 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
+    crc: &'static capsules_extra::crc::CrcDriver<'static, stm32u545::crc::CRC<'static>>,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -64,6 +65,7 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules_extra::crc::DRIVER_NUM => f(Some(self.crc)),
             _ => f(None),
         }
     }
@@ -233,6 +235,17 @@ unsafe fn start() -> (
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
 
+    kernel::deferred_call::DeferredCallClient::register(&periphs.crc);
+
+    let crc = components::crc::CrcComponent::new(
+        board_kernel,
+        capsules_extra::crc::DRIVER_NUM,
+        &periphs.crc,
+    )
+    .finalize(components::crc_component_static!(
+        stm32u545::crc::CRC<'static>
+    ));
+
     // Platform and Interrupts
     let platform = static_init!(
         NucleoU545RE,
@@ -244,6 +257,7 @@ unsafe fn start() -> (
             led,
             button,
             alarm,
+            crc,
         }
     );
 
