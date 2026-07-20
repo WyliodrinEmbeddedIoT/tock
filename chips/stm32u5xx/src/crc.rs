@@ -1,5 +1,8 @@
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+// Copyright Tock Contributors 2026.
+
 use core::cell::Cell;
-//use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::crc::{Client, Crc, CrcAlgorithm, CrcOutput};
 use kernel::utilities::cells::OptionalCell;
@@ -128,8 +131,6 @@ impl<'a> Crc<'a> for CRC<'a> {
     }
 
     fn set_algorithm(&self, algorithm: CrcAlgorithm) -> Result<(), ErrorCode> {
-        //debug!("CRC: set_algorithm called!");
-
         if !self.algorithm_supported(algorithm) {
             return Err(ErrorCode::NOSUPPORT);
         }
@@ -202,8 +203,6 @@ impl<'a> Crc<'a> for CRC<'a> {
         &self,
         data: SubSliceMut<'static, u8>,
     ) -> Result<(), (ErrorCode, SubSliceMut<'static, u8>)> {
-        //debug!("CRC: input() called with {} bytes", data.len());
-
         if self.alg_state.get() == AlgSet::Uninitialised {
             return Err((ErrorCode::RESERVE, data));
         }
@@ -220,13 +219,6 @@ impl<'a> Crc<'a> for CRC<'a> {
         for &byte in data.as_slice().iter() {
             CRC_DR_BYTE.set(byte);
         }
-
-        /*
-        debug!(
-            "CRC: Finished writing to DR, triggering deferred call (read back: {:08X})",
-            self.registers.dr.get()
-        );
-        */
 
         // Shrink the buffer window accordingly, as to confirm that the data
         // has been completely been completely processed.
@@ -268,8 +260,6 @@ impl<'a> Crc<'a> for CRC<'a> {
 
 impl DeferredCallClient for CRC<'_> {
     fn handle_deferred_call(&self) {
-        //debug!("CRC: handle_deferred_call fired!");
-
         let current_request = self.request.get();
         self.request.set(Request::None);
         self.state.set(State::Idle);
@@ -302,9 +292,7 @@ impl DeferredCallClient for CRC<'_> {
                 client.crc_done(Ok(result));
             }
 
-            Request::None => {
-                //debug!("CRC: Request::None");
-            }
+            Request::None => {}
         });
     }
 
