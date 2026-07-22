@@ -10,11 +10,13 @@ use kernel::utilities::registers::{register_bitfields, register_structs, ReadOnl
 use kernel::utilities::StaticRef;
 
 use core::cell::Cell;
-use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::can::{self, StandardBitTiming};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
+use kernel::{debug, Kernel};
+
+use crate::can::STD_FILTER::SFID1;
 
 pub const NBRP_MIN: u32 = 0;
 pub const NBRP_MAX: u32 = 511;
@@ -861,13 +863,29 @@ impl Can {
             return Err(kernel::ErrorCode::INVAL);
         }
         debug!("i fully finished enabling!");
+
+        //we only setup one filter for one enabled rx fifo
+        let _ = self.config_filter(
+            can::FilterParameters {
+                number: 0,
+                scale_bits: can::ScaleBits::Bits32,
+                identifier_mode: can::IdentifierMode::List,
+                fifo_number: 0,
+                ids: &[
+                    can::Id::Standard(0x123),
+                    can::Id::Standard(0x124),
+                    can::Id::Standard(0x200),
+                ],
+            },
+            true,
+        );
         Ok(())
     }
 
     pub fn config_filter(
         &self,
         filter_info: can::FilterParameters,
-        _enable: bool,
+        enable: bool,
     ) -> Result<(), kernel::ErrorCode> {
         //the u5 has 28 standard filters and 8 extended filters. accessible in message
         // ram
@@ -880,13 +898,81 @@ impl Can {
             return Err(kernel::ErrorCode::INVAL);
         }
 
-        self.registers
+        /*self.registers
             .fdcan_rxgfc
             .modify(FDCAN_RXGFC::ANFS::ACCEPT_FIFO0);
         self.registers
             .fdcan_rxgfc
             .modify(FDCAN_RXGFC::ANFE::ACCEPT_FIFO0);
+        */
 
+        self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFS::REJECT);
+        self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFE::REJECT);
+
+        let mut std_idx = 0;
+        let mut ext_idx = 0;
+        let mut sfid_state = false;
+        let mut efid_state = false;
+        for curr_id in filter_info.ids {
+            match curr_id {
+                can::Id::Standard(id_num) => {
+                    if !sfid_state {
+                        let sft = if enable {
+                            STD_FILTER::SFT::DUAL
+                        } else {
+                            STD_FILTER::SFT::DISABLED
+                        };
+                        let sfec = STD_FILTER::SFEC::FIFO0;
+                        let sfid1 = STD_FILTER::SFID1.val(*id_num as u32);
+                        let sfid2 = STD_FILTER::SFID2.val(*id_num as u32); //we also write sfid2 to not have random data in the 2nd id if we stop on an odd number
+                        if std_idx < 28 {
+                            self.msg_ram.std_filters[std_idx].write(sft + sfec + sfid1 + sfid2);
+                            sfid_state = !sfid_state;
+                        }
+                    } else {
+                        let sfid2 = STD_FILTER::SFID2.val(*id_num as u32);
+                        if std_idx < 28 {
+                            self.msg_ram.std_filters[std_idx].modify(sfid2);
+                            sfid_state = !sfid_state;
+                            std_idx += 1;
+                        }
+                    }
+                }
+                can::Id::Extended(id_num) => {
+                    if !efid_state {
+                        let eft = EXT_FILTER_F1::EFT::DUAL;
+                        let efec = if enable {
+                            EXT_FILTER_F0::EFEC::FIFO0
+                        } else {
+                            EXT_FILTER_F0::EFEC::DISABLE
+                        };
+                        let efid1 = EXT_FILTER_F0::EFID1.val(*id_num);
+                        let efid2 = EXT_FILTER_F1::EFID2.val(*id_num);
+                        if ext_idx < 8 {
+                            self.msg_ram.ext_filters[ext_idx].f0.write(efec + efid1);
+                            self.msg_ram.ext_filters[ext_idx].f1.write(eft + efid2);
+                            efid_state = !efid_state;
+                        }
+                    } else {
+                        let efid2 = EXT_FILTER_F1::EFID2.val(*id_num);
+                        if ext_idx < 8 {
+                            self.msg_ram.ext_filters[ext_idx].f1.modify(efid2);
+                            efid_state = !efid_state;
+                            ext_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let std_used = if sfid_state { std_idx + 1 } else { std_idx };
+        self.registers
+            .fdcan_rxgfc
+            .modify(FDCAN_RXGFC::LSS.val(std_used as u32));
+        let ext_used = if efid_state { ext_idx + 1 } else { ext_idx };
+        self.registers
+            .fdcan_rxgfc
+            .modify(FDCAN_RXGFC::LSE.val(ext_used as u32));
         /*self.fdcan1messageram.flssa[filter_info.number as usize].write(
 
         )*/
@@ -1080,7 +1166,7 @@ impl Can {
         let mut state = Ok(());
 
         //check if the bus is off, error if yes
-        if self.registers.fdcan_ir.is_set(FDCAN_IR::BO) {
+        if self.registers.fdcan_psr.is_set(FDCAN_PSR::BO) {
             state = Err(can::Error::BusOff);
         } else if self.registers.fdcan_txbto.get() & (1 << 0) != 0 {
             state = Ok(());
@@ -1535,17 +1621,7 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can {
             CanState::Normal | CanState::RunningError(_) => {
                 self.can_state.set(CanState::Normal);
 
-                //we only setup one filter for one enabled rx fifo
-                let _ = self.config_filter(
-                    can::FilterParameters {
-                        number: 0,
-                        scale_bits: can::ScaleBits::Bits32,
-                        identifier_mode: can::IdentifierMode::Mask,
-                        fifo_number: 0,
-                    },
-                    true,
-                );
-                self.enable_filter_config();
+                //self.enable_filter_config();
                 self.enable_irq(CanInterruptMode::Fifo0Interrupt);
                 self.rx_buffer.put(Some(buffer));
                 Ok(())
@@ -1564,6 +1640,11 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can {
                         scale_bits: can::ScaleBits::Bits32,
                         identifier_mode: can::IdentifierMode::Mask,
                         fifo_number: 0,
+                        ids: &[
+                            can::Id::Standard(0x123),
+                            can::Id::Standard(0x125),
+                            can::Id::Standard(0x200),
+                        ],
                     },
                     false,
                 );
