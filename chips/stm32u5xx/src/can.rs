@@ -10,7 +10,9 @@ use kernel::utilities::registers::{register_bitfields, register_structs, ReadOnl
 use kernel::utilities::StaticRef;
 
 use core::cell::Cell;
+use core::num;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
+use kernel::hil::can::Mode;
 use kernel::hil::can::{self, StandardBitTiming};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -867,17 +869,11 @@ impl Can {
         //we only setup one filter for one enabled rx fifo
         let _ = self.config_filter(
             can::FilterParameters {
-                number: 0,
-                scale_bits: can::ScaleBits::Bits32,
-                identifier_mode: can::IdentifierMode::List,
+                mode: Mode::Range(can::Id::Standard(0x123), can::Id::Standard(0x124)),
                 fifo_number: 0,
-                ids: &[
-                    can::Id::Standard(0x123),
-                    can::Id::Standard(0x125),
-                    can::Id::Standard(0x200),
-                ],
             },
             true,
+            15,
         );
         Ok(())
     }
@@ -886,16 +882,241 @@ impl Can {
         &self,
         filter_info: can::FilterParameters,
         enable: bool,
+        number: usize,
     ) -> Result<(), kernel::ErrorCode> {
-        //the u5 has 28 standard filters and 8 extended filters. accessible in message
+        // the u5 has 28 standard filters and 8 extended filters. accessible in message
         // ram
 
-        // note: the FilterParameters struct doesn't provide any ID?! on the old f4 driver
-        // this function set up all the filter parameters except id, which was set to
-        // let everything through?! unlike the f4,. we dont need to do that to receive
-        // messages. so this function kinda remains empty for now, until the HIL is updated, we write into rxgfc to allow EVERYTHING to go to fifo0
-        if filter_info.number >= 28 {
-            return Err(kernel::ErrorCode::INVAL);
+        match filter_info.mode {
+            Mode::List(list) => {
+                let all_std = list.iter().all(|id| matches!(id, can::Id::Standard(_)));
+                let all_ext = list.iter().all(|id| matches!(id, can::Id::Extended(_)));
+
+                if (!all_std && !all_ext) || (list.len() > 2) {
+                    return Err(kernel::ErrorCode::INVAL);
+                }
+                if all_ext {
+                    if number > 8 {
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
+                    let id1 = if let can::Id::Extended(id1) = list[0] {
+                        id1
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let id2 = if let can::Id::Extended(id2) = list[1] {
+                        id2
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let efid1 = EXT_FILTER_F0::EFID1.val(id1);
+                    let efid2 = EXT_FILTER_F1::EFID2.val(id2);
+                    let efec = EXT_FILTER_F0::EFEC::FIFO0;
+                    let eft = EXT_FILTER_F1::EFT::DUAL;
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSE) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.ext_filters[i]
+                            .f0
+                            .modify(EXT_FILTER_F0::EFEC::DISABLE);
+                    }
+
+                    self.msg_ram.ext_filters[number].f0.write(efec + efid1);
+                    self.msg_ram.ext_filters[number].f1.write(eft + efid2);
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSE.val((number + 1) as u32));
+                    }
+                } else if all_std {
+                    if number > 28 {
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
+                    let id1 = if let can::Id::Standard(id1) = list[0] {
+                        id1
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let id2 = if let can::Id::Standard(id2) = list[1] {
+                        id2
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let sft = STD_FILTER::SFT::DUAL;
+                    let sfec = STD_FILTER::SFEC::FIFO0;
+                    let sfid1 = STD_FILTER::SFID1.val(id1 as u32);
+                    let sfid2 = STD_FILTER::SFID2.val(id2 as u32);
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSS) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.std_filters[i].modify(STD_FILTER::SFEC::DISABLE);
+                    }
+
+                    self.msg_ram.std_filters[number].write(sft + sfec + sfid1 + sfid2);
+
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSS.val((number + 1) as u32));
+                    }
+                }
+            }
+            Mode::Mask { value, bitmask } => {
+                if matches!(
+                    (value, bitmask),
+                    (can::Id::Extended(_), can::Id::Extended(_))
+                ) {
+                    let act_value = if let can::Id::Extended(val) = value {
+                        val
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let act_bitmask = if let can::Id::Extended(val) = bitmask {
+                        val
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let efid1 = EXT_FILTER_F0::EFID1.val(act_value);
+                    let efid2 = EXT_FILTER_F1::EFID2.val(act_bitmask);
+                    let efec = EXT_FILTER_F0::EFEC::FIFO0;
+                    let eft = EXT_FILTER_F1::EFT::CLASSIC;
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSE) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.ext_filters[i]
+                            .f0
+                            .modify(EXT_FILTER_F0::EFEC::DISABLE);
+                    }
+
+                    self.msg_ram.ext_filters[number].f0.write(efec + efid1);
+                    self.msg_ram.ext_filters[number].f1.write(eft + efid2);
+
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSE.val((number + 1) as u32));
+                    }
+                } else if matches!(
+                    (value, bitmask),
+                    (can::Id::Standard(_), can::Id::Standard(_))
+                ) {
+                    if number > 28 {
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
+                    let act_value = if let can::Id::Standard(val) = value {
+                        val
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let act_bitmask = if let can::Id::Standard(val) = bitmask {
+                        val
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let sft = STD_FILTER::SFT::CLASSIC;
+                    let sfec = STD_FILTER::SFEC::FIFO0;
+                    let sfid1 = STD_FILTER::SFID1.val(act_value as u32);
+                    let sfid2 = STD_FILTER::SFID2.val(act_bitmask as u32);
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSS) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.std_filters[i].modify(STD_FILTER::SFEC::DISABLE);
+                    }
+
+                    self.msg_ram.std_filters[number].write(sft + sfec + sfid1 + sfid2);
+
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSS.val((number + 1) as u32));
+                    }
+                }
+            }
+            Mode::Range(id1, id2) => {
+                if matches!((id1, id2), (can::Id::Extended(_), can::Id::Extended(_))) {
+                    debug!("both extended");
+                    let id1 = if let can::Id::Extended(id1) = id1 {
+                        id1
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let id2 = if let can::Id::Extended(id2) = id2 {
+                        id2
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let efid1 = EXT_FILTER_F0::EFID1.val(id1);
+                    let efid2 = EXT_FILTER_F1::EFID2.val(id2);
+                    let efec = EXT_FILTER_F0::EFEC::FIFO0;
+                    let eft = EXT_FILTER_F1::EFT::RANGE;
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSE) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.ext_filters[i]
+                            .f0
+                            .modify(EXT_FILTER_F0::EFEC::DISABLE);
+                    }
+
+                    self.msg_ram.ext_filters[number].f0.write(efec + efid1);
+                    self.msg_ram.ext_filters[number].f1.write(eft + efid2);
+
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSE.val((number + 1) as u32));
+                    }
+                } else if matches!((id1, id2), (can::Id::Standard(_), can::Id::Standard(_))) {
+                    debug!("both std!");
+                    if number > 28 {
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
+                    let id1 = if let can::Id::Standard(id1) = id1 {
+                        id1
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let id2 = if let can::Id::Standard(id2) = id2 {
+                        id2
+                    } else {
+                        return Err(kernel::ErrorCode::FAIL);
+                    };
+
+                    let sft = STD_FILTER::SFT::RANGE;
+                    let sfec = STD_FILTER::SFEC::FIFO0;
+                    let sfid1 = STD_FILTER::SFID1.val(id1 as u32);
+                    let sfid2 = STD_FILTER::SFID2.val(id2 as u32);
+
+                    let current_max_index =
+                        self.registers.fdcan_rxgfc.read(FDCAN_RXGFC::LSS) as usize;
+                    for i in current_max_index..number {
+                        self.msg_ram.std_filters[i].modify(STD_FILTER::SFEC::DISABLE);
+                    }
+
+                    self.msg_ram.std_filters[number].write(sft + sfec + sfid1 + sfid2);
+
+                    if number + 1 > current_max_index {
+                        self.registers
+                            .fdcan_rxgfc
+                            .modify(FDCAN_RXGFC::LSS.val((number + 1) as u32));
+                    }
+                }
+            }
         }
 
         /*self.registers
@@ -909,73 +1130,6 @@ impl Can {
         self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFS::REJECT);
         self.registers.fdcan_rxgfc.modify(FDCAN_RXGFC::ANFE::REJECT);
 
-        let mut std_idx = 0;
-        let mut ext_idx = 0;
-        let mut sfid_state = false;
-        let mut efid_state = false;
-        for curr_id in filter_info.ids {
-            match curr_id {
-                can::Id::Standard(id_num) => {
-                    if !sfid_state {
-                        let sft = if enable {
-                            STD_FILTER::SFT::DUAL
-                        } else {
-                            STD_FILTER::SFT::DISABLED
-                        };
-                        let sfec = STD_FILTER::SFEC::FIFO0;
-                        let sfid1 = STD_FILTER::SFID1.val(*id_num as u32);
-                        let sfid2 = STD_FILTER::SFID2.val(*id_num as u32); //we also write sfid2 to not have random data in the 2nd id if we stop on an odd number
-                        if std_idx < 28 {
-                            self.msg_ram.std_filters[std_idx].write(sft + sfec + sfid1 + sfid2);
-                            sfid_state = !sfid_state;
-                        }
-                    } else {
-                        let sfid2 = STD_FILTER::SFID2.val(*id_num as u32);
-                        if std_idx < 28 {
-                            self.msg_ram.std_filters[std_idx].modify(sfid2);
-                            sfid_state = !sfid_state;
-                            std_idx += 1;
-                        }
-                    }
-                }
-                can::Id::Extended(id_num) => {
-                    if !efid_state {
-                        let eft = EXT_FILTER_F1::EFT::DUAL;
-                        let efec = if enable {
-                            EXT_FILTER_F0::EFEC::FIFO0
-                        } else {
-                            EXT_FILTER_F0::EFEC::DISABLE
-                        };
-                        let efid1 = EXT_FILTER_F0::EFID1.val(*id_num);
-                        let efid2 = EXT_FILTER_F1::EFID2.val(*id_num);
-                        if ext_idx < 8 {
-                            self.msg_ram.ext_filters[ext_idx].f0.write(efec + efid1);
-                            self.msg_ram.ext_filters[ext_idx].f1.write(eft + efid2);
-                            efid_state = !efid_state;
-                        }
-                    } else {
-                        let efid2 = EXT_FILTER_F1::EFID2.val(*id_num);
-                        if ext_idx < 8 {
-                            self.msg_ram.ext_filters[ext_idx].f1.modify(efid2);
-                            efid_state = !efid_state;
-                            ext_idx += 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        let std_used = if sfid_state { std_idx + 1 } else { std_idx };
-        self.registers
-            .fdcan_rxgfc
-            .modify(FDCAN_RXGFC::LSS.val(std_used as u32));
-        let ext_used = if efid_state { ext_idx + 1 } else { ext_idx };
-        self.registers
-            .fdcan_rxgfc
-            .modify(FDCAN_RXGFC::LSE.val(ext_used as u32));
-        /*self.fdcan1messageram.flssa[filter_info.number as usize].write(
-
-        )*/
         Ok(())
     }
 
@@ -1634,20 +1788,6 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can {
         match self.can_state.get() {
             CanState::Normal | CanState::RunningError(_) => {
                 self.can_state.set(CanState::Normal);
-                let _ = self.config_filter(
-                    can::FilterParameters {
-                        number: 0,
-                        scale_bits: can::ScaleBits::Bits32,
-                        identifier_mode: can::IdentifierMode::Mask,
-                        fifo_number: 0,
-                        ids: &[
-                            can::Id::Standard(0x123),
-                            can::Id::Standard(0x125),
-                            can::Id::Standard(0x200),
-                        ],
-                    },
-                    false,
-                );
                 self.enable_filter_config();
                 self.disable_irq(CanInterruptMode::Fifo0Interrupt);
                 // there is another deferred action that must be completed
