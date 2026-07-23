@@ -179,11 +179,8 @@ unsafe fn start() -> (
         <ChipHw as kernel::platform::chip::Chip>::ThreadIdProvider,
     >();
 
-    // Create Individual Drivers
-    let exti = static_init!(
-        stm32u545::exti::Exti<'static>,
-        stm32u545::exti::Exti::new(stm32u545::exti::EXTI_BASE)
-    );
+    // Create individual drivers
+    let exti = static_init!(stm32u545::exti::Exti<'static>, stm32u545::exti::Exti::new());
     let dma1 = static_init!(
         stm32u545::dma::Dma,
         stm32u545::dma::Dma::new(stm32u545::dma::DMA1_BASE)
@@ -193,9 +190,10 @@ unsafe fn start() -> (
         stm32u545::usart::Usart::new(stm32u545::usart::USART1_BASE)
     );
 
+    // Register the deferred call client for USART1
     usart1.register();
 
-    // Load Peripherals Bundle
+    // Create the peripheral bundle
     let periphs = static_init!(
         stm32u545::chip::Stm32u5xxDefaultPeripherals<'static>,
         stm32u545::chip::Stm32u5xxDefaultPeripherals::new(usart1, exti, dma1)
@@ -204,8 +202,10 @@ unsafe fn start() -> (
     // Initialize wiring (DMA, clocks)
     periphs.init();
 
-    // Board specific wiring
+    // Start the TIM2 timer, used for alarms
     periphs.tim2.start();
+
+    // Board specific wiring
     set_pin_primary_functions(periphs);
 
     // Kernel and Muxes

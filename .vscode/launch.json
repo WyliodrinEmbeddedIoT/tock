@@ -2,6 +2,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "STM32 Nucleo-U545RE-Q",
+            "type": "cortex-debug",
+            "servertype": "openocd",
+            "request": "launch",
+            "executable": "/home/domnulvlad/Documents/github/tock/target/thumbv8m.main-none-eabi/release/nucleo_u545re_q.elf",
+            "cwd": "${workspaceRoot}",
+            "svdFile": "/home/domnulvlad/Documents/STM32/stm32u545re.svd",
+            "configFiles": [
+                "/home/domnulvlad/Documents/STM32/openocd_stm32u545req.cfg",
+            ],
+        },
+        {
             "name": "nRF52-DK",
             "type": "gdb",
             "request": "attach",

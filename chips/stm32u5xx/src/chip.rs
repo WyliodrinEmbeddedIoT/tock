@@ -3,22 +3,27 @@
 // Copyright Tock Contributors 2024.
 // Copyright OxidOS Automotive 2026.
 
-use crate::adc::{self, SamplingTime as AdcSamplingTime};
-use crate::dma::{ChannelId, Dma};
-use crate::gpio;
-use crate::nvic::{
-    ADC1_2_IRQ, EXTI0_IRQ, EXTI1_IRQ, EXTI2_IRQ, EXTI3_IRQ, EXTI4_IRQ, EXTI5_IRQ, EXTI6_IRQ,
-    EXTI7_IRQ, EXTI8_IRQ, EXTI9_IRQ, EXTI10_IRQ, EXTI11_IRQ, EXTI12_IRQ, EXTI13_IRQ, EXTI14_IRQ,
-    EXTI15_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ, GPDMA1_CH4_IRQ,
-    GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ, GPDMA1_CH9_IRQ,
-    GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ, GPDMA1_CH14_IRQ,
-    GPDMA1_CH15_IRQ, TIM2_IRQ, USART1_IRQ,
+use crate::{
+    adc::{self, SamplingTime as AdcSamplingTime},
+    dac,
+    dma::{ChannelId, Dma},
+    exti, gpio,
+    nvic::{
+        ADC1_2_IRQ, EXTI0_IRQ, EXTI1_IRQ, EXTI2_IRQ, EXTI3_IRQ, EXTI4_IRQ, EXTI5_IRQ, EXTI6_IRQ,
+        EXTI7_IRQ, EXTI8_IRQ, EXTI9_IRQ, EXTI10_IRQ, EXTI11_IRQ, EXTI12_IRQ, EXTI13_IRQ,
+        EXTI14_IRQ, EXTI15_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ,
+        GPDMA1_CH4_IRQ, GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ,
+        GPDMA1_CH9_IRQ, GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ,
+        GPDMA1_CH14_IRQ, GPDMA1_CH15_IRQ, TIM2_IRQ, USART1_IRQ,
+    },
+    pwr::{self, VoltageScale},
+    rcc::{
+        self,
+        config::{ClockMuxConfig, RccConfig},
+        values::{AHBPrescaler, APBPrescaler, Adcdacsel, MsiRange, Sysclk, Usart1sel},
+    },
+    tim, usart,
 };
-use crate::pwr;
-use crate::rcc;
-use crate::tim;
-use crate::usart;
-use crate::{dac, exti};
 
 use core::fmt::Write;
 use kernel::platform::chip::Chip;
@@ -45,31 +50,12 @@ pub struct Stm32u5xxDefaultPeripherals<'a> {
     pub dac: dac::Dac,
 }
 
-fn enable_tim2_clock() {
-    let rcc = rcc::Rcc::new(rcc::RCC_BASE);
-    rcc.enable_tim2();
-}
-fn enable_tim3_clock() {
-    let rcc = rcc::Rcc::new(rcc::RCC_BASE);
-    rcc.enable_tim3();
-}
-
-fn enable_dac1_clock() {
-    let rcc = rcc::Rcc::new(rcc::RCC_BASE);
-    rcc.enable_dac1();
-}
-
 impl<'a> Stm32u5xxDefaultPeripherals<'a> {
     pub fn new(usart1: &'a usart::Usart<'a>, exti: &'a exti::Exti<'a>, dma1: &'a Dma) -> Self {
         Self {
-            rcc: rcc::Rcc::new(rcc::RCC_BASE),
-            tim2: tim::Tim2::new(tim::TIM2_BASE, enable_tim2_clock),
-            tim3: tim::Pwm::new(
-                tim::TIM3_BASE,
-                enable_tim3_clock,
-                tim::ClockSource::RESET_DEFAULT,
-            ),
-
+            rcc: rcc::Rcc::new(),
+            tim2: tim::Tim2::new(),
+            tim3: tim::Pwm::new(),
             usart1,
             exti,
             dma1,
@@ -78,37 +64,65 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             gpio_a: gpio::Port::new(gpio::GPIO_A_BASE, exti, gpio::GpioPort::PortA),
             gpio_b: gpio::Port::new(gpio::GPIO_B_BASE, exti, gpio::GpioPort::PortB),
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
-            dac: dac::Dac::new(dac::DAC_BASE, enable_dac1_clock),
+            dac: dac::Dac::new(),
         }
     }
 
     pub fn init(&'static self) {
-        // Power and Wires
+        // Enable clock routing to all used peripherals
+        self.rcc.enable_tim2();
+        self.rcc.enable_tim3();
         self.rcc.enable_dma1();
         self.rcc.enable_gpioa();
+        self.rcc.enable_gpiob();
         self.rcc.enable_gpioc();
         self.rcc.enable_usart1();
         self.rcc.enable_syscfg();
         self.rcc.enable_pwr();
         self.rcc.enable_adc1();
-        self.rcc.set_usart1_source_pclk();
-
-        // ADC
-        // Decided to use clock source HSI16, so that needs to be enabled in the RCC too
-        self.rcc.set_adcdacsel_source_hsi16();
-        self.rcc.enable_hsi16();
-        // For the ADC's voltage regulator to receive power, V_DDA must be validated (SVMCR.ASV) in PWR
-        self.pwr.validate_vdda();
-        // As explained in the driver, an application can't change the samplling time, so it's hardcoded here
-        self.adc1.enable(AdcSamplingTime::ClockCycles20);
-
         self.rcc.enable_dac1();
+
+        // Select which clocks to enable, and how to configure them
+        let mut rcc_config = RccConfig {
+            msis: Some(MsiRange::Range4mhz),
+            msik: Some(MsiRange::Range4mhz),
+            hsi: true, // 16MHz oscillator enabled (for SYSCLK/ADC/DAC)
+            hse: None,
+            hsi48: false,
+            pll1: None,
+            pll2: None,
+            pll3: None,
+            sys: Sysclk::Hsi, // 16MHz system clock
+            ahb_pre: AHBPrescaler::Div1,
+            apb1_pre: APBPrescaler::Div1,
+            apb2_pre: APBPrescaler::Div1,
+            apb3_pre: APBPrescaler::Div1,
+            voltage_range: VoltageScale::Range1, // allow highest frequencies
+            mux: ClockMuxConfig::default(),
+        };
+
+        // Use HSI16 (16MHz) for SYSCLK, ADC and DAC
+        rcc_config.hsi = true;
+        rcc_config.mux.adcdacsel = Adcdacsel::Hsi;
+        // Use PCLK2 for USART1 (it's the default anyways)
+        rcc_config.mux.usart1sel = Usart1sel::Pclk2;
+
+        // Initialize the RCC
+        self.rcc.init(rcc_config, &self.pwr);
+
+        // Activate the independent analog supply
+        self.pwr.validate_vdda();
+
         // Link DMA to USART1
         let usart1_channel_tx = self.dma1.request_channel();
         let usart1_channel_rx = self.dma1.request_channel();
         if let (Some(tx), Some(rx)) = (usart1_channel_tx, usart1_channel_rx) {
             usart::Usart::set_dma(self.usart1, self.dma1, tx, rx);
         }
+
+        // Enable ADC
+        // As explained in the driver, an application can't change the ADC sampling time, so it's hardcoded here
+        self.adc1.enable(AdcSamplingTime::ClockCycles20);
     }
 }
 
