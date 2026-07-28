@@ -135,6 +135,64 @@ impl<'a> Console<'a> {
         }
     }
 
+    /// Internal heper function for adding the ProcessId to the start of a send buffer
+    fn add_buffer(&self, processid: ProcessId, app: &App, buffer: &'static mut [u8]) -> (usize, &'static mut [u8]) {
+        let mut header_len = 0;
+
+        // Add the header only on the first "chunk"
+        if app.write_remaining == app.write_len {
+            /*
+            // A temporary stack buffer large enough for "[1234567890] "
+            let mut header_buf = [0u8; 13]; // "[" + 10 digits + "] "
+            let mut idx = 0;
+
+            // Start with '['
+            header_buf[idx] = b'[';
+            idx += 1;
+
+            // Converting numeric process ID to ASCII digits
+            let mut num = processid.id();
+            let mut digits = [0u8; 10];
+
+            // Extract digits in reverse order
+            for i in 0..10 {
+                digits[i] = b'0' + (num % 10) as u8;
+                num /= 10;
+            }
+
+            // Write them forward into the header buffer
+            for i in (0..10).rev() {
+                header_buf[idx] = digits[i];
+                idx += 1;
+            }
+
+            // End with '] '
+            header_buf[idx] = b']';
+            idx += 1;
+            header_buf[idx] = b' ';
+            idx += 1;
+            */
+
+            let mut header_buf = [0u8; 13];
+            let mut idx = 0;
+
+            header_buf[idx] = b'1';
+            idx += 1;
+
+            header_buf[idx] = processid.id() as u8;
+            idx += 1;
+
+            // Slice the array to get exactly the bytes we wrote
+            let header = &header_buf[..idx];
+
+            header_len = core::cmp::min(header.len(), buffer.len());
+            for (i, &b) in header.iter().enumerate().take(header_len) {
+                buffer[i] = b;
+            }
+        }
+        (header_len, buffer)
+    }
+
     /// Internal helper function for setting up a new send transaction
     fn send_new(
         &self,
@@ -182,48 +240,7 @@ impl<'a> Console<'a> {
                 // We first configure the header buffer
                 // that sends the process ID in the format "[1234567890] "
                 // for each outgoing communication
-                let mut header_len = 0;
-
-                // Add the header only on the first "chunk"
-                if app.write_remaining == app.write_len {
-                    // A temporary stack buffer large enough for "[1234567890] "
-                    let mut header_buf = [0u8; 13]; // "[" + 10 digits + "] "
-                    let mut idx = 0;
-
-                    // Start with '['
-                    header_buf[idx] = b'[';
-                    idx += 1;
-
-                    // Converting numeric process ID to ASCII digits
-                    let mut num = processid.id();
-                    let mut digits = [0u8; 10];
-
-                    // Extract digits in reverse order
-                    for i in 0..10 {
-                        digits[i] = b'0' + (num % 10) as u8;
-                        num /= 10;
-                    }
-
-                    // Write them forward into the header buffer
-                    for i in (0..10).rev() {
-                        header_buf[idx] = digits[i];
-                        idx += 1;
-                    }
-
-                    // End with '] '
-                    header_buf[idx] = b']';
-                    idx += 1;
-                    header_buf[idx] = b' ';
-                    idx += 1;
-
-                    // Slice the array to get exactly the bytes we wrote
-                    let header = &header_buf[..idx];
-
-                    header_len = core::cmp::min(header.len(), buffer.len());
-                    for (i, &b) in header.iter().enumerate().take(header_len) {
-                        buffer[i] = b;
-                    }
-                }
+                let (header_len, buffer) = self.add_buffer(processid, app, buffer);
 
                 let transaction_len = kernel_data
                     .get_readonly_processbuffer(ro_allow::WRITE)
@@ -243,7 +260,6 @@ impl<'a> Console<'a> {
                                     // number of bytes written (which is passed
                                     // to the write done upcall) is correct.
                                     app.write_len -= app.write_remaining;
-                                    kernel::debug!("NONE?");
                                     app.write_remaining = 0;
                                     return 0;
                                 }
