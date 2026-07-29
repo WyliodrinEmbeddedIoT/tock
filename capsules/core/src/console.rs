@@ -141,7 +141,7 @@ impl<'a> Console<'a> {
 
         // Add the header only on the first "chunk"
         if app.write_remaining == app.write_len {
-            /*
+            
             // A temporary stack buffer large enough for "[1234567890] "
             let mut header_buf = [0u8; 13]; // "[" + 10 digits + "] "
             let mut idx = 0;
@@ -170,16 +170,6 @@ impl<'a> Console<'a> {
             header_buf[idx] = b']';
             idx += 1;
             header_buf[idx] = b' ';
-            idx += 1;
-            */
-
-            let mut header_buf = [0u8; 13];
-            let mut idx = 0;
-
-            header_buf[idx] = b'1';
-            idx += 1;
-
-            header_buf[idx] = processid.id() as u8;
             idx += 1;
 
             // Slice the array to get exactly the bytes we wrote
