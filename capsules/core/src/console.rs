@@ -154,15 +154,20 @@ impl<'a> Console<'a> {
             let mut num = processid.id();
             let mut digits = [0u8; 10];
 
+            let mut i = 0; 
+
             // Extract digits in reverse order
-            for i in 0..10 {
+            loop {
                 digits[i] = b'0' + (num % 10) as u8;
+                i += 1;
                 num /= 10;
-            }
+
+                if num == 0 { break }
+            } 
 
             // Write them forward into the header buffer
-            for i in (0..10).rev() {
-                header_buf[idx] = digits[i];
+            for j in 0..i {
+                header_buf[idx] = digits[j];
                 idx += 1;
             }
 
