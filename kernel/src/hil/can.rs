@@ -39,7 +39,7 @@
 //!
 
 use crate::ErrorCode;
-use core::cmp;
+use core::{cmp, num};
 
 pub const STANDARD_CAN_PACKET_SIZE: usize = 8;
 pub const FD_CAN_PACKET_SIZE: usize = 64;
@@ -126,26 +126,22 @@ impl From<Error> for ErrorCode {
     }
 }
 
-/// The Scale Bits structure defines the 2 possible widths
-/// of the filter bank
-#[derive(Debug, Copy, Clone)]
-pub enum ScaleBits {
-    Bits16,
-    Bits32,
-}
-
 /// The filter can be configured to filter the messages by matching
 /// an identifier or by bitwise matching multiple identifiers.
 #[derive(Debug, Copy, Clone)]
-pub enum IdentifierMode {
+pub enum Mode<'a> {
     /// A mask is used to filter the messages
-    List,
+    List(&'a [Id]),
     /// The value of the identifier is used to filter the messages
-    Mask,
+    Mask {
+        value: Id,
+        bitmask: Id,
+    },
+    Range(Id, Id),
 }
 
 /// The identifier can be standard (11 bits) or extended (29 bits)
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum Id {
     Standard(u16),
     Extended(u32),
@@ -153,18 +149,9 @@ pub enum Id {
 
 /// This structure defines the parameters to configure a filter bank
 #[derive(Copy, Clone)]
-pub struct FilterParameters {
-    /// The filter Id
-    ///
-    /// This value is dependent on the peripheral used and identifies
-    /// the filter bank that will be used
-    pub number: u32,
-
-    /// The width of the filter bank
-    pub scale_bits: ScaleBits,
-
+pub struct FilterParameters<'a> {
     /// The way in which the message Ids will be filtered.
-    pub identifier_mode: IdentifierMode,
+    pub mode: Mode<'a>,
 
     /// The receive FIFO Id that the filter will be applied to
     pub fifo_number: usize,
@@ -203,7 +190,7 @@ pub enum OperationMode {
     /// TX channel and immediately received on the RX channel
     Loopback,
 
-    /// Monitoring mode means that the CAN peripheral sends only the recessive
+    /// Monitoring mode means that the CAN peripheral sends only the recessivIde
     /// bits on the bus and cannot start a transmission, but can receive
     /// valid data frames and valid remote frames
     Monitoring,
@@ -545,11 +532,8 @@ pub trait ConfigureFd: Configure {
     fn get_frame_size() -> usize;
 }
 
-/// The `Filter` trait is used to enable and disable a filter bank.
-///
-/// When the receiving process starts by calling the `start_receiving_process`
-/// in the `Receive` trait, there MUST be no filter enabled.
-pub trait Filter {
+/// The `Filters` trait is used to enable and disable a filter bank.
+pub trait Filters {
     /// Enables a filter for message reception.
     ///
     /// # Arguments:
@@ -562,7 +546,7 @@ pub trait Filter {
     /// * `Ok()` - The filter was successfully configured.
     /// * `Err(ErrorCode)` - indicates the error because of which the request
     ///   cannot be completed
-    fn enable_filter(&self, filter: FilterParameters) -> Result<(), ErrorCode>;
+    fn enable_filter(&self, number: usize, filter: &FilterParameters) -> Result<(), ErrorCode>;
 
     /// Disables a filter.
     ///
@@ -575,10 +559,20 @@ pub trait Filter {
     /// * `Ok()` - The filter was successfully disabled.
     /// * `Err(ErrorCode)` - indicates the error because of which the request
     ///   cannot be completed
-    fn disable_filter(&self, number: u32) -> Result<(), ErrorCode>;
+    fn disable_filter(&self, number: usize) -> Result<(), ErrorCode>;
+
+    fn is_enabled(&self, number: usize) -> Result<bool, ErrorCode>;
 
     /// Returns the number of filters the peripheral provides
     fn filter_count(&self) -> usize;
+
+    /// Returns the number of filters the peripheral provides
+    fn filter_count_std(&self) -> usize;
+
+    /// Returns the number of filters the peripheral provides
+    fn filter_count_ext(&self) -> usize;
+
+    fn id_list_max_len(&self) -> usize;
 }
 
 /// The `Controller` trait is used to enable and disable the CAN peripheral.
