@@ -136,12 +136,16 @@ impl<'a> Console<'a> {
     }
 
     /// Internal heper function for adding the ProcessId to the start of a send buffer
-    fn add_buffer(&self, processid: ProcessId, app: &App, buffer: &'static mut [u8]) -> (usize, &'static mut [u8]) {
+    fn add_buffer(
+        &self,
+        processid: ProcessId,
+        app: &App,
+        buffer: &'static mut [u8],
+    ) -> (usize, &'static mut [u8]) {
         let mut header_len = 0;
 
         // Add the header only on the first "chunk"
         if app.write_remaining == app.write_len {
-            
             // A temporary stack buffer large enough for "[1234567890] "
             let mut header_buf = [0u8; 13]; // "[" + 10 digits + "] "
             let mut idx = 0;
@@ -154,7 +158,7 @@ impl<'a> Console<'a> {
             let mut num = processid.id();
             let mut digits = [0u8; 10];
 
-            let mut i = 0; 
+            let mut i = 0;
 
             // Extract digits in reverse order
             loop {
@@ -162,8 +166,10 @@ impl<'a> Console<'a> {
                 i += 1;
                 num /= 10;
 
-                if num == 0 { break }
-            } 
+                if num == 0 {
+                    break;
+                }
+            }
 
             // Write them forward into the header buffer
             for j in 0..i {
