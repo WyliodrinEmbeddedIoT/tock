@@ -49,9 +49,7 @@ use capsules_core::virtualizers::virtual_flash::FlashUser;
 use capsules_core::virtualizers::virtual_flash::MuxFlash;
 use capsules_extra::tickv::TicKVSystem;
 use core::mem::MaybeUninit;
-use kernel::capabilities;
 use kernel::component::Component;
-use kernel::create_capability;
 use kernel::hil;
 use kernel::hil::flash::HasClient;
 use kernel::hil::hasher::Hasher;
@@ -72,7 +70,7 @@ macro_rules! tickv_component_static {
         );
 
         (flash, tickv)
-    };};
+    }};
 }
 
 #[macro_export]
@@ -83,7 +81,7 @@ macro_rules! tickv_dedicated_flash_component_static {
             kernel::static_buf!(capsules_extra::tickv::TicKVSystem<'static, $F, $H, $PAGE_SIZE>);
 
         (tickv, tickfs_read_buffer)
-    };};
+    }};
 }
 
 pub struct TicKVComponent<
@@ -100,10 +98,10 @@ pub struct TicKVComponent<
 }
 
 impl<
-        F: 'static + hil::flash::Flash + hil::flash::HasClient<'static, MuxFlash<'static, F>>,
-        H: Hasher<'static, 8>,
-        const PAGE_SIZE: usize,
-    > TicKVComponent<F, H, PAGE_SIZE>
+    F: 'static + hil::flash::Flash + hil::flash::HasClient<'static, MuxFlash<'static, F>>,
+    H: Hasher<'static, 8>,
+    const PAGE_SIZE: usize,
+> TicKVComponent<F, H, PAGE_SIZE>
 {
     pub fn new(
         hasher: &'static H,
@@ -125,10 +123,10 @@ impl<
 }
 
 impl<
-        F: 'static + hil::flash::Flash + hil::flash::HasClient<'static, MuxFlash<'static, F>>,
-        H: 'static + Hasher<'static, 8>,
-        const PAGE_SIZE: usize,
-    > Component for TicKVComponent<F, H, PAGE_SIZE>
+    F: 'static + hil::flash::Flash + hil::flash::HasClient<'static, MuxFlash<'static, F>>,
+    H: 'static + Hasher<'static, 8>,
+    const PAGE_SIZE: usize,
+> Component for TicKVComponent<F, H, PAGE_SIZE>
 {
     type StaticInput = (
         &'static mut MaybeUninit<FlashUser<'static, F>>,
@@ -137,8 +135,6 @@ impl<
     type Output = &'static TicKVSystem<'static, FlashUser<'static, F>, H, PAGE_SIZE>;
 
     fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
-        let _grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
-
         let virtual_flash = static_buffer.0.write(FlashUser::new(self.mux_flash));
 
         let driver = static_buffer.1.write(TicKVSystem::new(
@@ -173,12 +169,12 @@ pub struct TicKVDedicatedFlashComponent<
 }
 
 impl<
-        F: 'static
-            + hil::flash::Flash
-            + hil::flash::HasClient<'static, TicKVSystem<'static, F, H, PAGE_SIZE>>,
-        H: Hasher<'static, 8>,
-        const PAGE_SIZE: usize,
-    > TicKVDedicatedFlashComponent<F, H, PAGE_SIZE>
+    F: 'static
+        + hil::flash::Flash
+        + hil::flash::HasClient<'static, TicKVSystem<'static, F, H, PAGE_SIZE>>,
+    H: Hasher<'static, 8>,
+    const PAGE_SIZE: usize,
+> TicKVDedicatedFlashComponent<F, H, PAGE_SIZE>
 {
     pub fn new(
         hasher: &'static H,
@@ -198,12 +194,12 @@ impl<
 }
 
 impl<
-        F: 'static
-            + hil::flash::Flash
-            + hil::flash::HasClient<'static, TicKVSystem<'static, F, H, PAGE_SIZE>>,
-        H: 'static + Hasher<'static, 8>,
-        const PAGE_SIZE: usize,
-    > Component for TicKVDedicatedFlashComponent<F, H, PAGE_SIZE>
+    F: 'static
+        + hil::flash::Flash
+        + hil::flash::HasClient<'static, TicKVSystem<'static, F, H, PAGE_SIZE>>,
+    H: 'static + Hasher<'static, 8>,
+    const PAGE_SIZE: usize,
+> Component for TicKVDedicatedFlashComponent<F, H, PAGE_SIZE>
 {
     type StaticInput = (
         &'static mut MaybeUninit<TicKVSystem<'static, F, H, PAGE_SIZE>>,
@@ -212,8 +208,6 @@ impl<
     type Output = &'static TicKVSystem<'static, F, H, PAGE_SIZE>;
 
     fn finalize(self, static_buffer: Self::StaticInput) -> Self::Output {
-        let _grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
-
         let tickfs_read_buf = static_buffer.1.write([0; PAGE_SIZE]);
 
         let tickv = static_buffer.0.write(TicKVSystem::new(

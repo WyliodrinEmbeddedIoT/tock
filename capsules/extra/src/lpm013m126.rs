@@ -14,6 +14,7 @@
 
 use core::cell::Cell;
 use core::cmp;
+use kernel::ErrorCode;
 use kernel::debug;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::gpio::Pin;
@@ -22,7 +23,6 @@ use kernel::hil::spi::{SpiMasterClient, SpiMasterDevice};
 use kernel::hil::time::{Alarm, AlarmClient, ConvertTicks};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::leasable_buffer::SubSliceMut;
-use kernel::ErrorCode;
 
 /// 4-bit frame buffer bytes.
 ///
@@ -155,7 +155,7 @@ impl<'a> FrameBuffer<'a> {
             for (frame_pixel, buf_pixel) in frame_row
                 .iter_mut()
                 .skip(buffer.frame.column as usize)
-                .zip(buf_row.data.chunks_exact(2))
+                .zip(buf_row.data.as_chunks::<2>().0.iter())
             {
                 let buf_pixel = [buf_pixel[0], buf_pixel[1]];
                 let buf_p = u16::from_le_bytes(buf_pixel);

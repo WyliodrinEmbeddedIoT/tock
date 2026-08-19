@@ -6,16 +6,17 @@
 #![no_std]
 #![no_main]
 
+use components::hmac_component_static;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
-use kernel::deferred_call::DeferredCallClient;
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{create_capability, static_init};
 
 use stm32u545::gpio::PinId;
+use stm32u545::rng::RNG_BASE;
 
 pub mod io;
 
@@ -26,9 +27,12 @@ extern "C" {
 
 const NUM_PROCS: usize = 4;
 
+type GpioHw = stm32u545::gpio::Pin<'static>;
 type ChipHw =
     stm32u545::chip::Stm32u5xx<'static, stm32u545::chip::Stm32u5xxDefaultPeripherals<'static>>;
 type ProcessPrinterInUse = capsules_system::process_printer::ProcessPrinterText;
+
+type GpioDriver = components::gpio::GpioComponentType<GpioHw>;
 
 static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinterInUse>> =
     SingleThreadValue::new();
@@ -54,6 +58,15 @@ struct NucleoU545RE {
     >,
     // Comment the line below if you don't need a watchdog
     watchdog: &'static stm32u545::iwdg::Iwdg,
+    pwm: &'static capsules_extra::pwm::Pwm<'static, 1>,
+    adc: &'static capsules_core::adc::AdcVirtualized<'static>,
+    dac: &'static capsules_extra::dac::Dac<'static>,
+    gpio: &'static GpioDriver,
+    hmac: &'static capsules_extra::hmac::HmacDriver<
+        'static,
+        stm32u545::hash::sha256::Sha256Adapter<'static>,
+        32,
+    >,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -66,6 +79,11 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
+            capsules_extra::pwm::DRIVER_NUM => f(Some(self.pwm)),
+            capsules_core::adc::DRIVER_NUM => f(Some(self.adc)),
+            capsules_extra::dac::DRIVER_NUM => f(Some(self.dac)),
+            capsules_core::gpio::DRIVER_NUM => f(Some(self.gpio)),
+            capsules_extra::hmac::DRIVER_NUM => f(Some(self.hmac)),
             _ => f(None),
         }
     }
@@ -129,6 +147,37 @@ unsafe fn set_pin_primary_functions(periphs: &stm32u545::chip::Stm32u5xxDefaultP
     let btn = periphs.gpio_c.pin(PinId::Pin13);
     btn.make_input();
     btn.set_floating_state(kernel::hil::gpio::FloatingState::PullDown);
+
+    // Arduino A0 (PA_0 = ADC1_IN5 - Channel5)
+    periphs
+        .gpio_a
+        .pin(PinId::Pin00)
+        .set_mode(stm32u545::gpio::Mode::Analog);
+    // Arduino A1 (PA_1 = ADC1_IN6 - Channel6)
+    periphs
+        .gpio_a
+        .pin(PinId::Pin01)
+        .set_mode(stm32u545::gpio::Mode::Analog);
+    //DAC pin (PA4) A2 on the board
+    periphs
+        .gpio_a
+        .pin(PinId::Pin04)
+        .set_mode(stm32u545::gpio::Mode::Analog);
+    // Arduino A3 (PB_0 = ADC1_IN15 - Channel15)
+    periphs
+        .gpio_b
+        .pin(PinId::Pin00)
+        .set_mode(stm32u545::gpio::Mode::Analog);
+    // Arduino A4 (PC_1 = ADC1_IN2 - Channel2)
+    periphs
+        .gpio_c
+        .pin(PinId::Pin01)
+        .set_mode(stm32u545::gpio::Mode::Analog);
+    // Arduino A5 (PC_0 = ADC1_IN1 - Channel1)
+    periphs
+        .gpio_c
+        .pin(PinId::Pin00)
+        .set_mode(stm32u545::gpio::Mode::Analog);
 }
 
 #[inline(never)]
@@ -153,19 +202,21 @@ unsafe fn start() -> (
         stm32u545::dma::Dma,
         stm32u545::dma::Dma::new(stm32u545::dma::DMA1_BASE)
     );
-    let usart1 = static_init!(
-        stm32u545::usart::Usart<'static>,
-        stm32u545::usart::Usart::new(stm32u545::usart::USART1_BASE)
-    );
-    usart1.register();
     // Comment the line blow if you do not need a watchdog
     let iwdg = static_init!(stm32u545::iwdg::Iwdg, stm32u545::iwdg::Iwdg::new());
 
     // Load Peripherals Bundle
     let periphs = static_init!(
         stm32u545::chip::Stm32u5xxDefaultPeripherals<'static>,
-        stm32u545::chip::Stm32u5xxDefaultPeripherals::new(usart1, exti, dma1)
+        stm32u545::chip::Stm32u5xxDefaultPeripherals::new(exti, dma1)
     );
+
+    let trng = static_init!(
+        stm32u545::rng::Trng<'static>,
+        stm32u545::rng::Trng::new(RNG_BASE)
+    );
+    trng.init();
+    periphs.rcc.enable_trng();
 
     // Initialize wiring (DMA, clocks)
     periphs.init();
@@ -174,12 +225,22 @@ unsafe fn start() -> (
     periphs.tim2.start();
     set_pin_primary_functions(periphs);
 
+    // Create an adapter for the HASH peripheral.
+    // In this way it is ensured that only one mode is used by the peripheral.
+    let sha256 = static_init!(
+        stm32u545::hash::sha256::Sha256Adapter<'static>,
+        stm32u545::hash::sha256::Sha256Adapter::new(&periphs.hash)
+    );
+
+    // Adapter receives callbacks from the peripheral
+    let _ = periphs.hash.set_sha256_adapter(sha256);
+
     // Kernel and Muxes
     let processes = components::process_array::ProcessArrayComponent::new()
         .finalize(components::process_array_component_static!(NUM_PROCS));
     let board_kernel = static_init!(kernel::Kernel, kernel::Kernel::new(processes.as_slice()));
 
-    let uart_mux = components::console::UartMuxComponent::new(periphs.usart1, 115200)
+    let uart_mux = components::console::UartMuxComponent::new(&periphs.usart1, 115200)
         .finalize(components::uart_mux_component_static!());
 
     let alarm_mux = components::alarm::AlarmMuxComponent::new(&periphs.tim2).finalize(
@@ -191,6 +252,7 @@ unsafe fn start() -> (
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!());
 
@@ -202,6 +264,10 @@ unsafe fn start() -> (
     )
     .finalize(components::debug_writer_component_static!());
 
+    kernel::declare_capability!(ProcessConsoleCap:
+        kernel::capabilities::ProcessManagementCapability,
+        kernel::capabilities::ProcessStartCapability
+    );
     let process_console = components::process_console::ProcessConsoleComponent::new(
         board_kernel,
         uart_mux,
@@ -209,9 +275,11 @@ unsafe fn start() -> (
         components::process_printer::ProcessPrinterTextComponent::new()
             .finalize(components::process_printer_text_component_static!()),
         None,
+        ProcessConsoleCap,
     )
     .finalize(components::process_console_component_static!(
-        stm32u545::tim::Tim2
+        stm32u545::tim::Tim2,
+        ProcessConsoleCap
     ));
     let _ = process_console.start();
 
@@ -219,6 +287,7 @@ unsafe fn start() -> (
         board_kernel,
         capsules_core::alarm::DRIVER_NUM,
         alarm_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::alarm_component_static!(stm32u545::tim::Tim2));
 
@@ -239,8 +308,109 @@ unsafe fn start() -> (
                 kernel::hil::gpio::FloatingState::PullDown
             )
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::button_component_static!(stm32u545::gpio::Pin));
+
+    let pwm_pin = static_init!(stm32u545::gpio::Pin, periphs.gpio_a.pin(PinId::Pin06));
+
+    let tim3_pwm_pin = static_init!(
+        stm32u545::tim::PwmPin<'static>,
+        stm32u545::tim::PwmPin::new(&periphs.tim3, pwm_pin),
+    );
+
+    let pwm = components::pwm::PwmDriverComponent::new(
+        board_kernel,
+        capsules_extra::pwm::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::pwm_driver_component_helper!(tim3_pwm_pin));
+    let adc_mux = components::adc::AdcMuxComponent::new(&periphs.adc1)
+        .finalize(components::adc_mux_component_static!(stm32u545::adc::Adc));
+
+    // Register the ADC channels in the same order as Arduino pins A0-A5
+    let adc1_channel_5 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel5)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+    let adc1_channel_6 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel6)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+    let adc1_channel_9 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel9)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+    let adc1_channel_15 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel15)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+    let adc1_channel_2 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel2)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+    let adc1_channel_1 =
+        components::adc::AdcComponent::new(adc_mux, stm32u545::adc::Channel::Channel1)
+            .finalize(components::adc_component_static!(stm32u545::adc::Adc));
+
+    // Applications will see 6 ADC channels available, with index 0-5 corresponding directly to Arduino pins A0-A5
+    let adc_syscall = components::adc::AdcVirtualComponent::new(
+        board_kernel,
+        capsules_core::adc::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::adc_syscall_component_helper!(
+        adc1_channel_5,
+        adc1_channel_6,
+        adc1_channel_9,
+        adc1_channel_15,
+        adc1_channel_2,
+        adc1_channel_1,
+    ));
+    let dac = components::dac::DacComponent::new(&periphs.dac)
+        .finalize(components::dac_component_static!());
+    let gpio = components::gpio::GpioComponent::new(
+        board_kernel,
+        capsules_core::gpio::DRIVER_NUM,
+        components::gpio_component_helper_owned!(
+            GpioHw,
+            // Digital pins
+            0 => periphs.gpio_a.pin(PinId::Pin03), // D0
+            1 => periphs.gpio_a.pin(PinId::Pin02), // D1
+            2 => periphs.gpio_c.pin(PinId::Pin08), // D2
+            // D3-D6 require GPIOB
+            7 => periphs.gpio_a.pin(PinId::Pin08), // D7
+            8 => periphs.gpio_c.pin(PinId::Pin07), // D8
+            9 => periphs.gpio_c.pin(PinId::Pin06), // D9
+            10 => periphs.gpio_c.pin(PinId::Pin09), // D10
+            11 => periphs.gpio_a.pin(PinId::Pin07), // D11
+            // 12 => D12/PA6 is used by the PWM capsule
+            // 13 => D13/PA5 is used by the LD2 LED capsule
+            // D14-D15 require GPIOB
+
+            // Analog pins exposed as GPIO
+            16 => periphs.gpio_a.pin(PinId::Pin00), // A0
+            17 => periphs.gpio_a.pin(PinId::Pin01), // A1
+            18 => periphs.gpio_a.pin(PinId::Pin04), // A2
+            // 19 => A3 requires GPIOB
+            20 => periphs.gpio_c.pin(PinId::Pin01), // A4
+            21 => periphs.gpio_c.pin(PinId::Pin00), // A5
+
+            // ST Morpho-only GPIO pins (no D/A aliases)
+            22 => periphs.gpio_c.pin(PinId::Pin10), // CN7 pin 1
+            23 => periphs.gpio_c.pin(PinId::Pin11), // CN7 pin 2
+            24 => periphs.gpio_c.pin(PinId::Pin12), // CN7 pin 3
+            25 => periphs.gpio_a.pin(PinId::Pin15), // CN7 pin 17
+            26 => periphs.gpio_c.pin(PinId::Pin03), // CN7 pin 37
+        ),
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::gpio_component_static!(GpioHw));
+    let hmac = components::hmac::HmacComponent::new(
+        board_kernel,
+        capsules_extra::hmac::DRIVER_NUM,
+        sha256,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(hmac_component_static!(
+        stm32u545::hash::sha256::Sha256Adapter<'static>,
+        32
+    ));
 
     // Platform and Interrupts
     let platform = static_init!(
@@ -254,6 +424,11 @@ unsafe fn start() -> (
             button,
             alarm,
             watchdog: iwdg, // Comment this if you do not need a watchdog
+            pwm,
+            adc: adc_syscall,
+            dac,
+            gpio,
+            hmac
         }
     );
 

@@ -84,9 +84,9 @@ use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::cells::MapCell;
 #[allow(unused_imports)]
 use kernel::{capabilities, create_capability, debug, debug_gpio, debug_verbose, static_init};
+use nrf52_components::{UartChannel, UartPins};
 use nrf52840::gpio::Pin;
 use nrf52840::interrupt_service::Nrf52840DefaultPeripherals;
-use nrf52_components::{UartChannel, UartPins};
 
 // The nRF52840DK LEDs (see back of board)
 const LED1_PIN: Pin = Pin::P0_13;
@@ -185,7 +185,12 @@ type AnalogComparatorDriver =
     components::analog_comparator::AnalogComparatorComponentType<AnalogComparatorHw>;
 type I2CMasterSlaveDriver = components::i2c::I2CMasterSlaveDriverComponentType<I2cHw>;
 type SpiControllerDriver = components::spi::SpiSyscallComponentType<SpiHw>;
-type ProcessConsoleDriver = components::process_console::ProcessConsoleComponentType<AlarmHw>;
+kernel::declare_capability!(ProcessConsoleCap:
+    kernel::capabilities::ProcessManagementCapability,
+    kernel::capabilities::ProcessStartCapability
+);
+type ProcessConsoleDriver =
+    components::process_console::ProcessConsoleComponentType<AlarmHw, ProcessConsoleCap>;
 type TemperatureDriver = components::temperature::TemperatureComponentType<TemperatureHw>;
 type IpcDriver = kernel::ipc::IPC<{ NUM_PROCS as u8 }>;
 
@@ -211,6 +216,8 @@ pub type Ieee802154Driver = components::ieee802154::Ieee802154ComponentType<Radi
 
 /// Userspace EUI64 driver.
 pub type Eui64Driver = components::eui64::Eui64ComponentType;
+
+kernel::declare_capability!(UdpDriverCap: kernel::capabilities::UdpDriverCapability);
 
 /// Userspace UDP driver.
 pub type UdpDriver = components::udp_driver::UDPDriverComponentType;
@@ -334,6 +341,7 @@ pub unsafe fn ieee802154_udp(
         PAN_ID,
         device_id_bottom_16,
         device_id,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::ieee802154_component_static!(RadioHw, AesHw));
 
@@ -363,6 +371,8 @@ pub unsafe fn ieee802154_udp(
         MacAddress::Long(device_id),
         local_ip_ifaces,
         mux_alarm,
+        create_capability!(capabilities::NetworkCapabilityCreationCapability),
+        create_capability!(capabilities::CreatePortTableCapability),
     )
     .finalize(components::udp_mux_component_static!(
         AlarmHw,
@@ -377,8 +387,14 @@ pub unsafe fn ieee802154_udp(
         udp_recv_mux,
         udp_port_table,
         local_ip_ifaces,
+        UdpDriverCap,
+        create_capability!(capabilities::MemoryAllocationCapability),
+        create_capability!(capabilities::NetworkCapabilityCreationCapability),
     )
-    .finalize(components::udp_driver_component_static!(AlarmHw));
+    .finalize(components::udp_driver_component_static!(
+        AlarmHw,
+        UdpDriverCap
+    ));
 
     (eui64_driver, ieee802154_driver, udp_driver)
 }
@@ -422,10 +438,11 @@ pub unsafe fn start_no_pconsole() -> (
         [u8; nrf52840::ieee802154_radio::ACK_BUF_SIZE],
         [0; nrf52840::ieee802154_radio::ACK_BUF_SIZE]
     );
+    let aes_ecb_buf = static_init!([u8; 48], [0; 48]);
     // Initialize chip peripheral drivers
     let nrf52840_peripherals = static_init!(
         Nrf52840DefaultPeripherals,
-        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf)
+        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf, aes_ecb_buf)
     );
 
     // Set up circular peripheral dependencies.
@@ -533,6 +550,7 @@ pub unsafe fn start_no_pconsole() -> (
             12 => &nrf52840_peripherals.gpio_port[Pin::P1_14],
             13 => &nrf52840_peripherals.gpio_port[Pin::P1_15],
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::gpio_component_static!(GpioHw));
 
@@ -566,6 +584,7 @@ pub unsafe fn start_no_pconsole() -> (
                 kernel::hil::gpio::FloatingState::PullUp
             )
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::button_component_static!(ButtonHw));
 
@@ -593,6 +612,7 @@ pub unsafe fn start_no_pconsole() -> (
         board_kernel,
         capsules_core::alarm::DRIVER_NUM,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::alarm_component_static!(AlarmHw));
 
@@ -626,14 +646,19 @@ pub unsafe fn start_no_pconsole() -> (
         mux_alarm,
         process_printer,
         Some(cortexm4::support::reset),
+        ProcessConsoleCap,
     )
-    .finalize(components::process_console_component_static!(AlarmHw));
+    .finalize(components::process_console_component_static!(
+        AlarmHw,
+        ProcessConsoleCap
+    ));
 
     // Setup the serial console for userspace.
     let console = components::console::ConsoleComponent::new(
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!());
 
@@ -655,6 +680,7 @@ pub unsafe fn start_no_pconsole() -> (
         capsules_extra::ble_advertising_driver::DRIVER_NUM,
         &base_peripherals.ble_radio,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::ble_component_static!(AlarmHw, BleHw));
 
@@ -666,6 +692,7 @@ pub unsafe fn start_no_pconsole() -> (
         board_kernel,
         capsules_extra::temperature::DRIVER_NUM,
         &base_peripherals.temp,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::temperature_component_static!(TemperatureHw));
 
@@ -677,6 +704,7 @@ pub unsafe fn start_no_pconsole() -> (
         board_kernel,
         capsules_core::rng::DRIVER_NUM,
         &base_peripherals.trng,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::rng_component_static!(RngHw));
 
@@ -700,6 +728,7 @@ pub unsafe fn start_no_pconsole() -> (
         adc_channels,
         board_kernel,
         capsules_core::adc::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::adc_dedicated_component_static!(AdcHw));
 
@@ -718,6 +747,7 @@ pub unsafe fn start_no_pconsole() -> (
             &gpio_port[SPI_CS],
         ),
         capsules_core::spi_controller::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::spi_syscall_component_static!(SpiHw));
 
@@ -798,6 +828,7 @@ pub unsafe fn start_no_pconsole() -> (
         virtual_kv_driver,
         board_kernel,
         capsules_extra::kv_driver::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::kv_driver_component_static!(
         VirtualKVPermissions
@@ -811,6 +842,7 @@ pub unsafe fn start_no_pconsole() -> (
         board_kernel,
         capsules_core::i2c_master_slave_driver::DRIVER_NUM,
         &base_peripherals.twi1,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::i2c_master_slave_component_static!(I2cHw));
 
@@ -826,18 +858,15 @@ pub unsafe fn start_no_pconsole() -> (
 
     // Initialize AC using AIN5 (P0.29) as VIN+ and VIN- as AIN0 (P0.02)
     // These are hardcoded pin assignments specified in the driver
-    let analog_comparator_channel = static_init!(
-        nrf52840::acomp::Channel,
-        nrf52840::acomp::Channel::new(nrf52840::acomp::ChannelNumber::AC0)
-    );
     let analog_comparator = components::analog_comparator::AnalogComparatorComponent::new(
         &base_peripherals.acomp,
         components::analog_comparator_component_helper!(
             nrf52840::acomp::Channel,
-            analog_comparator_channel
+            nrf52840::acomp::Channel::new(nrf52840::acomp::ChannelNumber::AC0),
         ),
         board_kernel,
         capsules_extra::analog_comparator::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::analog_comparator_component_static!(
         AnalogComparatorHw

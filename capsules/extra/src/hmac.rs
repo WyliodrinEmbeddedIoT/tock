@@ -60,6 +60,9 @@ use kernel::utilities::leasable_buffer::SubSliceMut;
 use kernel::{ErrorCode, ProcessId};
 
 enum ShaOperation {
+    Md5,
+    Sha1,
+    Sha224,
     Sha256,
     Sha384,
     Sha512,
@@ -89,13 +92,16 @@ pub struct HmacDriver<'a, H: digest::Digest<'a, DIGEST_LEN>, const DIGEST_LEN: u
 }
 
 impl<
-        'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > HmacDriver<'a, H, DIGEST_LEN>
+    'a,
+    H: digest::Digest<'a, DIGEST_LEN>
+        + digest::HmacMd5
+        + digest::HmacSha1
+        + digest::HmacSha224
+        + digest::HmacSha256
+        + digest::HmacSha384
+        + digest::HmacSha512,
+    const DIGEST_LEN: usize,
+> HmacDriver<'a, H, DIGEST_LEN>
 {
     pub fn new(
         hmac: &'a H,
@@ -131,9 +137,19 @@ impl<
                                     let mut tmp_key_buffer: [u8; TMP_KEY_BUFFER_SIZE] =
                                         [0; TMP_KEY_BUFFER_SIZE];
                                     let key_len = core::cmp::min(k.len(), TMP_KEY_BUFFER_SIZE);
+
                                     k[..key_len].copy_to_slice(&mut tmp_key_buffer[..key_len]);
 
                                     match op {
+                                        ShaOperation::Md5 => {
+                                            self.hmac.set_mode_hmacmd5(&tmp_key_buffer[..key_len])
+                                        }
+                                        ShaOperation::Sha1 => {
+                                            self.hmac.set_mode_hmacsha1(&tmp_key_buffer[..key_len])
+                                        }
+                                        ShaOperation::Sha224 => self
+                                            .hmac
+                                            .set_mode_hmacsha224(&tmp_key_buffer[..key_len]),
                                         ShaOperation::Sha256 => self
                                             .hmac
                                             .set_mode_hmacsha256(&tmp_key_buffer[..key_len]),
@@ -249,13 +265,16 @@ impl<
 }
 
 impl<
-        'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientData<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+    'a,
+    H: digest::Digest<'a, DIGEST_LEN>
+        + digest::HmacMd5
+        + digest::HmacSha1
+        + digest::HmacSha224
+        + digest::HmacSha256
+        + digest::HmacSha384
+        + digest::HmacSha512,
+    const DIGEST_LEN: usize,
+> digest::ClientData<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
 {
     // Because data needs to be copied from a userspace buffer into a kernel (RAM) one,
     // we always pass mut data; this callback should never be invoked.
@@ -387,13 +406,16 @@ impl<
 }
 
 impl<
-        'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientHash<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+    'a,
+    H: digest::Digest<'a, DIGEST_LEN>
+        + digest::HmacMd5
+        + digest::HmacSha1
+        + digest::HmacSha224
+        + digest::HmacSha256
+        + digest::HmacSha384
+        + digest::HmacSha512,
+    const DIGEST_LEN: usize,
+> digest::ClientHash<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
 {
     fn hash_done(&self, result: Result<(), ErrorCode>, digest: &'static mut [u8; DIGEST_LEN]) {
         self.processid.map(|id| {
@@ -441,13 +463,16 @@ impl<
 }
 
 impl<
-        'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > digest::ClientVerify<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
+    'a,
+    H: digest::Digest<'a, DIGEST_LEN>
+        + digest::HmacMd5
+        + digest::HmacSha1
+        + digest::HmacSha224
+        + digest::HmacSha256
+        + digest::HmacSha384
+        + digest::HmacSha512,
+    const DIGEST_LEN: usize,
+> digest::ClientVerify<DIGEST_LEN> for HmacDriver<'a, H, DIGEST_LEN>
 {
     fn verification_done(
         &self,
@@ -494,13 +519,16 @@ impl<
 /// - `2`: Allow a buffer for storing the digest. The kernel will fill this with
 ///   the HMAC digest before calling the `hash_done` callback.
 impl<
-        'a,
-        H: digest::Digest<'a, DIGEST_LEN>
-            + digest::HmacSha256
-            + digest::HmacSha384
-            + digest::HmacSha512,
-        const DIGEST_LEN: usize,
-    > SyscallDriver for HmacDriver<'a, H, DIGEST_LEN>
+    'a,
+    H: digest::Digest<'a, DIGEST_LEN>
+        + digest::HmacMd5
+        + digest::HmacSha1
+        + digest::HmacSha224
+        + digest::HmacSha256
+        + digest::HmacSha384
+        + digest::HmacSha512,
+    const DIGEST_LEN: usize,
+> SyscallDriver for HmacDriver<'a, H, DIGEST_LEN>
 {
     // Subscribe to HmacDriver events.
     //
@@ -640,6 +668,21 @@ impl<
                             // SHA512
                             2 => {
                                 app.sha_operation = Some(ShaOperation::Sha512);
+                                CommandReturn::success()
+                            }
+                            // SHA224
+                            3 => {
+                                app.sha_operation = Some(ShaOperation::Sha224);
+                                CommandReturn::success()
+                            }
+                            // SHA1
+                            4 => {
+                                app.sha_operation = Some(ShaOperation::Sha1);
+                                CommandReturn::success()
+                            }
+                            // Md5
+                            5 => {
+                                app.sha_operation = Some(ShaOperation::Md5);
                                 CommandReturn::success()
                             }
                             _ => CommandReturn::failure(ErrorCode::NOSUPPORT),

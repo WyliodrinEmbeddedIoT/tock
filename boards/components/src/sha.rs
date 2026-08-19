@@ -7,70 +7,80 @@
 //! Usage
 //! -----
 //! ```rust
-//!    let sha = components::sha::ShaComponent::new(
+//!    type Sha = components::sha::ShaSoftware256ComponentType;
+//!    const SHA_DIGEST_LEN: usize = 32;
+//!    type ShaDriver = components::sha::ShaDriverComponentType<Sha, SHA_DIGEST_LEN>;
+//!
+//!    let sha_driver = components::sha::ShaDriverComponent::new(
 //!        board_kernel,
-//!        chip.sha,
+//!        capsules_extra::sha::DRIVER_NUM,
+//!        sha,
 //!    )
-//!    .finalize(components::sha_component_static!(
-//!        lowrisc::sha::Sha,
-//!        32,
+//!    .finalize(components::sha_driver_component_static!(
+//!        Sha,
+//!        SHA_DIGEST_LEN
 //!    ));
 //! ```
 
-use capsules_extra::sha::ShaDriver;
+use capsules_extra::sha256_driver::ShaDriver;
 use core::mem::MaybeUninit;
-use kernel::capabilities;
+use kernel::capabilities::MemoryAllocationCapability;
 use kernel::component::Component;
-use kernel::create_capability;
 use kernel::hil::digest;
 
 // Setup static space for the objects.
 #[macro_export]
-macro_rules! sha_component_static {
+macro_rules! sha_driver_component_static {
     ($A:ty, $L:expr$(,)?) => {{
-        let sha_driver = kernel::static_buf!(
-            capsules_extra::sha::ShaDriver<
-                'static,
-                capsules_core::virtualizers::virtual_sha::VirtualMuxSha<'static, $A, $L>,
-                $L,
-            >
-        );
+        let sha_driver =
+            kernel::static_buf!(capsules_extra::sha256_driver::ShaDriver<'static, $A, $L>);
 
         let data_buffer = kernel::static_buf!([u8; 64]);
         let dest_buffer = kernel::static_buf!([u8; $L]);
 
         (sha_driver, data_buffer, dest_buffer)
-    };};
+    }};
 }
 
-pub struct ShaComponent<A: 'static + digest::Digest<'static, L>, const L: usize> {
+pub type ShaDriverComponentType<A, const L: usize> = ShaDriver<'static, A, L>;
+
+pub struct ShaDriverComponent<
+    A: 'static + digest::DigestDataHash<'static, L>,
+    const L: usize,
+    CAP: MemoryAllocationCapability + 'static,
+> {
     board_kernel: &'static kernel::Kernel,
     driver_num: usize,
     sha: &'static A,
+    mem_cap: CAP,
 }
 
-impl<A: 'static + digest::Digest<'static, L>, const L: usize> ShaComponent<A, L> {
+impl<
+    A: 'static + digest::DigestDataHash<'static, L>,
+    const L: usize,
+    CAP: MemoryAllocationCapability + 'static,
+> ShaDriverComponent<A, L, CAP>
+{
     pub fn new(
         board_kernel: &'static kernel::Kernel,
         driver_num: usize,
         sha: &'static A,
-    ) -> ShaComponent<A, L> {
-        ShaComponent {
+        mem_cap: CAP,
+    ) -> Self {
+        Self {
             board_kernel,
             driver_num,
             sha,
+            mem_cap,
         }
     }
 }
 
 impl<
-        A: kernel::hil::digest::Sha256
-            + digest::Sha384
-            + digest::Sha512
-            + 'static
-            + digest::Digest<'static, L>,
-        const L: usize,
-    > Component for ShaComponent<A, L>
+    A: kernel::hil::digest::Sha256 + 'static + digest::DigestDataHash<'static, L>,
+    const L: usize,
+    CAP: MemoryAllocationCapability + 'static,
+> Component for ShaDriverComponent<A, L, CAP>
 {
     type StaticInput = (
         &'static mut MaybeUninit<ShaDriver<'static, A, L>>,
@@ -81,16 +91,15 @@ impl<
     type Output = &'static ShaDriver<'static, A, L>;
 
     fn finalize(self, s: Self::StaticInput) -> Self::Output {
-        let grant_cap = create_capability!(capabilities::MemoryAllocationCapability);
-
         let data_buffer = s.1.write([0; 64]);
         let dest_buffer = s.2.write([0; L]);
 
-        let sha = s.0.write(capsules_extra::sha::ShaDriver::new(
+        let sha = s.0.write(ShaDriver::new(
             self.sha,
             data_buffer,
             dest_buffer,
-            self.board_kernel.create_grant(self.driver_num, &grant_cap),
+            self.board_kernel
+                .create_grant(self.driver_num, &self.mem_cap),
         ));
 
         self.sha.set_client(sha);
@@ -101,10 +110,10 @@ impl<
 
 #[macro_export]
 macro_rules! sha_software_256_component_static {
-    ($(,)?) => {{
-        kernel::static_buf!(capsules_extra::sha256::Sha256Software<'static>)
-    };};
+    ($(,)?) => {{ kernel::static_buf!(capsules_extra::sha256::Sha256Software<'static>) }};
 }
+
+pub type ShaSoftware256ComponentType = capsules_extra::sha256::Sha256Software<'static>;
 
 pub struct ShaSoftware256Component {}
 

@@ -10,6 +10,7 @@ use core::fmt::Write;
 
 use kernel::utilities::registers::interfaces::{Readable, Writeable};
 
+pub mod clic;
 pub mod csr;
 pub mod dma_fence;
 pub mod pmp;
@@ -63,8 +64,19 @@ extern "C" {
 ///    any Rust code runs. See <https://github.com/tock/tock/issues/2222> for more
 ///    information.
 /// 3. Finally it calls `main()`, the main entry point for Tock boards.
-#[cfg(any(doc, all(target_arch = "riscv32", target_os = "none")))]
-#[link_section = ".riscv.start"]
+#[cfg(any(doc, any(target_arch = "riscv32", target_arch = "riscv64")))]
+// Only apply the `link_section` attribute when actually targeting bare-metal
+// RISC-V. Host builds (e.g. `doc`, tests, clippy on macOS, Windows, Linux,
+// ...) use object formats (Mach-O, PE, ...) that reject a bare section name
+// like this, yielding errors such as: `mach-o section specifier requires a
+// segment and section separated by a comma`.
+#[cfg_attr(
+    any(
+        all(target_arch = "riscv32", target_os = "none"),
+        all(target_arch = "riscv64", target_os = "none")
+    ),
+    link_section = ".riscv.start"
+)]
 #[unsafe(naked)]
 // We don't want the function name symbol to be mangled in order to be able to refer to
 // it the linker script. It is not currently being used in the provided linker script
@@ -155,7 +167,7 @@ pub unsafe extern "C" fn initialize_ram_jump_to_main() {
 }
 
 // Mock implementation for tests on Travis-CI.
-#[cfg(not(any(doc, all(target_arch = "riscv32", target_os = "none"))))]
+#[cfg(not(any(doc, any(target_arch = "riscv32", target_arch = "riscv64"))))]
 pub unsafe extern "C" fn initialize_ram_jump_to_main() {
     unimplemented!()
 }
@@ -305,7 +317,18 @@ pub extern "C" fn _start_trap() -> ! {
     all(target_arch = "riscv32", target_os = "none"),
     all(target_arch = "riscv64", target_os = "none")
 ))]
-#[link_section = ".riscv.trap"]
+// Only apply the `link_section` attribute when actually targeting bare-metal
+// RISC-V. Host builds (e.g. `doc`, tests, clippy on macOS, Windows, Linux,
+// ...) use object formats (Mach-O, PE, ...) that reject a bare section name
+// like this, yielding errors such as: `mach-o section specifier requires a
+// segment and section separated by a comma`.
+#[cfg_attr(
+    any(
+        all(target_arch = "riscv32", target_os = "none"),
+        all(target_arch = "riscv64", target_os = "none")
+    ),
+    link_section = ".riscv.trap"
+)]
 // We need the `_start_trap` function to be 256 byte aligned. The linker script
 // includes a check for whether a symbol named `_start_trap` exists. If it does,
 // it makes sure to align the `.riscv.trap` section on a 256 byte
@@ -468,7 +491,7 @@ pub extern "C" fn _start_trap() -> ! {
 /// <https://elixir.bootlin.com/linux/v5.12.10/source/arch/riscv/include/asm/jump_label.h#L21>
 /// as suggested by the RISC-V developers:
 /// <https://groups.google.com/a/groups.riscv.org/g/isa-dev/c/XKkYacERM04/m/CdpOcqtRAgAJ>
-#[cfg(any(doc, all(target_arch = "riscv32", target_os = "none")))]
+#[cfg(any(doc, any(target_arch = "riscv32", target_arch = "riscv64")))]
 pub unsafe fn semihost_command(command: usize, arg0: usize, arg1: usize) -> usize {
     use core::arch::asm;
     let res;
@@ -492,7 +515,7 @@ pub unsafe fn semihost_command(command: usize, arg0: usize, arg1: usize) -> usiz
 }
 
 // Mock implementation for tests on Travis-CI.
-#[cfg(not(any(doc, all(target_arch = "riscv32", target_os = "none"))))]
+#[cfg(not(any(doc, any(target_arch = "riscv32", target_arch = "riscv64"),)))]
 pub unsafe fn semihost_command(_command: usize, _arg0: usize, _arg1: usize) -> usize {
     unimplemented!()
 }
@@ -543,22 +566,25 @@ pub unsafe fn print_riscv_state(writer: &mut dyn Write) {
     let interrupt = csr::CSR.mcause.read(csr::mcause::mcause::is_interrupt);
     let code = csr::CSR.mcause.read(csr::mcause::mcause::reason);
     let _ = writer.write_fmt(format_args!(
-        " (interrupt={}, exception code={:#010X})",
-        interrupt, code
+        " (interrupt={}, exception code={:#0width$X})",
+        interrupt,
+        code,
+        width = (XLEN / 4) + 2,
     ));
     let _ = writer.write_fmt(format_args!(
-        "\r\nLast value (mtval):  {:#010X}\
+        "\r\nLast value (mtval):  {:#0width$X}\
          \r\n\
          \r\nSystem register dump:\
-         \r\n mepc:    {:#010X}    mstatus:     {:#010X}\
-         \r\n mcycle:  {:#010X}    minstret:    {:#010X}\
-         \r\n mtvec:   {:#010X}",
+         \r\n mepc:    {:#0width$X}    mstatus:     {:#0width$X}\
+         \r\n mcycle:  {:#0width$X}    minstret:    {:#0width$X}\
+         \r\n mtvec:   {:#0width$X}",
         csr::CSR.mtval.get(),
         csr::CSR.mepc.get(),
         csr::CSR.mstatus.get(),
         csr::CSR.mcycle.get(),
         csr::CSR.minstret.get(),
-        csr::CSR.mtvec.get()
+        csr::CSR.mtvec.get(),
+        width = (XLEN / 4) + 2,
     ));
     let mstatus = csr::CSR.mstatus.extract();
     let uie = mstatus.is_set(csr::mstatus::mstatus::uie);
@@ -569,11 +595,11 @@ pub unsafe fn print_riscv_state(writer: &mut dyn Write) {
     let mpie = mstatus.is_set(csr::mstatus::mstatus::mpie);
     let spp = mstatus.is_set(csr::mstatus::mstatus::spp);
     let _ = writer.write_fmt(format_args!(
-        "\r\n mstatus: {:#010X}\
-         \r\n  uie:    {:5}  upie:   {}\
-         \r\n  sie:    {:5}  spie:   {}\
-         \r\n  mie:    {:5}  mpie:   {}\
-         \r\n  spp:    {}",
+        "\r\n mstatus: {:#0width$X}\
+         \r\n  uie:    {:5}    upie:   {:5}\
+         \r\n  sie:    {:5}    spie:   {:5}\
+         \r\n  mie:    {:5}    mpie:   {:5}\
+         \r\n  spp:    {:5}",
         mstatus.get(),
         uie,
         upie,
@@ -581,7 +607,8 @@ pub unsafe fn print_riscv_state(writer: &mut dyn Write) {
         spie,
         mie,
         mpie,
-        spp
+        spp,
+        width = (XLEN / 4) + 2,
     ));
     let e_usoft = csr::CSR.mie.is_set(csr::mie::mie::usoft);
     let e_ssoft = csr::CSR.mie.is_set(csr::mie::mie::ssoft);
@@ -603,16 +630,16 @@ pub unsafe fn print_riscv_state(writer: &mut dyn Write) {
     let p_sext = csr::CSR.mip.is_set(csr::mip::mip::sext);
     let p_mext = csr::CSR.mip.is_set(csr::mip::mip::mext);
     let _ = writer.write_fmt(format_args!(
-        "\r\n mie:   {:#010X}   mip:   {:#010X}\
-         \r\n  usoft:  {:6}              {:6}\
-         \r\n  ssoft:  {:6}              {:6}\
-         \r\n  msoft:  {:6}              {:6}\
-         \r\n  utimer: {:6}              {:6}\
-         \r\n  stimer: {:6}              {:6}\
-         \r\n  mtimer: {:6}              {:6}\
-         \r\n  uext:   {:6}              {:6}\
-         \r\n  sext:   {:6}              {:6}\
-         \r\n  mext:   {:6}              {:6}\r\n",
+        "\r\n mie:     {:#0width$X}    mip:         {:#0width$X}\
+         \r\n  usoft:  {:5}        {space:>swidth$} {:5}\
+         \r\n  ssoft:  {:5}        {space:>swidth$} {:5}\
+         \r\n  msoft:  {:5}        {space:>swidth$} {:5}\
+         \r\n  utimer: {:5}        {space:>swidth$} {:5}\
+         \r\n  stimer: {:5}        {space:>swidth$} {:5}\
+         \r\n  mtimer: {:5}        {space:>swidth$} {:5}\
+         \r\n  uext:   {:5}        {space:>swidth$} {:5}\
+         \r\n  sext:   {:5}        {space:>swidth$} {:5}\
+         \r\n  mext:   {:5}        {space:>swidth$} {:5}\r\n",
         csr::CSR.mie.get(),
         csr::CSR.mip.get(),
         e_usoft,
@@ -632,6 +659,9 @@ pub unsafe fn print_riscv_state(writer: &mut dyn Write) {
         e_sext,
         p_sext,
         e_mext,
-        p_mext
+        p_mext,
+        space = "",
+        width = (XLEN / 4) + 2,
+        swidth = (XLEN / 4) - 8 + 13,
     ));
 }

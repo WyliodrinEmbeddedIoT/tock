@@ -31,12 +31,12 @@
 
 use crate::pm;
 use core::cell::Cell;
+use kernel::ErrorCode;
 use kernel::debug;
 use kernel::hil::analog_comparator;
-use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
-use kernel::utilities::registers::{register_bitfields, ReadOnly, ReadWrite, WriteOnly};
 use kernel::utilities::StaticRef;
-use kernel::ErrorCode;
+use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
+use kernel::utilities::registers::{ReadOnly, ReadWrite, WriteOnly, register_bitfields};
 
 /// Representation of an AC channel on the SAM4L.
 pub struct AcChannel {
@@ -458,20 +458,19 @@ impl<'a> analog_comparator::AnalogComparator<'a> for Acifc<'a> {
     fn comparison(&self, channel: &Self::Channel) -> bool {
         self.enable();
         let regs = ACIFC_BASE;
-        let result;
-        if channel.chan_num == 0 {
-            result = regs.sr.is_set(Status::ACCS0);
+        let result = if channel.chan_num == 0 {
+            regs.sr.is_set(Status::ACCS0)
         } else if channel.chan_num == 1 {
-            result = regs.sr.is_set(Status::ACCS1);
+            regs.sr.is_set(Status::ACCS1)
         } else if channel.chan_num == 2 {
-            result = regs.sr.is_set(Status::ACCS2);
+            regs.sr.is_set(Status::ACCS2)
         } else if channel.chan_num == 3 {
-            result = regs.sr.is_set(Status::ACCS3);
+            regs.sr.is_set(Status::ACCS3)
         } else {
             // Should never get here, just making sure
             self.disable();
             panic!("PANIC! Please choose a comparator (value of ac) that this chip supports");
-        }
+        };
         result
     }
 

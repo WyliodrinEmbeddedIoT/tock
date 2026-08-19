@@ -12,13 +12,13 @@ use core::fmt;
 use core::num::NonZeroUsize;
 
 use kernel::platform::mpu;
+use kernel::utilities::StaticRef;
 use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::registers::interfaces::ReadWriteable;
 use kernel::utilities::registers::interfaces::{Readable, Writeable};
 use kernel::utilities::registers::{
-    register_bitfields, register_structs, FieldValue, ReadOnly, ReadWrite,
+    FieldValue, ReadOnly, ReadWrite, register_bitfields, register_structs,
 };
-use kernel::utilities::StaticRef;
 
 /// Smallest allowable MPU region across all CortexM cores
 /// Individual cores may have bigger min sizes, but never lower than 32
@@ -354,9 +354,12 @@ impl CortexMRegion {
             return None;
         }
 
-        // Limit Address register
+        // Limit Address register.
+        //
+        // RLAR::LIMIT is inclusive so `logical_end - 1` here to not have the
+        // region 32 bytes further.
         let rlar_value = MPU_RLAR::ENABLE::SET
-            + MPU_RLAR::LIMIT.val((logical_end as u32) >> 5)
+            + MPU_RLAR::LIMIT.val(((logical_end - 1) as u32) >> 5)
             + MPU_RLAR::PXN::Disable
             + MPU_RLAR::ATTRINDX.val(0);
 

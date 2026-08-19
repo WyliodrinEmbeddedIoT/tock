@@ -16,7 +16,7 @@ macro_rules! app_checker_sha256_component_static {
             kernel::static_buf!(capsules_system::process_checker::basic::AppCheckerSha256);
 
         (checker, buffer)
-    };};
+    }};
 }
 
 pub type AppCheckerSha256ComponentType = capsules_system::process_checker::basic::AppCheckerSha256;
@@ -32,11 +32,11 @@ impl<S: 'static + digest::Digest<'static, 32>> AppCheckerSha256Component<S> {
 }
 
 impl<
-        S: kernel::hil::digest::Sha256
-            + 'static
-            + digest::Digest<'static, 32>
-            + kernel::hil::digest::DigestDataVerify<'static, 32>,
-    > Component for AppCheckerSha256Component<S>
+    S: kernel::hil::digest::Sha256
+        + 'static
+        + digest::Digest<'static, 32>
+        + kernel::hil::digest::DigestDataVerify<'static, 32>,
+> Component for AppCheckerSha256Component<S>
 {
     type StaticInput = (
         &'static mut MaybeUninit<capsules_system::process_checker::basic::AppCheckerSha256>,

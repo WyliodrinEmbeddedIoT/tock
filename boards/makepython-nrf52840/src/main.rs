@@ -105,7 +105,8 @@ fn crc(s: &'static str) -> u32 {
 // SYSCALL DRIVER TYPE DEFINITIONS
 //------------------------------------------------------------------------------
 
-type AlarmDriver = components::alarm::AlarmDriverComponentType<nrf52840::rtc::Rtc<'static>>;
+type AlarmHw = nrf52840::rtc::Rtc<'static>;
+type AlarmDriver = components::alarm::AlarmDriverComponentType<AlarmHw>;
 
 type Screen = components::ssd1306::Ssd1306ComponentType<nrf52840::i2c::TWI<'static>>;
 type ScreenDriver = components::screen::ScreenSharedComponentType<Screen>;
@@ -122,40 +123,45 @@ type RngDriver = components::rng::RngComponentType<nrf52840::trng::Trng<'static>
 
 type SchedulerInUse = components::sched::round_robin::RoundRobinComponentType;
 
+//------------------------------------------------------------------------------
+// SYSCALL DRIVER TYPE DEFINITIONS
+//------------------------------------------------------------------------------
+
+type BleHw = nrf52840::ble_radio::Radio<'static>;
+type GpioHw = nrf52::gpio::GPIOPin<'static>;
+type Nrf52840GpioHw = nrf52840::gpio::GPIOPin<'static>;
+type LedHw = kernel::hil::led::LedLow<'static, nrf52::gpio::GPIOPin<'static>>;
+
+type BleDriver = components::ble::BLEComponentType<BleHw, AlarmHw>;
+type GpioDriver = components::gpio::GpioComponentType<GpioHw>;
+type LedDriver = components::led::LedsComponentType<LedHw, 1>;
+type ButtonDriver = components::button::ButtonComponentType<Nrf52840GpioHw>;
+type ConsoleDriver = components::console::ConsoleComponentType;
+type AdcDriver = components::adc::AdcVirtualComponentType;
+type ProcessConsoleDriver =
+    components::process_console::ProcessConsoleComponentType<AlarmHw, ProcessConsoleCap>;
+type UdpDriver = components::udp_driver::UDPDriverComponentType;
+
+kernel::declare_capability!(ProcessConsoleCap:
+    kernel::capabilities::ProcessManagementCapability,
+    kernel::capabilities::ProcessStartCapability
+);
+
 /// Supported drivers by the platform
 pub struct Platform {
-    ble_radio: &'static capsules_extra::ble_advertising_driver::BLE<
-        'static,
-        nrf52::ble_radio::Radio<'static>,
-        capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
-            'static,
-            nrf52::rtc::Rtc<'static>,
-        >,
-    >,
+    ble_radio: &'static BleDriver,
     ieee802154_radio: &'static Ieee802154Driver,
-    console: &'static capsules_core::console::Console<'static>,
-    pconsole: &'static capsules_core::process_console::ProcessConsole<
-        'static,
-        { capsules_core::process_console::DEFAULT_COMMAND_HISTORY_LEN },
-        capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
-            'static,
-            nrf52::rtc::Rtc<'static>,
-        >,
-        components::process_console::Capability,
-    >,
-    gpio: &'static capsules_core::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
-    led: &'static capsules_core::led::LedDriver<
-        'static,
-        LedLow<'static, nrf52::gpio::GPIOPin<'static>>,
-        1,
-    >,
-    adc: &'static capsules_core::adc::AdcVirtualized<'static>,
+    console: &'static ConsoleDriver,
+    pconsole: &'static ProcessConsoleDriver,
+    gpio: &'static GpioDriver,
+    led: &'static LedDriver,
+    adc: &'static AdcDriver,
     rng: &'static RngDriver,
     ipc: kernel::ipc::IPC<{ NUM_PROCS as u8 }>,
     alarm: &'static AlarmDriver,
-    button: &'static capsules_core::button::Button<'static, nrf52840::gpio::GPIOPin<'static>>,
+    button: &'static ButtonDriver,
     screen: &'static ScreenDriver,
-    udp_driver: &'static capsules_extra::net::udp::UDPDriver<'static>,
+    udp_driver: &'static UdpDriver,
     scheduler: &'static SchedulerInUse,
     systick: cortexm4::systick::SysTick,
 }
@@ -243,11 +249,12 @@ pub unsafe fn start() -> (
         [u8; nrf52840::ieee802154_radio::ACK_BUF_SIZE],
         [0; nrf52840::ieee802154_radio::ACK_BUF_SIZE]
     );
+    let aes_ecb_buf = static_init!([u8; 48], [0; 48]);
 
     // Initialize chip peripheral drivers
     let nrf52840_peripherals = static_init!(
         Nrf52840DefaultPeripherals,
-        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf)
+        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf, aes_ecb_buf)
     );
 
     // set up circular peripheral dependencies
@@ -324,21 +331,22 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_core::gpio::DRIVER_NUM,
         components::gpio_component_helper!(
-            nrf52840::gpio::GPIOPin,
+            Nrf52840GpioHw,
             0 => &nrf52840_peripherals.gpio_port[GPIO_D0],
             1 => &nrf52840_peripherals.gpio_port[GPIO_D1],
             2 => &nrf52840_peripherals.gpio_port[GPIO_D2],
             3 => &nrf52840_peripherals.gpio_port[GPIO_D3],
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::gpio_component_static!(nrf52840::gpio::GPIOPin));
+    .finalize(components::gpio_component_static!(Nrf52840GpioHw));
 
     //--------------------------------------------------------------------------
     // LEDs
     //--------------------------------------------------------------------------
 
     let led = components::led::LedsComponent::new().finalize(components::led_component_static!(
-        LedLow<'static, nrf52840::gpio::GPIOPin>,
+        LedLow<'static, Nrf52840GpioHw>,
         LedLow::new(&nrf52840_peripherals.gpio_port[LED_PIN]),
     ));
 
@@ -350,17 +358,16 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_core::button::DRIVER_NUM,
         components::button_component_helper!(
-            nrf52840::gpio::GPIOPin,
+            Nrf52840GpioHw,
             (
                 &nrf52840_peripherals.gpio_port[BUTTON_PIN],
                 kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             )
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::button_component_static!(
-        nrf52840::gpio::GPIOPin
-    ));
+    .finalize(components::button_component_static!(Nrf52840GpioHw));
 
     //--------------------------------------------------------------------------
     // ALARM & TIMER
@@ -375,6 +382,7 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_core::alarm::DRIVER_NUM,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::alarm_component_static!(nrf52::rtc::Rtc));
 
@@ -430,9 +438,11 @@ pub unsafe fn start() -> (
         mux_alarm,
         process_printer,
         Some(cortexm4::support::reset),
+        ProcessConsoleCap,
     )
     .finalize(components::process_console_component_static!(
-        nrf52::rtc::Rtc<'static>
+        nrf52::rtc::Rtc<'static>,
+        ProcessConsoleCap
     ));
 
     // Setup the console.
@@ -440,6 +450,7 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!());
     // Create the debugger object that handles calls to `debug!()`.
@@ -459,6 +470,7 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_core::rng::DRIVER_NUM,
         &base_peripherals.trng,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::rng_component_static!(nrf52840::trng::Trng));
 
@@ -470,58 +482,61 @@ pub unsafe fn start() -> (
     let adc_mux = components::adc::AdcMuxComponent::new(&base_peripherals.adc)
         .finalize(components::adc_mux_component_static!(nrf52840::adc::Adc));
 
-    let adc_syscall =
-        components::adc::AdcVirtualComponent::new(board_kernel, capsules_core::adc::DRIVER_NUM)
-            .finalize(components::adc_syscall_component_helper!(
-                // A0
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput2)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A1
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput3)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A2
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput6)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A3
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput5)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A4
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput7)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A5
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput0)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A6
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput4)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // A7
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput1)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-            ));
+    let adc_syscall = components::adc::AdcVirtualComponent::new(
+        board_kernel,
+        capsules_core::adc::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::adc_syscall_component_helper!(
+        // A0
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput2)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A1
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput3)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A2
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput6)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A3
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput5)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A4
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput7)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A5
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput0)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A6
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput4)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // A7
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput1)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+    ));
 
     //--------------------------------------------------------------------------
     // SCREEN
@@ -585,6 +600,7 @@ pub unsafe fn start() -> (
         capsules_extra::screen::screen::DRIVER_NUM,
         ssd1306,
         apps_regions,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::screen_shared_component_static!(1032, Screen));
 
@@ -597,11 +613,9 @@ pub unsafe fn start() -> (
         capsules_extra::ble_advertising_driver::DRIVER_NUM,
         &base_peripherals.ble_radio,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::ble_component_static!(
-        nrf52840::rtc::Rtc,
-        nrf52840::ble_radio::Radio
-    ));
+    .finalize(components::ble_component_static!(AlarmHw, BleHw));
 
     use capsules_extra::net::ieee802154::MacAddress;
 
@@ -620,6 +634,7 @@ pub unsafe fn start() -> (
         PAN_ID,
         device_id_bottom_16,
         device_id,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::ieee802154_component_static!(
         nrf52840::ieee802154_radio::Radio,
@@ -652,13 +667,16 @@ pub unsafe fn start() -> (
         MacAddress::Short(device_id_bottom_16),
         local_ip_ifaces,
         mux_alarm,
+        create_capability!(capabilities::NetworkCapabilityCreationCapability),
+        create_capability!(capabilities::CreatePortTableCapability),
     )
     .finalize(components::udp_mux_component_static!(
-        nrf52840::rtc::Rtc,
+        AlarmHw,
         Ieee802154MacDevice
     ));
 
     // UDP driver initialization happens here
+    kernel::declare_capability!(UdpDriverCap: kernel::capabilities::UdpDriverCapability);
     let udp_driver = components::udp_driver::UDPDriverComponent::new(
         board_kernel,
         capsules_extra::net::udp::DRIVER_NUM,
@@ -666,8 +684,14 @@ pub unsafe fn start() -> (
         udp_recv_mux,
         udp_port_table,
         local_ip_ifaces,
+        UdpDriverCap,
+        create_capability!(capabilities::MemoryAllocationCapability),
+        create_capability!(capabilities::NetworkCapabilityCreationCapability),
     )
-    .finalize(components::udp_driver_component_static!(nrf52840::rtc::Rtc));
+    .finalize(components::udp_driver_component_static!(
+        AlarmHw,
+        UdpDriverCap
+    ));
 
     //--------------------------------------------------------------------------
     // APP ID CHECKING
@@ -693,14 +717,18 @@ pub unsafe fn start() -> (
     // STORAGE PERMISSIONS
     //--------------------------------------------------------------------------
 
+    kernel::declare_capability!(AppStoreCap: kernel::capabilities::ApplicationStorageCapability);
     let storage_permissions_policy =
-        components::storage_permissions::individual::StoragePermissionsIndividualComponent::new()
-            .finalize(
-                components::storage_permissions_individual_component_static!(
-                    nrf52840::chip::NRF52<Nrf52840DefaultPeripherals>,
-                    kernel::process::ProcessStandardDebugFull,
-                ),
-            );
+        components::storage_permissions::individual::StoragePermissionsIndividualComponent::new(
+            AppStoreCap,
+        )
+        .finalize(
+            components::storage_permissions_individual_component_static!(
+                nrf52840::chip::NRF52<Nrf52840DefaultPeripherals>,
+                kernel::process::ProcessStandardDebugFull,
+                AppStoreCap,
+            ),
+        );
 
     //--------------------------------------------------------------------------
     // PROCESS LOADING
@@ -737,6 +765,7 @@ pub unsafe fn start() -> (
         storage_permissions_policy,
         app_flash,
         app_memory,
+        create_capability!(capabilities::ProcessManagementCapability),
     )
     .finalize(components::process_loader_sequential_component_static!(
         nrf52840::chip::NRF52<Nrf52840DefaultPeripherals>,

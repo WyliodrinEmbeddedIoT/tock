@@ -15,9 +15,9 @@ use kernel::hil::led::LedHigh;
 use kernel::hil::time::{Alarm, Timer};
 use kernel::platform::chip::InterruptService;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
+use kernel::utilities::StaticRef;
 use kernel::utilities::registers::interfaces::ReadWriteable;
 use kernel::utilities::single_thread_value::SingleThreadValue;
-use kernel::utilities::StaticRef;
 use kernel::{create_capability, debug, static_init};
 use rv32i::csr;
 
@@ -426,6 +426,7 @@ unsafe fn start() -> (
             30 => gpio0.get_gpio_pin(30).unwrap(),
             31 => gpio0.get_gpio_pin(31).unwrap(),
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::gpio_component_static!(GPIOPin));
 
@@ -506,6 +507,7 @@ unsafe fn start() -> (
                 kernel::hil::gpio::FloatingState::PullNone
             ),
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::button_component_static!(GPIOPin));
 
@@ -556,6 +558,7 @@ unsafe fn start() -> (
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!());
     // Create the debugger object that handles calls to `debug!()`.
@@ -574,6 +577,7 @@ unsafe fn start() -> (
         board_kernel,
         capsules_core::low_level_debug::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::low_level_debug_component_static!());
 

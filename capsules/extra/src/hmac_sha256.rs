@@ -6,13 +6,13 @@
 
 use core::cell::Cell;
 
+use kernel::ErrorCode;
 use kernel::hil;
 use kernel::hil::digest::DigestData;
 use kernel::utilities::cells::{MapCell, OptionalCell, TakeCell};
 use kernel::utilities::leasable_buffer::SubSlice;
 use kernel::utilities::leasable_buffer::SubSliceMut;
 use kernel::utilities::leasable_buffer::SubSliceMutImmut;
-use kernel::ErrorCode;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum State {
@@ -545,6 +545,30 @@ impl<'a, S: hil::digest::Sha256 + hil::digest::DigestDataHash<'a, 32>> hil::dige
     for HmacSha256Software<'a, S>
 {
     fn set_mode_hmacsha512(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl<'a, S: hil::digest::Sha256 + hil::digest::DigestDataHash<'a, 32>> hil::digest::HmacSha224
+    for HmacSha256Software<'a, S>
+{
+    fn set_mode_hmacsha224(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl<'a, S: hil::digest::Sha256 + hil::digest::DigestDataHash<'a, 32>> hil::digest::HmacSha1
+    for HmacSha256Software<'a, S>
+{
+    fn set_mode_hmacsha1(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl<'a, S: hil::digest::Sha256 + hil::digest::DigestDataHash<'a, 32>> hil::digest::HmacMd5
+    for HmacSha256Software<'a, S>
+{
+    fn set_mode_hmacmd5(&self, _key: &[u8]) -> Result<(), ErrorCode> {
         Err(ErrorCode::NOSUPPORT)
     }
 }

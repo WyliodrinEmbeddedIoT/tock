@@ -13,7 +13,7 @@ use kernel::platform::mpu;
 use kernel::utilities::registers::FieldValue;
 use rv32i::csr;
 use rv32i::pmp::{
-    format_pmp_entries, pmpcfg_octet, NAPOTRegionSpec, TORRegionSpec, TORUserPMP, TORUserPMPCFG,
+    NAPOTRegionSpec, TORRegionSpec, TORUserPMP, TORUserPMPCFG, format_pmp_entries, pmpcfg_octet,
 };
 
 // ---------- EarlGrey ePMP implementation named constants ---------------------
@@ -987,7 +987,7 @@ impl<const HANDOVER_CONFIG_CHECK: bool, DBG: EPMPDebugConfig>
         // Currently, this code requires the TOR regions to start at an even PMP
         // region index. Assert that this is indeed the case:
         #[allow(clippy::let_unit_value)]
-        let _: () = assert!(DBG::TOR_USER_ENTRIES_OFFSET % 2 == 0);
+        let _: () = assert_eq!(DBG::TOR_USER_ENTRIES_OFFSET % 2, 0);
 
         // We store the "enabled" PMPCFG octets of user regions in the
         // `shadow_user_pmpcfg` field, such that we can re-enable the PMP

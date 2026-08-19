@@ -11,27 +11,22 @@
 #![no_main]
 #![deny(missing_docs)]
 
-use capsules_core::i2c_master_slave_driver::I2CMasterSlaveDriver;
-use capsules_core::virtualizers::virtual_aes_ccm::MuxAES128CCM;
-use capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
-use kernel::deferred_call::DeferredCallClient;
 use kernel::hil::gpio::Configure;
 use kernel::hil::gpio::FloatingState;
 use kernel::hil::i2c::{I2CMaster, I2CSlave};
 use kernel::hil::led::LedLow;
-use kernel::hil::symmetric_encryption::AES128;
 use kernel::hil::time::Counter;
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
 #[allow(unused_imports)]
 use kernel::{capabilities, create_capability, debug, debug_gpio, debug_verbose, static_init};
-use nrf52840::gpio::Pin;
-use nrf52840::interrupt_service::Nrf52840DefaultPeripherals;
 #[allow(unused_imports)]
 use nrf52_components::{self, UartChannel, UartPins};
+use nrf52840::gpio::Pin;
+use nrf52840::interrupt_service::Nrf52840DefaultPeripherals;
 
 // The Particle Boron LEDs
 const LED_USR_PIN: Pin = Pin::P1_12;
@@ -46,8 +41,10 @@ const BUTTON_RST_PIN: Pin = Pin::P0_18;
 // UART Pins (CTS/RTS Unused)
 const _UART_RTS: Option<Pin> = Some(Pin::P0_30);
 const _UART_CTS: Option<Pin> = Some(Pin::P0_31);
-const UART_TXD: Pin = Pin::P0_06;
-const UART_RXD: Pin = Pin::P0_08;
+/// UART transmit pin.
+pub const UART_TXD: Pin = Pin::P0_06;
+/// UART receive pin.
+pub const UART_RXD: Pin = Pin::P0_08;
 
 // SPI pins not currently in use, but left here for convenience
 const _SPI_MOSI: Pin = Pin::P1_13;
@@ -95,37 +92,39 @@ type Ieee802154Driver = components::ieee802154::Ieee802154ComponentType<
 
 type SchedulerInUse = components::sched::round_robin::RoundRobinComponentType;
 
+//------------------------------------------------------------------------------
+// SYSCALL DRIVER TYPE DEFINITIONS
+//------------------------------------------------------------------------------
+
+type BleHw = nrf52840::ble_radio::Radio<'static>;
+type AlarmHw = nrf52840::rtc::Rtc<'static>;
+type GpioHw = nrf52840::gpio::GPIOPin<'static>;
+type LedHw = kernel::hil::led::LedLow<'static, nrf52840::gpio::GPIOPin<'static>>;
+type I2cHw = nrf52840::i2c::TWI<'static>;
+
+type BleDriver = components::ble::BLEComponentType<BleHw, AlarmHw>;
+type AlarmDriver = components::alarm::AlarmDriverComponentType<AlarmHw>;
+type GpioDriver = components::gpio::GpioComponentType<GpioHw>;
+type LedDriver = components::led::LedsComponentType<LedHw, 4>;
+type ButtonDriver = components::button::ButtonComponentType<GpioHw>;
+type ConsoleDriver = components::console::ConsoleComponentType;
+type AdcDriver = components::adc::AdcVirtualComponentType;
+type I2CMasterSlaveDriver = components::i2c::I2CMasterSlaveDriverComponentType<I2cHw>;
+
 /// Supported drivers by the platform
 pub struct Platform {
-    ble_radio: &'static capsules_extra::ble_advertising_driver::BLE<
-        'static,
-        nrf52840::ble_radio::Radio<'static>,
-        VirtualMuxAlarm<'static, nrf52840::rtc::Rtc<'static>>,
-    >,
+    ble_radio: &'static BleDriver,
     ieee802154_radio: &'static Ieee802154Driver,
-    button: &'static capsules_core::button::Button<'static, nrf52840::gpio::GPIOPin<'static>>,
-    console: &'static capsules_core::console::Console<'static>,
-    gpio: &'static capsules_core::gpio::GPIO<'static, nrf52840::gpio::GPIOPin<'static>>,
-    led: &'static capsules_core::led::LedDriver<
-        'static,
-        LedLow<'static, nrf52840::gpio::GPIOPin<'static>>,
-        4,
-    >,
-    adc: &'static capsules_core::adc::AdcVirtualized<'static>,
+    button: &'static ButtonDriver,
+    console: &'static ConsoleDriver,
+    gpio: &'static GpioDriver,
+    led: &'static LedDriver,
+    adc: &'static AdcDriver,
     rng: &'static RngDriver,
     temp: &'static TemperatureDriver,
     ipc: kernel::ipc::IPC<{ NUM_PROCS as u8 }>,
-    i2c_master_slave: &'static capsules_core::i2c_master_slave_driver::I2CMasterSlaveDriver<
-        'static,
-        nrf52840::i2c::TWI<'static>,
-    >,
-    alarm: &'static capsules_core::alarm::AlarmDriver<
-        'static,
-        capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
-            'static,
-            nrf52840::rtc::Rtc<'static>,
-        >,
-    >,
+    i2c_master_slave: &'static I2CMasterSlaveDriver,
+    alarm: &'static AlarmDriver,
     scheduler: &'static SchedulerInUse,
     systick: cortexm4::systick::SysTick,
 }
@@ -196,10 +195,11 @@ unsafe fn create_peripherals() -> &'static mut Nrf52840DefaultPeripherals<'stati
         [u8; nrf52840::ieee802154_radio::ACK_BUF_SIZE],
         [0; nrf52840::ieee802154_radio::ACK_BUF_SIZE]
     );
+    let aes_ecb_buf = static_init!([u8; 48], [0; 48]);
     // Initialize chip peripheral drivers
     let nrf52840_peripherals = static_init!(
         Nrf52840DefaultPeripherals,
-        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf)
+        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf, aes_ecb_buf)
     );
 
     nrf52840_peripherals
@@ -280,7 +280,7 @@ pub unsafe fn start_particle_boron() -> (
         board_kernel,
         capsules_core::gpio::DRIVER_NUM,
         components::gpio_component_helper!(
-            nrf52840::gpio::GPIOPin,
+            GpioHw,
             // Left Side pins on mesh feather
             // A0 - ADC
             // 0 => &nrf52840_peripherals.gpio_port[Pin::P0_03],
@@ -324,8 +324,9 @@ pub unsafe fn start_particle_boron() -> (
             //D0
             19 => &nrf52840_peripherals.gpio_port[Pin::P0_26],
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::gpio_component_static!(nrf52840::gpio::GPIOPin));
+    .finalize(components::gpio_component_static!(GpioHw));
 
     //--------------------------------------------------------------------------
     // Buttons
@@ -335,24 +336,23 @@ pub unsafe fn start_particle_boron() -> (
         board_kernel,
         capsules_core::button::DRIVER_NUM,
         components::button_component_helper!(
-            nrf52840::gpio::GPIOPin,
+            GpioHw,
             (
                 &nrf52840_peripherals.gpio_port[BUTTON_PIN],
                 kernel::hil::gpio::ActivationMode::ActiveLow,
                 kernel::hil::gpio::FloatingState::PullUp
             )
         ),
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::button_component_static!(
-        nrf52840::gpio::GPIOPin
-    ));
+    .finalize(components::button_component_static!(GpioHw));
 
     //--------------------------------------------------------------------------
     // LEDs
     //--------------------------------------------------------------------------
 
     let led = components::led::LedsComponent::new().finalize(components::led_component_static!(
-        LedLow<'static, nrf52840::gpio::GPIOPin>,
+        LedLow<'static, GpioHw>,
         LedLow::new(&nrf52840_peripherals.gpio_port[LED_USR_PIN]),
         LedLow::new(&nrf52840_peripherals.gpio_port[LED2_R_PIN]),
         LedLow::new(&nrf52840_peripherals.gpio_port[LED2_G_PIN]),
@@ -374,13 +374,14 @@ pub unsafe fn start_particle_boron() -> (
     let rtc = &base_peripherals.rtc;
     let _ = rtc.start();
     let mux_alarm = components::alarm::AlarmMuxComponent::new(rtc)
-        .finalize(components::alarm_mux_component_static!(nrf52840::rtc::Rtc));
+        .finalize(components::alarm_mux_component_static!(AlarmHw));
     let alarm = components::alarm::AlarmDriverComponent::new(
         board_kernel,
         capsules_core::alarm::DRIVER_NUM,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::alarm_component_static!(nrf52840::rtc::Rtc));
+    .finalize(components::alarm_component_static!(AlarmHw));
 
     //--------------------------------------------------------------------------
     // UART & CONSOLE & DEBUG
@@ -391,9 +392,7 @@ pub unsafe fn start_particle_boron() -> (
         mux_alarm,
         &base_peripherals.uarte0,
     )
-    .finalize(nrf52_components::uart_channel_component_static!(
-        nrf52840::rtc::Rtc
-    ));
+    .finalize(nrf52_components::uart_channel_component_static!(AlarmHw));
 
     // Process Printer for displaying process information.
     let process_printer = components::process_printer::ProcessPrinterTextComponent::new()
@@ -411,6 +410,7 @@ pub unsafe fn start_particle_boron() -> (
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!(132, 132));
     // Create the debugger object that handles calls to `debug!()`.
@@ -431,18 +431,12 @@ pub unsafe fn start_particle_boron() -> (
         capsules_extra::ble_advertising_driver::DRIVER_NUM,
         &base_peripherals.ble_radio,
         mux_alarm,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
-    .finalize(components::ble_component_static!(
-        nrf52840::rtc::Rtc,
-        nrf52840::ble_radio::Radio
-    ));
+    .finalize(components::ble_component_static!(AlarmHw, BleHw));
 
-    let aes_mux = static_init!(
-        MuxAES128CCM<'static, nrf52840::aes::AesECB>,
-        MuxAES128CCM::new(&base_peripherals.ecb,)
-    );
-    base_peripherals.ecb.set_client(aes_mux);
-    aes_mux.register();
+    let aes_mux = components::aes::AesMuxComponent::new(&base_peripherals.ecb)
+        .finalize(components::aes_mux_component_static!(nrf52840::aes::AesECB));
 
     let (ieee802154_radio, _mux_mac) = components::ieee802154::Ieee802154Component::new(
         board_kernel,
@@ -452,6 +446,7 @@ pub unsafe fn start_particle_boron() -> (
         PAN_ID,
         SRC_MAC,
         DEFAULT_EXT_SRC_MAC,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::ieee802154_component_static!(
         nrf52840::ieee802154_radio::Radio,
@@ -466,6 +461,7 @@ pub unsafe fn start_particle_boron() -> (
         board_kernel,
         capsules_extra::temperature::DRIVER_NUM,
         &base_peripherals.temp,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::temperature_component_static!(
         nrf52840::temperature::Temp
@@ -479,6 +475,7 @@ pub unsafe fn start_particle_boron() -> (
         board_kernel,
         capsules_core::rng::DRIVER_NUM,
         &base_peripherals.trng,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::rng_component_static!(nrf52840::trng::Trng));
 
@@ -491,46 +488,49 @@ pub unsafe fn start_particle_boron() -> (
     let adc_mux = components::adc::AdcMuxComponent::new(&base_peripherals.adc)
         .finalize(components::adc_mux_component_static!(nrf52840::adc::Adc));
 
-    let adc_syscall =
-        components::adc::AdcVirtualComponent::new(board_kernel, capsules_core::adc::DRIVER_NUM)
-            .finalize(components::adc_syscall_component_helper!(
-                // BRD_A0
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput1)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // BRD_A1
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput2)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // BRD_A2
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput4)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // BRD_A3
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput5)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // BRD_A4
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput6)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-                // BRD_A5
-                components::adc::AdcComponent::new(
-                    adc_mux,
-                    nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput7)
-                )
-                .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
-            ));
+    let adc_syscall = components::adc::AdcVirtualComponent::new(
+        board_kernel,
+        capsules_core::adc::DRIVER_NUM,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::adc_syscall_component_helper!(
+        // BRD_A0
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput1)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // BRD_A1
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput2)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // BRD_A2
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput4)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // BRD_A3
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput5)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // BRD_A4
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput6)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+        // BRD_A5
+        components::adc::AdcComponent::new(
+            adc_mux,
+            nrf52840::adc::AdcChannelSetup::new(nrf52840::adc::AdcChannel::AnalogInput7)
+        )
+        .finalize(components::adc_component_static!(nrf52840::adc::Adc)),
+    ));
 
     //--------------------------------------------------------------------------
     // I2C Master/Slave
@@ -541,7 +541,7 @@ pub unsafe fn start_particle_boron() -> (
     let i2c_slave_buffer2 = static_init!([u8; 128], [0; 128]);
 
     let i2c_master_slave = static_init!(
-        I2CMasterSlaveDriver<nrf52840::i2c::TWI<'static>>,
+        I2CMasterSlaveDriver,
         I2CMasterSlaveDriver::new(
             &base_peripherals.twi1,
             i2c_master_buffer,

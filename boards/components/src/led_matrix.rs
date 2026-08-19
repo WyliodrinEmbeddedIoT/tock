@@ -92,7 +92,7 @@ macro_rules! led_matrix_component_static {
         );
 
         (alarm, led, buffer)
-    };};
+    }};
 }
 
 #[macro_export]
@@ -113,7 +113,7 @@ macro_rules! led_line_component_static {
                 ),+
             ]
         )
-    };};
+    }};
 }
 
 #[macro_export]
@@ -124,7 +124,7 @@ macro_rules! led_matrix_led {
             LedMatrixLed<'static, $Pin, $A>,
             LedMatrixLed::new($led_matrix, $col, $row)
         )
-    };};
+    }};
 }
 
 #[macro_export]
@@ -141,7 +141,7 @@ macro_rules! led_matrix_leds {
             ),+]
         );
         leds
-    };};
+    }};
 }
 
 pub struct LedMatrixComponent<
@@ -160,12 +160,12 @@ pub struct LedMatrixComponent<
 }
 
 impl<
-        L: 'static + Pin,
-        A: 'static + Alarm<'static>,
-        const NUM_COLS: usize,
-        const NUM_ROWS: usize,
-        const NUM_LED_BITS: usize,
-    > LedMatrixComponent<L, A, NUM_COLS, NUM_ROWS, NUM_LED_BITS>
+    L: 'static + Pin,
+    A: 'static + Alarm<'static>,
+    const NUM_COLS: usize,
+    const NUM_ROWS: usize,
+    const NUM_LED_BITS: usize,
+> LedMatrixComponent<L, A, NUM_COLS, NUM_ROWS, NUM_LED_BITS>
 {
     pub fn new(
         alarm_mux: &'static MuxAlarm<'static, A>,
@@ -187,12 +187,12 @@ impl<
 }
 
 impl<
-        L: 'static + Pin,
-        A: 'static + Alarm<'static>,
-        const NUM_COLS: usize,
-        const NUM_ROWS: usize,
-        const NUM_LED_BITS: usize,
-    > Component for LedMatrixComponent<L, A, NUM_COLS, NUM_ROWS, NUM_LED_BITS>
+    L: 'static + Pin,
+    A: 'static + Alarm<'static>,
+    const NUM_COLS: usize,
+    const NUM_ROWS: usize,
+    const NUM_LED_BITS: usize,
+> Component for LedMatrixComponent<L, A, NUM_COLS, NUM_ROWS, NUM_LED_BITS>
 {
     type StaticInput = (
         &'static mut MaybeUninit<VirtualMuxAlarm<'static, A>>,

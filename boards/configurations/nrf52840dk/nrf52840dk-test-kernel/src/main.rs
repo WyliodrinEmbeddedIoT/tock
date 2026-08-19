@@ -18,19 +18,23 @@ use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::cells::NumericCellExt;
 use kernel::utilities::single_thread_value::SingleThreadValue;
 use kernel::{capabilities, create_capability, static_init};
+use nrf52_components::{UartChannel, UartPins};
 use nrf52840::chip::Nrf52DefaultPeripherals;
 use nrf52840::gpio::Pin;
 use nrf52840::interrupt_service::Nrf52840DefaultPeripherals;
-use nrf52_components::{UartChannel, UartPins};
 
 mod test;
 
 const BUTTON_RST_PIN: Pin = Pin::P0_18;
 
-const UART_RTS: Option<Pin> = Some(Pin::P0_05);
-const UART_TXD: Pin = Pin::P0_06;
-const UART_CTS: Option<Pin> = Some(Pin::P0_07);
-const UART_RXD: Pin = Pin::P0_08;
+/// UART RTS pin.
+pub const UART_RTS: Option<Pin> = Some(Pin::P0_05);
+/// UART transmit pin.
+pub const UART_TXD: Pin = Pin::P0_06;
+/// UART CTS pin.
+pub const UART_CTS: Option<Pin> = Some(Pin::P0_07);
+/// UART receive pin.
+pub const UART_RXD: Pin = Pin::P0_08;
 
 /// Debug Writer
 pub mod io;
@@ -114,10 +118,11 @@ unsafe fn create_peripherals() -> &'static mut Nrf52840DefaultPeripherals<'stati
         [u8; nrf52840::ieee802154_radio::ACK_BUF_SIZE],
         [0; nrf52840::ieee802154_radio::ACK_BUF_SIZE]
     );
+    let aes_ecb_buf = static_init!([u8; 48], [0; 48]);
     // Initialize chip peripheral drivers
     let nrf52840_peripherals = static_init!(
         Nrf52840DefaultPeripherals,
-        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf)
+        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf, aes_ecb_buf)
     );
 
     nrf52840_peripherals

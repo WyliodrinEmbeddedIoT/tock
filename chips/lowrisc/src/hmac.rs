@@ -6,18 +6,18 @@
 
 use core::cell::Cell;
 use core::ops::Index;
+use kernel::ErrorCode;
 use kernel::hil;
 use kernel::hil::digest::{self, DigestData, DigestHash};
+use kernel::utilities::StaticRef;
 use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::leasable_buffer::SubSlice;
 use kernel::utilities::leasable_buffer::SubSliceMut;
 use kernel::utilities::leasable_buffer::SubSliceMutImmut;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::{
-    register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+    ReadOnly, ReadWrite, WriteOnly, register_bitfields, register_structs,
 };
-use kernel::utilities::StaticRef;
-use kernel::ErrorCode;
 
 register_structs! {
     pub HmacRegisters {
@@ -432,6 +432,24 @@ impl hil::digest::HmacSha512 for Hmac<'_> {
     }
 }
 
+impl hil::digest::HmacMd5 for Hmac<'_> {
+    fn set_mode_hmacmd5(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl hil::digest::HmacSha1 for Hmac<'_> {
+    fn set_mode_hmacsha1(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl hil::digest::HmacSha224 for Hmac<'_> {
+    fn set_mode_hmacsha224(&self, _key: &[u8]) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
 impl hil::digest::Sha256 for Hmac<'_> {
     fn set_mode_sha256(&self) -> Result<(), ErrorCode> {
         if self.busy.get() {
@@ -459,6 +477,24 @@ impl hil::digest::Sha384 for Hmac<'_> {
 
 impl hil::digest::Sha512 for Hmac<'_> {
     fn set_mode_sha512(&self) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl hil::digest::Md5 for Hmac<'_> {
+    fn set_mode_md5(&self) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl hil::digest::Sha1 for Hmac<'_> {
+    fn set_mode_sha1(&self) -> Result<(), ErrorCode> {
+        Err(ErrorCode::NOSUPPORT)
+    }
+}
+
+impl hil::digest::Sha224 for Hmac<'_> {
+    fn set_mode_sha224(&self) -> Result<(), ErrorCode> {
         Err(ErrorCode::NOSUPPORT)
     }
 }

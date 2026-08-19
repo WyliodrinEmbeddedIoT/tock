@@ -8,11 +8,11 @@ use core::fmt::Write;
 use core::ptr::addr_of;
 
 use kernel::platform::chip::{Chip, InterruptService};
-use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::StaticRef;
+use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 
-use rv32i::csr::{self, mcause, mtvec::mtvec, CSR};
-use rv32i::pmp::{simple::SimplePMP, PMPUserMPU};
+use rv32i::csr::{self, CSR, mcause, mtvec::mtvec};
+use rv32i::pmp::{PMPUserMPU, simple::SimplePMP};
 use rv32i::syscall::SysCall;
 
 use crate::intc::{Intc, IntcRegisters};
@@ -303,7 +303,15 @@ pub extern "C" fn _start_trap_vectored() -> ! {
 }
 
 #[cfg(any(doc, all(target_arch = "riscv32", target_os = "none")))]
-#[link_section = ".riscv.trap_vectored"]
+// Only apply the `link_section` attribute when actually targeting bare-metal
+// RISC-V. Some host builds (e.g. `doc`, tests, clippy on macOS, Windows,
+// ...) use object formats (Mach-O, PE, ...) that reject a bare section name
+// like this, yielding errors such as: `mach-o section specifier requires a
+// segment and section separated by a comma`.
+#[cfg_attr(
+    all(target_arch = "riscv32", target_os = "none"),
+    link_section = ".riscv.trap_vectored"
+)]
 #[unsafe(naked)]
 pub extern "C" fn _start_trap_vectored() -> ! {
     use core::arch::naked_asm;

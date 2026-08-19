@@ -49,6 +49,73 @@ macro_rules! create_capability {
     }};
 }
 
+/// Declare a named struct that implements the given capability traits.
+///
+/// Unlike [`create_capability!`], this macro creates a named type that can be
+/// used as a generic parameter (e.g., in component static macros). Use this
+/// when you need to name the capability type, such as when passing it to a
+/// component's static buffer macro.
+///
+/// # Usage Example
+///
+/// ```ignore
+/// # use kernel::capabilities::ProcessManagementCapability;
+/// # use kernel::declare_capability;
+///
+/// declare_capability!(MyCapability: ProcessManagementCapability);
+///
+/// let manager = components::manager::ManagerComponent::new(
+///     board_kernel,
+///     mux_alarm,
+///     MyCapability,
+/// )
+/// .finalize(components::manager_component_static!(
+///     AlarmHw,
+///     MyCapability,
+/// ));
+/// ```
+///
+/// # Difference from `create_capability!()`
+///
+/// `declare_capability!()` creates a named type, whereas [`create_capability!`]
+/// does not. If possible, use [`create_capability!`]. However, for components
+/// that need the capability struct named in the static constructor macro, use
+/// `declare_capability!()` to create the named struct that is used in the macro
+/// expansion and in the component `finalize()` method.
+///
+/// # Supporting Multiple Capabilities
+///
+/// Some type signatures require multiple capabilities. This macro supports
+/// declaring multiple capabilities. For example:
+///
+/// ```
+/// kernel::declare_capability!(ProcessConsoleCap:
+///     kernel::capabilities::ProcessManagementCapability,
+///     kernel::capabilities::ProcessStartCapability
+/// );
+/// ```
+///
+/// # Restrictions
+///
+/// This helper macro cannot be called from `#![forbid(unsafe_code)]` crates,
+/// and is used by trusted code to generate a capability type.
+///
+/// # Safety
+///
+/// This macro can only be used in a context that is allowed to use `unsafe`.
+/// Specifically, an internal `allow(unsafe_code)` directive will conflict with
+/// any `forbid(unsafe_code)` at the crate or block level.
+#[macro_export]
+macro_rules! declare_capability {
+    ($name:ident: $($T:ty),+) => {
+        struct $name;
+        $(
+            #[allow(unsafe_code)]
+            unsafe impl $T for $name {}
+        )*
+    };
+}
+
 /// Count the number of passed expressions.
 ///
 /// Useful for constructing variable sized arrays in other macros.
@@ -84,14 +151,106 @@ macro_rules! stack_size {
         /// section that the linker script picks up and places at the correct
         /// location in RAM.
         ///
-        /// When compiling for a macOS host, this section attribute is elided as
-        /// it is incompatible with Mach-O objects and yields the following
-        /// error: `mach-o section specifier requires a segment and section
-        /// separated by a comma`.
-        #[cfg_attr(not(target_os = "macos"), unsafe(link_section = ".stack_buffer"))]
+        /// This section attribute is only applied when targeting bare-metal
+        /// (`target_os = "none"`). Host builds (e.g. tests, clippy, doc) use
+        /// object formats (Mach-O, PE, ...) that reject a bare section name
+        /// like this, yielding errors such as: `mach-o section specifier
+        /// requires a segment and section separated by a comma`.
+        #[cfg_attr(target_os = "none", unsafe(link_section = ".stack_buffer"))]
         #[unsafe(no_mangle)]
         static mut STACK_MEMORY: [u8; $size] = [0; $size];
     }
+}
+
+/// Initialize all fields of a `MaybeUninit<T>` struct.
+///
+/// Use this macro to guarantee that all fields in `T` are initialized.
+///
+/// Instead of the normal code, which would look like this:
+///
+/// ```rust,ignore
+/// let process_uninit: &mut MaybeUninit<ProcessStandard<C, D>> =
+///     unsafe { &mut *process_struct_memory_location };
+///
+/// let process_uptr = process_uninit.as_mut_ptr();
+///
+/// unsafe {
+///     (&raw mut (*process_uptr).kernel).write(kernel);
+///     (&raw mut (*process_uptr).chip).write(chip);
+///     ...
+/// }
+/// ```
+///
+/// which has the limitation that if not every field is set, then this code is
+/// unsafe. With this macro, the code looks like this:
+///
+/// ```rust,ignore
+/// let process_uninit: &mut MaybeUninit<ProcessStandard<C, D>> =
+///     unsafe { &mut *process_struct_memory_location };
+///
+/// unsafe {
+///     init_uninit_struct!(process_uninit => ProcessStandard<C, D> {
+///         kernel: kernel,
+///         chip: chip,
+///         ...
+///     });
+/// }
+/// ```
+///
+/// If not every field is set then there will be a compiler error.
+///
+/// # Implementation
+///
+/// This macro creates a fake implementation of the struct `T` and then
+/// populates all of the provided fields. This allows the normal Rust compiler
+/// to check that all fields are actually set.
+///
+/// The generated code looks something like this:
+///
+/// ```rust,ignore
+/// #[allow(unreachable_code)]
+/// if false {
+///     let _: ProcessStandard<C, D> = ProcessStandard {
+///         kernel: ::core::panicking::panic("not yet implemented"),
+///         chip: ::core::panicking::panic("not yet implemented"),
+///         ...
+///     };
+/// }
+/// ```
+///
+/// Using `todo!()` avoids any issues with the borrow checker. However, using
+/// `todo!()` causes the `diverging_sub_expression` clippy lint to trigger.
+/// Since we are doing this intentionally, we manually ignore the
+/// `diverging_sub_expression` lint.
+///
+/// # Safety
+///
+/// The struct to be initialized needs to be correctly allocated and all fields
+/// need to be correctly aligned.
+#[macro_export]
+macro_rules! init_uninit_struct {
+    (@field $field:ident : $value:expr) => {
+        $value
+    };
+
+    (@field $field:ident) => {
+        $field
+    };
+
+    ( $s: expr => $t: ident < $($gen:tt),* > { $( $field:ident : $value:expr ),* $(,)? } ) => {
+        #[allow(unreachable_code)]
+        #[allow(clippy::diverging_sub_expression)]
+        if false {
+            let _: $t<$($gen),*> = $t {
+                $( $field: todo!() ),*
+            };
+        }
+
+        let s = $s.as_mut_ptr();
+        $(
+            (&raw mut (*s).$field).write(init_uninit_struct!(@field $field : $value));
+        )*
+    };
 }
 
 /// Compute a POSIX-style CRC32 checksum of a slice.

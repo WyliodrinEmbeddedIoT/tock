@@ -22,7 +22,7 @@
 //! ```
 
 use capsules_core::virtualizers::virtual_i2c::{I2CDevice, MuxI2C};
-use capsules_extra::chirp_i2c_moisture::{ChirpI2cMoisture, BUFFER_SIZE};
+use capsules_extra::chirp_i2c_moisture::{BUFFER_SIZE, ChirpI2cMoisture};
 use core::mem::MaybeUninit;
 use kernel::component::Component;
 use kernel::hil::i2c;
@@ -42,7 +42,7 @@ macro_rules! chirp_i2c_moisture_component_static {
         );
 
         (i2c_device, i2c_buffer, chirp_i2c_moisture)
-    };};
+    }};
 }
 
 pub type ChirpI2cMoistureComponentType<I> =

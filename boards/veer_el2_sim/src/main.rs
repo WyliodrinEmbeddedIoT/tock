@@ -20,8 +20,8 @@ use kernel::{create_capability, debug, static_init};
 use rv32i::csr;
 use veer_el2::chip::VeeRDefaultPeripherals;
 
-use veer_el2::machine_timer::Clint;
 use veer_el2::machine_timer::CLINT_BASE;
+use veer_el2::machine_timer::Clint;
 
 pub mod io;
 
@@ -179,14 +179,22 @@ unsafe fn start() -> (&'static kernel::Kernel, VeeR, &'static VeeRChip) {
         resources.printer.put(process_printer);
     });
 
+    kernel::declare_capability!(ProcessConsoleCap:
+        kernel::capabilities::ProcessManagementCapability,
+        kernel::capabilities::ProcessStartCapability
+    );
     let process_console = components::process_console::ProcessConsoleComponent::new(
         board_kernel,
         uart_mux,
         mux_alarm,
         process_printer,
         None,
+        ProcessConsoleCap,
     )
-    .finalize(components::process_console_component_static!(Clint));
+    .finalize(components::process_console_component_static!(
+        Clint,
+        ProcessConsoleCap
+    ));
     let _ = process_console.start();
 
     // Need to enable all interrupts for Tock Kernel
@@ -203,6 +211,7 @@ unsafe fn start() -> (&'static kernel::Kernel, VeeR, &'static VeeRChip) {
         board_kernel,
         capsules_core::console::DRIVER_NUM,
         uart_mux,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::console_component_static!());
     // Create the debugger object that handles calls to `debug!()`.

@@ -8,15 +8,15 @@
 //! [`litex/soc/cores/uart.py`](https://github.com/enjoy-digital/litex/blob/master/litex/soc/cores/uart.py).
 
 use core::cell::Cell;
+use kernel::ErrorCode;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::uart;
-use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::StaticRef;
-use kernel::ErrorCode;
+use kernel::utilities::cells::{OptionalCell, TakeCell};
 
 use crate::event_manager::LiteXEventManager;
 use crate::litex_registers::{
-    register_bitfields, LiteXSoCRegisterConfiguration, Read, ReadRegWrapper, Write, WriteRegWrapper,
+    LiteXSoCRegisterConfiguration, Read, ReadRegWrapper, Write, WriteRegWrapper, register_bitfields,
 };
 
 const EVENT_MANAGER_INDEX_TX: usize = 0;
@@ -395,7 +395,7 @@ impl<'a, R: LiteXSoCRegisterConfiguration> uart::Transmit<'a> for LiteXUart<'a, 
         // and reading txfull. Hence, if an event is pending, rely on
         // the fact that an interrupt will be generated.
         if !(fifo_full || self.uart_regs.ev().event_pending(EVENT_MANAGER_INDEX_TX)) {
-            assert!(progress == tx_len);
+            assert_eq!(progress, tx_len);
 
             self.tx_deferred_call.set(true);
             self.deferred_call.set();

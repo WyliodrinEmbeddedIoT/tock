@@ -15,7 +15,7 @@ use kernel::hil::gpio::Configure;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::syscall::SyscallDriver;
 use kernel::{capabilities, create_capability};
-use pio_gspi_component::{pio_gpsi_component_static, PioGspiComponent};
+use pio_gspi_component::{PioGspiComponent, pio_gpsi_component_static};
 use rp2040::chip::{Rp2040, Rp2040DefaultPeripherals};
 use rp2040::gpio::{RPGpio, RPGpioPin};
 use rp2040::pio_gspi::PioGSpi;
@@ -161,6 +161,7 @@ pub unsafe fn start() -> (
         board_kernel,
         capsules_extra::wifi::DRIVER_NUM,
         cyw4343_device,
+        create_capability!(capabilities::MemoryAllocationCapability),
     )
     .finalize(components::wifi_component_static!(CYW4343xHw));
 

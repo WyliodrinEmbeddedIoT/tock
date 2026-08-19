@@ -15,16 +15,15 @@
 
 use core::cell::Cell;
 use core::ops::{Index, IndexMut};
+use kernel::ErrorCode;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil;
+use kernel::utilities::StaticRef;
 use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::cells::TakeCell;
-use kernel::utilities::cells::VolatileCell;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::register_bitfields;
 use kernel::utilities::registers::{ReadOnly, ReadWrite, WriteOnly};
-use kernel::utilities::StaticRef;
-use kernel::ErrorCode;
 
 const FLASH_BASE: StaticRef<FlashRegisters> =
     unsafe { StaticRef::new(0x40022000 as *const FlashRegisters) };
@@ -466,7 +465,7 @@ impl Flash {
             let halfword: u16 = (buffer[i] as u16) << 0 | (buffer[i + 1] as u16) << 8;
             let page_addr = PAGE_START + self.page_number.get() * PAGE_SIZE;
             let address = page_addr + i;
-            let location = unsafe { &*(address as *const VolatileCell<u16>) };
+            let location = unsafe { &*(address as *const ReadWrite<u16>) };
             location.set(halfword);
 
             self.buffer.replace(buffer);
@@ -579,7 +578,7 @@ impl Flash {
         self.registers.cr.modify(Control::OPTPG::SET);
 
         let address = OPT_START + byte_number * 2;
-        let location = unsafe { &*(address as *const VolatileCell<u16>) };
+        let location = unsafe { &*(address as *const ReadWrite<u16>) };
         let halfword: u16 = value as u16;
         location.set(halfword);
 

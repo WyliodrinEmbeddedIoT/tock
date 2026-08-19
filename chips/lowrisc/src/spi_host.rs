@@ -5,17 +5,17 @@
 //! Serial Peripheral Interface (SPI) Host Driver
 use core::cell::Cell;
 use core::cmp;
+use kernel::ErrorCode;
 use kernel::hil;
 use kernel::hil::spi::SpiMaster;
 use kernel::hil::spi::{ClockPhase, ClockPolarity};
+use kernel::utilities::StaticRef;
 use kernel::utilities::cells::{MapCell, OptionalCell};
 use kernel::utilities::leasable_buffer::SubSliceMut;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::{
-    register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+    ReadOnly, ReadWrite, WriteOnly, register_bitfields, register_structs,
 };
-use kernel::utilities::StaticRef;
-use kernel::ErrorCode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpiHostStatus {
@@ -242,7 +242,7 @@ impl SpiHost<'_> {
     //Determine if transfer complete or if we need to keep
     //writing from an offset.
     fn continue_transfer(&self) -> Result<SpiHostStatus, ErrorCode> {
-        let rc = self.rx_buf.take().map_or(
+        self.rx_buf.take().map_or(
             Err(ErrorCode::FAIL),
             |mut rx_buf| -> Result<SpiHostStatus, ErrorCode> {
                 let regs = self.registers;
@@ -281,9 +281,7 @@ impl SpiHost<'_> {
                     self.spi_transfer_progress()
                 }
             },
-        );
-
-        rc
+        )
     }
 
     /// Continue SPI transfer from offset point
