@@ -47,14 +47,13 @@ register_bitfields! [u32,
             DivideBy128 = 0b0101,
             DivideBy256 = 0b0110,
             DivideBy512 = 0b0111,
+            DivideBy1024 = 0b1000,
         ],
     ],
 
     RLR [
         // Watchdog counter reload value
-        RL OFFSET(0) NUMBITS(12) [
-            Thousand = 1000u32,
-        ],
+        RL OFFSET(0) NUMBITS(12) [],
     ],
 
     SR [
@@ -105,6 +104,19 @@ impl Iwdg {
             registers: IWDG_BASE,
         }
     }
+
+    /// Setup registers for normal operation
+    fn configure_normal(&self) {
+        // 32khz / 32 = 1khz => one tick per ms => 1000 to RL register means 1 second timeout before reboot
+        self.registers.pr.write(PR::PR::DivideBy32);
+        self.registers.rlr.set(1000);
+    }
+
+    /// Setup registers for opertion during sleep mode (as slow as possible)
+    fn configure_sleep(&self) {
+        self.registers.pr.write(PR::PR::DivideBy1024);
+        self.registers.rlr.set(4095); // maximum 12-bit number
+    }
 }
 
 impl WatchDog for Iwdg {
@@ -115,9 +127,7 @@ impl WatchDog for Iwdg {
             // Block the executor until hardware is ready
         }
 
-        // 32hz / 32 = 1hz => one tick per ms => 1000 to RL register means 1 second timeout before reboot
-        self.registers.pr.write(PR::PR::DivideBy32);
-        self.registers.rlr.write(RLR::RL::Thousand);
+        self.configure_normal();
 
         self.registers.kr.write(KR::KEY::Start);
         self.tickle();
@@ -128,9 +138,28 @@ impl WatchDog for Iwdg {
         self.registers.kr.write(KR::KEY::Reload);
     }
 
-    fn suspend(&self) {}
+    /// This function is called before going into sleep mode
+    /// However, the on this chip the suspending is not supported
+    /// As a workaround, we just reconfigure the watchdog, making it as slow as possible,
+    /// and then schedule an interrupt to wake up and tickle just before running out of time
+    /// The most we can get is 131s (divider of 1024 and reload value of 4095)
+    /// 32 kHz / 1024 = 31.25 Hz => 31.25 ticks per second. 4095 / 31.25 = 131s
+    fn suspend(&self) {
+        self.registers.kr.write(KR::KEY::Unlock);
 
-    fn resume(&self) {
+        while self.registers.sr.is_set(SR::PVU) || self.registers.sr.is_set(SR::RVU) {
+            // Block the executor until hardware is ready
+        }
+
+        self.configure_sleep();
+
+        self.registers.kr.write(KR::KEY::Start);
         self.tickle();
+    }
+
+    /// This function is called when going back from sleep mode
+    /// It reconfigures the watchdog back to normal mode
+    fn resume(&self) {
+        self.setup();
     }
 }
