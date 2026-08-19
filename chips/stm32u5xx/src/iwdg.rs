@@ -114,6 +114,7 @@ impl Iwdg {
 
     /// Setup registers for opertion during sleep mode (as slow as possible)
     fn configure_sleep(&self) {
+        // 32 kHz / 1024 = 31.25 Hz => 31.25 ticks per second. 4095 / 31.25 = 131s before reboot
         self.registers.pr.write(PR::PR::DivideBy1024);
         self.registers.rlr.set(4095); // maximum 12-bit number
     }
@@ -143,7 +144,6 @@ impl WatchDog for Iwdg {
     /// As a workaround, we just reconfigure the watchdog, making it as slow as possible,
     /// and then schedule an interrupt to wake up and tickle just before running out of time
     /// The most we can get is 131s (divider of 1024 and reload value of 4095)
-    /// 32 kHz / 1024 = 31.25 Hz => 31.25 ticks per second. 4095 / 31.25 = 131s
     fn suspend(&self) {
         self.registers.kr.write(KR::KEY::Unlock);
 
