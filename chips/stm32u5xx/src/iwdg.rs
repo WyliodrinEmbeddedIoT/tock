@@ -3,11 +3,11 @@
 // Copyright OxidOS Automotive 2026.
 
 use kernel::platform::watchdog::WatchDog;
+use kernel::utilities::StaticRef;
 use kernel::utilities::registers::interfaces::{Readable, Writeable};
 use kernel::utilities::registers::{
-    register_bitfields, register_structs, ReadOnly, ReadWrite, WriteOnly,
+    ReadOnly, ReadWrite, WriteOnly, register_bitfields, register_structs,
 };
-use kernel::utilities::StaticRef;
 
 register_structs! {
     IwdgRegisters {
