@@ -94,6 +94,11 @@ register_bitfields! [u32,
 const IWDG_BASE: StaticRef<IwdgRegisters> =
     unsafe { StaticRef::new(0x40003000 as *const IwdgRegisters) };
 
+/// Helps us to implement a "wake up and tickle" workaround for sleep mode
+pub trait IwdgWaker {
+    fn wakeup(&self);
+}
+
 pub struct Iwdg {
     registers: StaticRef<IwdgRegisters>,
 }
@@ -161,5 +166,11 @@ impl WatchDog for Iwdg {
     /// It reconfigures the watchdog back to normal mode
     fn resume(&self) {
         self.setup();
+    }
+}
+
+impl IwdgWaker for Iwdg {
+    fn wakeup(&self) {
+        self.tickle();
     }
 }
