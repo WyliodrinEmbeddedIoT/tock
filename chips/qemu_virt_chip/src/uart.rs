@@ -12,7 +12,7 @@ use kernel::utilities::StaticRef;
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
 use kernel::utilities::registers::{
-    Aliased, Field, InMemoryRegister, ReadOnly, ReadWrite, register_bitfields,
+    Aliased, Field, LocalRegisterCopy, ReadOnly, ReadWrite, register_bitfields,
 };
 
 pub const UART_16550_BAUD_BASE: usize = 399193;
@@ -69,7 +69,7 @@ impl Uart16550Registers {
     /// registers.
     fn divisor_latch_reg<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&InMemoryRegister<u16, DLR::Register>) -> R,
+        F: FnOnce(&mut LocalRegisterCopy<u16, DLR::Register>) -> R,
     {
         let dlab_field = Field::<Uart16550RegshiftInt, LCR::Register>::new(1, 7);
 
@@ -83,8 +83,8 @@ impl Uart16550Registers {
         // Set DLAB = 0 prior to handing back to the caller
         self.lcr.modify(dlab_field.val(0));
 
-        let dlr = InMemoryRegister::<u16, DLR::Register>::new(old_val);
-        let ret = f(&dlr);
+        let mut dlr = LocalRegisterCopy::<u16, DLR::Register>::new(old_val);
+        let ret = f(&mut dlr);
 
         // Get the bytes from the modified value
         let [new_ier, new_rbr_thr] = u16::to_be_bytes(dlr.get());
@@ -219,7 +219,12 @@ pub struct Uart16550<'a> {
 impl<'a> Uart16550<'a> {
     pub fn new(regs: StaticRef<Uart16550Registers>) -> Uart16550<'a> {
         // Disable all interrupts when constructing the UART
-        regs.ier.set(0xF);
+        regs.ier.write(
+            IER::ModemStatusRegisterChange::CLEAR
+                + IER::ReceiverLineStatusRegisterChange::CLEAR
+                + IER::TransmitterHoldingRegisterEmpty::CLEAR
+                + IER::ReceivedDataAvailable::CLEAR,
+        );
 
         regs.iir_fcr.write(FCR::Enable::CLEAR);
 

@@ -816,10 +816,14 @@ impl<C: Chip, D: 'static + ProcessStandardDebug> Process for ProcessStandard<'_,
             tasks.empty();
         });
 
-        // Clear any grant regions this app has setup with any capsules.
-        unsafe {
-            self.grant_ptrs_reset();
-        }
+        // Clear any grant regions this app has setup with any capsules by
+        // setting all `grant_ptr`s to NULL.
+        self.grant_pointers.map(|grant_pointers| {
+            for grant_entry in grant_pointers.iter_mut() {
+                grant_entry.driver_num = 0;
+                grant_entry.grant_ptr = ptr::null_mut();
+            }
+        });
 
         // Save the completion code.
         self.completion_code.set(completion_code);
@@ -1304,24 +1308,27 @@ impl<C: Chip, D: 'static + ProcessStandardDebug> Process for ProcessStandard<'_,
                 // panic.
                 match grant_pointers.get_mut(grant_num) {
                     Some(grant_entry) => {
-                        // Get a copy of the actual grant pointer.
-                        let grant_ptr = grant_entry.grant_ptr;
+                        // Check if this is entering a valid grant that has been created and
+                        // initialized. If the grant is not valid then the `grant_ptr` will
+                        // be null.
+                        if let Some(grant_ptr_nonnull) = NonNull::new(grant_entry.grant_ptr) {
+                            // Check if the grant pointer is marked that the grant has already
+                            // been entered. If so, return an error.
+                            if (usize::from(grant_ptr_nonnull.addr())) & 0x1 == 0x1 {
+                                // Lowest bit is one, meaning this grant has been entered.
+                                Err(Error::AlreadyInUse)
+                            } else {
+                                // Now, to mark that the grant has been entered, we set the lowest
+                                // bit to one and save this as the grant pointer.
+                                grant_entry.grant_ptr =
+                                    (usize::from(grant_ptr_nonnull.addr()) | 0x1) as *mut u8;
 
-                        // Check if the grant pointer is marked that the grant
-                        // has already been entered. If so, return an error.
-                        if (grant_ptr as usize) & 0x1 == 0x1 {
-                            // Lowest bit is one, meaning this grant has been
-                            // entered.
-                            Err(Error::AlreadyInUse)
+                                // And we return the grant pointer to the entered grant.
+                                Ok(grant_ptr_nonnull)
+                            }
                         } else {
-                            // Now, to mark that the grant has been entered, we
-                            // set the lowest bit to one and save this as the
-                            // grant pointer.
-                            grant_entry.grant_ptr = (grant_ptr as usize | 0x1) as *mut u8;
-
-                            // And we return the grant pointer to the entered
-                            // grant.
-                            Ok(unsafe { NonNull::new_unchecked(grant_ptr) })
+                            // The grant has not been created and is not valid to enter.
+                            Err(Error::OutOfMemory)
                         }
                     }
                     None => Err(Error::AddressOutOfBounds),
@@ -1710,7 +1717,7 @@ impl<C: 'static + Chip, D: 'static + ProcessStandardDebug> ProcessStandard<'_, C
     ///
     /// because of the error:
     ///
-    /// ```ignore
+    /// ```text
     /// error: generic `Self` types are currently not permitted in anonymous constants
     ///     --> kernel/src/process_standard.rs:1712:70
     ///      |
@@ -1728,6 +1735,12 @@ impl<C: 'static + Chip, D: 'static + ProcessStandardDebug> ProcessStandard<'_, C
     const PROCESS_STRUCT_ALIGNMENT: usize = mem::align_of::<ProcessStandard<C, D>>();
 
     /// Create a `ProcessStandard` object based on the found `ProcessBinary`.
+    ///
+    /// # Safety
+    ///
+    /// This function allocates memory from `remaining_memory` for use by the
+    /// process. There must not be any references to or other uses of
+    /// `remaining_memory` when calling this function.
     pub(crate) unsafe fn create(
         kernel: &'static Kernel,
         chip: &'static C,
@@ -2512,16 +2525,6 @@ impl<C: 'static + Chip, D: 'static + ProcessStandardDebug> ProcessStandard<'_, C
         buf_end_addr >= buf_start_addr
             && buf_start_addr >= self.flash_non_protected_start()
             && buf_end_addr <= self.flash_end()
-    }
-
-    /// Reset all `grant_ptr`s to NULL.
-    unsafe fn grant_ptrs_reset(&self) {
-        self.grant_pointers.map(|grant_pointers| {
-            for grant_entry in grant_pointers.iter_mut() {
-                grant_entry.driver_num = 0;
-                grant_entry.grant_ptr = ptr::null_mut();
-            }
-        });
     }
 
     /// Allocate memory in a process's grant region.

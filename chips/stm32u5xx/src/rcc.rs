@@ -7,13 +7,37 @@ use kernel::utilities::StaticRef;
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
 use kernel::utilities::registers::{ReadWrite, register_bitfields, register_structs};
 
+pub enum ClockSource {
+    Hsi16,
+    Msis(usize),
+    Hse(usize),
+    Pll1(usize),
+}
+
+impl ClockSource {
+    /// MSIS is selected as the system clock on startup after a reset. Configured at 4MHz.
+    pub const RESET_DEFAULT: ClockSource = ClockSource::Msis(4_000_000);
+
+    pub fn as_hz(&self) -> usize {
+        match self {
+            ClockSource::Hsi16 => 16_000_000,
+            ClockSource::Msis(hz) => *hz,
+            ClockSource::Hse(hz) => *hz,
+            ClockSource::Pll1(hz) => *hz,
+        }
+    }
+}
+
 register_structs! {
     pub RccRegisters {
         /// Control register
         (0x000 => cr: ReadWrite<u32, CR::Register>),
+
         (0x004 => _reserved0: [u32; 33]),
+
         /// AHB1 peripheral clock enable register
         (0x088 => ahb1enr: ReadWrite<u32, AHB1ENR::Register>),
+
         /// AHB2 peripheral clock enable register 1
         (0x08C => ahb2enr1: ReadWrite<u32, AHB2ENR1::Register>),
         (0x090 => _reserved1: [u32; 1]),
@@ -25,6 +49,7 @@ register_structs! {
         (0x0A0 => _reserved3: [u32; 1]), //this would be APB1ENR2, but unused for now
         /// APB2 peripheral clock enable register
         (0x0A4 => apb2enr: ReadWrite<u32, APB2ENR::Register>),
+
         /// APB3 peripheral clock enable register
         (0x0A8 => apb3enr: ReadWrite<u32, APB3ENR::Register>),
         (0x0AC => _reserved4: [u32; 13]),
@@ -33,7 +58,10 @@ register_structs! {
         (0x0E4 => ccipr2: ReadWrite<u32, CCIPR1::Register>),
         /// Peripherals independent clock configuration register 3
         (0x0E8 => ccipr3: ReadWrite<u32, CCIPR3::Register>),
-        (0x0EC => @END),
+        (0x0EC => _reserved5: [u32; 1]),
+        /// RCC backup domain control register
+        (0x0F0 => bdcr: ReadWrite<u32, BDCR::Register>),
+        (0x0F4 => @END),
     }
 }
 
@@ -43,7 +71,8 @@ register_bitfields![u32,
         HSIRDY OFFSET(10) NUMBITS(1) []
     ],
     pub AHB1ENR [
-        GPDMA1EN OFFSET(0) NUMBITS(1) []
+        GPDMA1EN OFFSET(0) NUMBITS(1) [],
+        CRCEN OFFSET(12) NUMBITS(1) [],
     ],
     pub AHB2ENR1 [
         GPIOAEN OFFSET(0) NUMBITS(1) [],
@@ -57,8 +86,10 @@ register_bitfields![u32,
         GPIOIEN OFFSET(8) NUMBITS(1) [],
         GPIOJEN OFFSET(9) NUMBITS(1) [],
         ADC12EN OFFSET(10) NUMBITS(1) [],
-        HASHEN OFFSET(17) NUMBITS(1) [],
+        AESEN   OFFSET(16) NUMBITS(1) [],
+        HASHEN  OFFSET(17) NUMBITS(1) [],
         TRNGEN  OFFSET(18) NUMBITS(1) [],
+        PKAEN   OFFSET(19) NUMBITS(1) [],
     ],
     pub AHB3ENR [
         PWREN OFFSET(2) NUMBITS(1) [],
@@ -66,13 +97,17 @@ register_bitfields![u32,
     ],
     pub APB1ENR1 [
         TIM2EN OFFSET(0) NUMBITS(1) [],
-        TIM3EN OFFSET(1) NUMBITS(1) []
+        TIM3EN OFFSET(1) NUMBITS(1) [],
+        I2C1EN OFFSET(21) NUMBITS(1) []
     ],
     pub APB2ENR [
-        USART1EN OFFSET(14) NUMBITS(1) []
+        USART1EN OFFSET(14) NUMBITS(1) [],
+        SPI1EN OFFSET(12) NUMBITS(1) []
     ],
     pub APB3ENR [
-        SYSCFGEN OFFSET(1) NUMBITS(1) []
+        SYSCFGEN OFFSET(1) NUMBITS(1) [],
+        PWREN OFFSET(2) NUMBITS(1) [],
+        RTCAPBEN OFFSET(21) NUMBITS(1) [],
     ],
     pub CCIPR1 [
         USART1SEL OFFSET(0) NUMBITS(2) [
@@ -80,6 +115,13 @@ register_bitfields![u32,
             SYSCLK = 1,
             HSI16 = 2,
             LSE = 3
+        ],
+        I2C1SEL OFFSET(10) NUMBITS(2) [
+            PCLK = 0,
+            SYSCLK = 1,
+            HSI16 = 2,
+            LSE = 3
+
         ]
     ],
     pub CCIPR3 [
@@ -96,6 +138,21 @@ register_bitfields![u32,
             LSI = 1
         ]
     ],
+    pub BDCR [
+        /// LSI oscillator enable
+        LSION OFFSET(26) NUMBITS(1) [],
+        /// LSI oscillator ready
+        LSIRDY OFFSET(27) NUMBITS(1) [],
+        /// RTC and TAMP clock enable
+        RTCEN OFFSET(15) NUMBITS(1) [],
+        /// RTC and TAMP clock source selection
+        RTCSEL OFFSET(8) NUMBITS(2) [
+            NO_CLK = 0,
+            LSE = 1,
+            LSI = 2,
+            HSE = 3,
+        ]
+    ]
 ];
 
 /// Base address for RCC in Nonsecure mode
@@ -111,6 +168,10 @@ impl Rcc {
         Self { registers: base }
     }
 
+    pub fn enable_crc(&self) {
+        self.registers.ahb1enr.modify(AHB1ENR::CRCEN::SET);
+    }
+
     pub fn enable_dma1(&self) {
         self.registers.ahb1enr.modify(AHB1ENR::GPDMA1EN::SET);
     }
@@ -119,8 +180,16 @@ impl Rcc {
         self.registers.ahb2enr1.modify(AHB2ENR1::GPIOAEN::SET);
     }
 
+    pub fn enable_gpiob(&self) {
+        self.registers.ahb2enr1.modify(AHB2ENR1::GPIOBEN::SET);
+    }
+
     pub fn enable_gpioc(&self) {
         self.registers.ahb2enr1.modify(AHB2ENR1::GPIOCEN::SET);
+    }
+
+    pub fn enable_spi1(&self) {
+        self.registers.apb2enr.modify(APB2ENR::SPI1EN::SET);
     }
 
     pub fn enable_usart1(&self) {
@@ -133,6 +202,10 @@ impl Rcc {
 
     pub fn enable_tim3(&self) {
         self.registers.apb1enr1.modify(APB1ENR1::TIM3EN::SET);
+    }
+
+    pub fn enable_aes(&self) {
+        self.registers.ahb2enr1.modify(AHB2ENR1::AESEN::SET);
     }
 
     pub fn enable_syscfg(&self) {
@@ -158,8 +231,16 @@ impl Rcc {
         self.registers.ahb2enr1.modify(AHB2ENR1::TRNGEN::SET);
     }
 
+    pub fn enable_i2c1(&self) {
+        self.registers.apb1enr1.modify(APB1ENR1::I2C1EN::SET);
+    }
+
     pub fn set_usart1_source_pclk(&self) {
         self.registers.ccipr1.modify(CCIPR1::USART1SEL::PCLK);
+    }
+
+    pub fn enable_pka(&self) {
+        self.registers.ahb2enr1.modify(AHB2ENR1::PKAEN::SET);
     }
 
     pub fn set_adcdacsel_source_hsi16(&self) {
@@ -172,5 +253,40 @@ impl Rcc {
 
     pub fn enable_hash(&self) {
         self.registers.ahb2enr1.modify(AHB2ENR1::HASHEN::SET);
+    }
+
+    // While the default value for this bitfield is indeed PCLK
+    // I belive it is better to be explicit
+    pub fn set_i2c1_source_pclk(&self) {
+        self.registers.ccipr1.modify(CCIPR1::I2C1SEL::PCLK);
+    }
+
+    // Enable the APB3 bus clock for the RTC and TAMP peripherals
+    pub fn enable_apb3_bus_clk(&self) {
+        self.registers.apb3enr.modify(APB3ENR::RTCAPBEN::SET);
+    }
+    // Enabling the LSI oscillator
+    pub fn enable_lsi(&self) {
+        self.registers.bdcr.modify(BDCR::LSION::SET);
+    }
+    // Check if LSI is ready
+    fn is_lsi_ready(&self) -> bool {
+        self.registers.bdcr.is_set(BDCR::LSIRDY)
+    }
+    // Wait for the LSI oscillator to stabilize before it is used as a clock source
+    pub fn wait_for_lsi_ready(&self) {
+        // Magic number large enough to prevent kernel hanging if the oscillator fails to stabilize
+        let mut cycle_counter = 100000;
+        while !self.is_lsi_ready() && cycle_counter > 0 {
+            cycle_counter -= 1;
+        }
+    }
+    // Select LSI as the RTC clock source
+    pub fn select_rtc_source_lsi(&self) {
+        self.registers.bdcr.modify(BDCR::RTCSEL::LSI);
+    }
+    // Enable the RTC clock
+    pub fn enable_rtc(&self) {
+        self.registers.bdcr.modify(BDCR::RTCEN::SET);
     }
 }

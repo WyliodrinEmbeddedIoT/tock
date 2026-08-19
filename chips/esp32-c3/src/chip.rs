@@ -62,7 +62,7 @@ impl Esp32C3DefaultPeripherals<'_> {
 }
 
 impl InterruptService for Esp32C3DefaultPeripherals<'_> {
-    unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
+    fn service_interrupt(&self, interrupt: u32) -> bool {
         match interrupt {
             interrupts::IRQ_UART0 => self.uart0.handle_interrupt(),
 
@@ -149,7 +149,7 @@ impl<'a, I: InterruptService + 'a> Chip for Esp32C3<'a, I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    fn with_interrupts_disabled<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {

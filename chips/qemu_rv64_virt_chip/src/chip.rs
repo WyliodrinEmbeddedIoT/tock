@@ -58,7 +58,7 @@ impl QemuRv64VirtDefaultPeripherals<'_> {
 }
 
 impl InterruptService for QemuRv64VirtDefaultPeripherals<'_> {
-    unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
+    fn service_interrupt(&self, interrupt: u32) -> bool {
         match interrupt {
             interrupts::UART0 => self.uart0.handle_interrupt(),
             interrupts::VIRTIO_MMIO_0 => self.virtio_mmio[0].handle_interrupt(),
@@ -166,7 +166,7 @@ impl<'a, I: InterruptService + 'a> Chip for QemuRv64VirtChip<'a, I> {
         }
     }
 
-    unsafe fn with_interrupts_disabled<F, R>(&self, f: F) -> R
+    fn with_interrupts_disabled<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
