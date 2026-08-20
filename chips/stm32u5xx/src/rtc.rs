@@ -757,7 +757,7 @@ impl<'a> Rtc<'a> {
     }
 }
 
-impl<'a> WakeupTimer for Rtc<'a> {
+impl WakeupTimer for Rtc<'_> {
     fn enable_watchdog_wakeup(&self, seconds: u16) {
         self.bypass_write_protection();
 
