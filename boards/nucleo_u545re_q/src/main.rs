@@ -308,6 +308,9 @@ unsafe fn start() -> (
     // Initialize wiring (DMA, clocks)
     periphs.init();
 
+    iwdg.set_wakeup_timer(&periphs.rtc);
+    periphs.rtc.set_iwdg_waker(iwdg);
+
     // Board specific wiring
     periphs.tim2.start();
     set_pin_primary_functions(periphs);
