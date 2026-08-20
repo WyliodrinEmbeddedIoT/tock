@@ -16,6 +16,7 @@ use kernel::capabilities::ProcessManagementCapability;
 use kernel::capabilities::ProcessStartCapability;
 use kernel::hil::time::ConvertTicks;
 use kernel::utilities::cells::MapCell;
+use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::cells::TakeCell;
 
 use kernel::ErrorCode;
@@ -274,6 +275,10 @@ pub struct ProcessConsole<
     /// This capsule needs to use potentially dangerous APIs related to
     /// processes, and requires a capability to access those APIs.
     capability: C,
+
+    /// Console configuration is linked to a certain instance of the
+    /// console driver.
+    console: OptionalCell<&'a crate::console::Console<'a>>,
 }
 
 #[derive(Copy, Clone)]
@@ -455,6 +460,7 @@ impl<
         kernel_addresses: KernelAddresses,
         reset_function: Option<fn() -> !>,
         capability: C,
+        console: Option<&'a crate::console::Console<'a>>,
     ) -> ProcessConsole<'a, COMMAND_HISTORY_LEN, A, C> {
         ProcessConsole {
             uart,
@@ -478,7 +484,33 @@ impl<
             kernel_addresses,
             reset_function,
             capability,
+            console: if let Some(con) = console {
+                OptionalCell::new(con)
+            } else {
+                OptionalCell::empty()
+            },
         }
+    }
+
+    /// Helper function to set the prepend process ID flag on the console.
+    pub fn set_config_prepend(&self, toggle: bool) -> Result<(), ErrorCode> {
+        let Some(console) = self.console.take() else {
+            return Err(ErrorCode::FAIL);
+        };
+
+        console.config.set_prepend_process_id(toggle);
+
+        self.console.set(console);
+
+        Ok(())
+    }
+
+    pub fn get_config_prepend(&self) -> Result<bool, ErrorCode> {
+        let Some(console) = self.console.get() else {
+            return Err(ErrorCode::FAIL);
+        };
+
+        Ok(console.config.get_prepend_process_id())
     }
 
     /// Start the process console listening for user commands.
@@ -581,9 +613,9 @@ impl<
                     &mut console_writer,
                     format_args!(
                         "\r\n ╔═══════════╤══════════════════════════════╗\
-                    \r\n ║  Address  │ Region Name    Used (bytes)  ║\
-                    \r\n ╚{:#010X}═╪══════════════════════════════╝\
-                    \r\n             │   BSS        {:6}",
+                         \r\n ║  Address  │ Region Name    Used (bytes)  ║\
+                         \r\n ╚{:#010X}═╪══════════════════════════════╝\
+                         \r\n             │   BSS        {:6}",
                         bss_end, bss_size
                     ),
                 );
@@ -601,8 +633,8 @@ impl<
                     &mut console_writer,
                     format_args!(
                         "\
-                    \r\n  {:#010X} ┼─────────────────────────────── S\
-                    \r\n             │   Relocate   {:6}            R",
+                         \r\n  {:#010X} ┼─────────────────────────────── S\
+                         \r\n             │   Relocate   {:6}            R",
                         relocate_end, relocate_size
                     ),
                 );
@@ -639,8 +671,8 @@ impl<
                     format_args!(
                         "\
                         \r\n             .....\
-                     \r\n  {:#010X} ┼─────────────────────────────── F\
-                     \r\n             │   RoData     {:6}            L",
+                        \r\n  {:#010X} ┼─────────────────────────────── F\
+                        \r\n             │   RoData     {:6}            L",
                         text_end, rodata_size
                     ),
                 );
@@ -1005,6 +1037,29 @@ impl<
                             );
                         } else if clean_str.starts_with("panic") {
                             panic!("Process Console forced a kernel panic.");
+                        } else if clean_str.starts_with("prepend") {
+                            let argument = clean_str.split_whitespace().nth(1);
+                            argument.map(|toggle| {
+                                if toggle == "on" {
+                                    let _ = self.set_config_prepend(true);
+                                    let _ = self.write_bytes(b"Prepend turned on.\r\n");
+                                } else if toggle == "off" {
+                                    let _ = self.set_config_prepend(false);
+                                    let _ = self.write_bytes(b"Prepend turned off.\r\n");
+                                } else if toggle == "check" {
+                                    let Ok(prepend) = self.get_config_prepend() else {
+                                        let _ =
+                                            self.write_bytes(b"Failed to get prepend state.\r\n");
+                                        return;
+                                    };
+                                    let _ = self.write_bytes(b"Prepend is ");
+                                    let _ = self.write_bytes(if prepend {
+                                        b"on\r\n"
+                                    } else {
+                                        b"off\r\n"
+                                    });
+                                }
+                            });
                         } else {
                             let _ = self.write_bytes(b"Valid commands are: ");
                             let _ = self.write_bytes(VALID_COMMANDS_STR);

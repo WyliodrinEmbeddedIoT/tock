@@ -91,6 +91,26 @@ mod rw_allow {
     pub const COUNT: u8 = 2;
 }
 
+pub struct ConsoleConfig {
+    prepend_process_id: core::cell::Cell<bool>,
+}
+
+impl ConsoleConfig {
+    pub fn default() -> Self {
+        Self {
+            prepend_process_id: core::cell::Cell::new(false),
+        }
+    }
+
+    pub fn set_prepend_process_id(&self, prepend_process_id: bool) {
+        self.prepend_process_id.set(prepend_process_id);
+    }
+
+    pub fn get_prepend_process_id(&self) -> bool {
+        self.prepend_process_id.get()
+    }
+}
+
 #[derive(Default)]
 pub struct App {
     write_len: usize,
@@ -111,6 +131,7 @@ pub struct Console<'a> {
     tx_buffer: TakeCell<'static, [u8]>,
     rx_in_progress: OptionalCell<ProcessId>,
     rx_buffer: TakeCell<'static, [u8]>,
+    pub config: ConsoleConfig,
 }
 
 impl<'a> Console<'a> {
@@ -132,11 +153,12 @@ impl<'a> Console<'a> {
             tx_buffer: TakeCell::new(tx_buffer),
             rx_in_progress: OptionalCell::empty(),
             rx_buffer: TakeCell::new(rx_buffer),
+            config: ConsoleConfig::default(),
         }
     }
 
     /// Internal heper function for adding the ProcessId to the start of a send buffer
-    fn add_buffer(
+    fn prepend_process_id_to_buffer(
         &self,
         processid: ProcessId,
         app: &App,
@@ -179,8 +201,6 @@ impl<'a> Console<'a> {
 
             // End with '] '
             header_buf[idx] = b']';
-            idx += 1;
-            header_buf[idx] = b' ';
             idx += 1;
 
             // Slice the array to get exactly the bytes we wrote
@@ -241,7 +261,12 @@ impl<'a> Console<'a> {
                 // We first configure the header buffer
                 // that sends the process ID in the format "[1234567890] "
                 // for each outgoing communication
-                let (header_len, buffer) = self.add_buffer(processid, app, buffer);
+
+                let (header_len, buffer) = if self.config.get_prepend_process_id() {
+                    self.prepend_process_id_to_buffer(processid, app, buffer)
+                } else {
+                    (0, buffer)
+                };
 
                 let transaction_len = kernel_data
                     .get_readonly_processbuffer(ro_allow::WRITE)

@@ -241,6 +241,7 @@ unsafe fn start() -> (
         components::process_printer::ProcessPrinterTextComponent::new()
             .finalize(components::process_printer_text_component_static!()),
         None,
+        Some(console),
     )
     .finalize(components::process_console_component_static!(
         stm32u545::tim::Tim2
