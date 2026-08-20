@@ -17,7 +17,7 @@ use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
 use kernel::utilities::registers::{ReadOnly, WriteOnly, interfaces::Writeable, register_structs};
 use kernel::utilities::registers::{ReadWrite, register_bitfields};
 
-use crate::iwdg::IwdgWaker;
+use crate::iwdg::{IwdgWaker, WakeupTimer};
 
 register_structs! {
 pub  RtcRegisters{
@@ -740,7 +740,25 @@ impl<'a> Rtc<'a> {
         }
     }
 
-    pub fn enable_watchdog_wakeup(&self, seconds: u16) {
+    pub fn handle_interrupt(&self) {
+        if self.registers.rtc_icsr.is_set(RTC_ICSR::WUTWF) {
+            // Clear the flag
+            self.registers.rtc_icsr.modify(RTC_ICSR::WUTWF::CLEAR);
+
+            // Notify IWDG
+            self.iwdg_waker.map(|iwdg| {
+                iwdg.wakeup();
+            });
+        }
+    }
+
+    pub fn set_iwdg_waker(&self, iwdg: &'a dyn IwdgWaker) {
+        self.iwdg_waker.set(iwdg);
+    }
+}
+
+impl<'a> WakeupTimer for Rtc<'a> {
+    fn enable_watchdog_wakeup(&self, seconds: u16) {
         self.bypass_write_protection();
 
         // Disable WUT to modify it registers
@@ -765,20 +783,14 @@ impl<'a> Rtc<'a> {
         self.enable_write_protection();
     }
 
-    pub fn handle_interrupt(&self) {
-        if self.registers.rtc_icsr.is_set(RTC_ICSR::WUTWF) {
-            // Clear the flag
-            self.registers.rtc_icsr.modify(RTC_ICSR::WUTWF::CLEAR);
+    fn disable_watchdog_wakeup(&self) {
+        self.bypass_write_protection();
 
-            // Notify IWDG
-            self.iwdg_waker.map(|iwdg| {
-                iwdg.wakeup();
-            });
-        }
-    }
+        self.registers
+            .rtc_cr
+            .modify(RTC_CR::WUTE::CLEAR + RTC_CR::WUTIE::CLEAR);
 
-    pub fn set_iwdg_waker(&self, iwdg: &'a dyn IwdgWaker) {
-        self.iwdg_waker.set(iwdg);
+        self.enable_write_protection();
     }
 }
 
