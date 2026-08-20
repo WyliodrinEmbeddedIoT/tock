@@ -4,6 +4,7 @@
 
 use kernel::platform::watchdog::WatchDog;
 use kernel::utilities::StaticRef;
+use kernel::utilities::cells::OptionalCell;
 use kernel::utilities::registers::interfaces::{Readable, Writeable};
 use kernel::utilities::registers::{
     ReadOnly, ReadWrite, WriteOnly, register_bitfields, register_structs,
@@ -99,15 +100,27 @@ pub trait IwdgWaker {
     fn wakeup(&self);
 }
 
-pub struct Iwdg {
-    registers: StaticRef<IwdgRegisters>,
+/// The timer trait to be implemented by RTC (or other timer in future)
+pub trait WakeupTimer {
+    fn enable_watchdog_wakeup(&self, seconds: u16);
+    fn disable_watchdog_wakeup(&self);
 }
 
-impl Iwdg {
-    pub const fn new() -> Iwdg {
+pub struct Iwdg<'a> {
+    registers: StaticRef<IwdgRegisters>,
+    wakeup_timer: OptionalCell<&'a dyn WakeupTimer>,
+}
+
+impl<'a> Iwdg<'a> {
+    pub const fn new() -> Iwdg<'a> {
         Iwdg {
             registers: IWDG_BASE,
+            wakeup_timer: OptionalCell::empty(),
         }
+    }
+
+    pub fn set_wakeup_timer(&self, timer: &'a dyn WakeupTimer) {
+        self.wakeup_timer.set(timer);
     }
 
     /// Setup registers for normal operation
@@ -125,7 +138,7 @@ impl Iwdg {
     }
 }
 
-impl WatchDog for Iwdg {
+impl<'a> WatchDog for Iwdg<'a> {
     fn setup(&self) {
         self.registers.kr.write(KR::KEY::Unlock);
 
@@ -169,7 +182,7 @@ impl WatchDog for Iwdg {
     }
 }
 
-impl IwdgWaker for Iwdg {
+impl<'a> IwdgWaker for Iwdg<'a> {
     fn wakeup(&self) {
         self.tickle();
     }

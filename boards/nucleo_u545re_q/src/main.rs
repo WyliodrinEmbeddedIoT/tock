@@ -59,7 +59,7 @@ struct NucleoU545RE {
         >,
     >,
     // Comment the line below if you don't need a watchdog
-    watchdog: &'static stm32u545::iwdg::Iwdg,
+    watchdog: &'static stm32u545::iwdg::Iwdg<'static>,
     pwm: &'static capsules_extra::pwm::Pwm<'static, 1>,
     adc: &'static capsules_core::adc::AdcVirtualized<'static>,
     dac: &'static capsules_extra::dac::Dac<'static>,
@@ -119,7 +119,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
     type Scheduler = components::sched::round_robin::RoundRobinComponentType;
     type SchedulerTimer = cortexm33::systick::SysTick;
     // Comment the line below if you do not need a watchdog
-    type WatchDog = stm32u545::iwdg::Iwdg;
+    type WatchDog = stm32u545::iwdg::Iwdg<'static>;
     // Uncomment the line below if you dont need a watchdog
     // type WatchDog = ();
     type ContextSwitchCallback = ();
