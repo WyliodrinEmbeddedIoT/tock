@@ -138,7 +138,7 @@ impl<'a> Iwdg<'a> {
     }
 }
 
-impl<'a> WatchDog for Iwdg<'a> {
+impl WatchDog for Iwdg<'_> {
     fn setup(&self) {
         self.registers.kr.write(KR::KEY::Unlock);
 
@@ -182,7 +182,7 @@ impl<'a> WatchDog for Iwdg<'a> {
     }
 }
 
-impl<'a> IwdgWaker for Iwdg<'a> {
+impl IwdgWaker for Iwdg<'_> {
     fn wakeup(&self) {
         self.tickle();
     }
