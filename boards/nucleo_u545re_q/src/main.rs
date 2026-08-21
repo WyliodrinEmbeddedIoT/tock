@@ -639,6 +639,15 @@ pub unsafe fn main() {
     let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
 
     let (board_kernel, platform, chip) = start();
+
+    // Watchdog test TODO remove
+    /*
+    use kernel::platform::watchdog::WatchDog;
+    platform.watchdog().setup();
+
+    loop {}
+    */
+
     // Hand over control to the Tock Kernel Loop
     board_kernel.kernel_loop::<NucleoU545RE, ChipHw, { NUM_PROCS as u8 }>(
         platform,

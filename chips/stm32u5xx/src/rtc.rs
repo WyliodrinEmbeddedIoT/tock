@@ -741,9 +741,9 @@ impl<'a> Rtc<'a> {
     }
 
     pub fn handle_interrupt(&self) {
-        if self.registers.rtc_icsr.is_set(RTC_ICSR::WUTWF) {
-            // Clear the flag
-            self.registers.rtc_icsr.modify(RTC_ICSR::WUTWF::CLEAR);
+        if self.registers.rtc_sr.is_set(RTC_SR::WUTF) {
+            // Clear the interrupt
+            self.registers.rtc_scr.write(RTC_SCR::CWUTF::SET);
 
             // Notify IWDG
             self.iwdg_waker.map(|iwdg| {
