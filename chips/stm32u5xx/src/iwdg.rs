@@ -172,12 +172,18 @@ impl WatchDog for Iwdg<'_> {
         self.configure_sleep();
 
         self.registers.kr.write(KR::KEY::Start);
+
+        self.wakeup_timer
+            .map(|timer| timer.enable_watchdog_wakeup(125));
+
         self.tickle();
     }
 
     /// This function is called when going back from sleep mode
     /// It reconfigures the watchdog back to normal mode
     fn resume(&self) {
+        self.wakeup_timer
+            .map(|timer| timer.disable_watchdog_wakeup());
         self.setup();
     }
 }
