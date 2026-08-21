@@ -158,7 +158,7 @@ impl WatchDog for Iwdg<'_> {
     }
 
     /// This function is called before going into sleep mode
-    /// However, the on this chip the suspending is not supported
+    /// However, the suspending on this chip is not supported
     /// As a workaround, we just reconfigure the watchdog, making it as slow as possible,
     /// and then schedule an interrupt to wake up and tickle just before running out of time
     /// The most we can get is 131s (divider of 1024 and reload value of 4095)
