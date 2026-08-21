@@ -45,7 +45,7 @@ pub const DEFAULT_COMMAND_HISTORY_LEN: usize = 10;
 /// List of valid commands for printing help. Consolidated as these are
 /// displayed in a few different cases.
 const VALID_COMMANDS_STR: &[u8] =
-    b"help status list stop start fault boot terminate process kernel reset panic console-start console-stop\r\n";
+    b"help status list stop start fault boot terminate process kernel reset panic console-start console-stop prepend\r\n";
 
 /// Escape character for ANSI escape sequences.
 const ESC: u8 = b'\x1B';
@@ -1038,6 +1038,11 @@ impl<
                         } else if clean_str.starts_with("panic") {
                             panic!("Process Console forced a kernel panic.");
                         } else if clean_str.starts_with("prepend") {
+                            let Some(_) = self.console.get() else {
+                                let _ =
+                                    self.write_bytes(b"Prepend functionality not available.\r\n");
+                                return;
+                            };
                             let argument = clean_str.split_whitespace().nth(1);
                             argument.map(|toggle| {
                                 if toggle == "on" {
@@ -1058,6 +1063,9 @@ impl<
                                     } else {
                                         b"off\r\n"
                                     });
+                                } else {
+                                    let _ = self
+                                        .write_bytes(b"Invalid argument. Use 'on' or 'off' to set the prepend state, and 'check' to get the current state.\r\n");
                                 }
                             });
                         } else {

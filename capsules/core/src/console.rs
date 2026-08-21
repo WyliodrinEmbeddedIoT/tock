@@ -259,7 +259,7 @@ impl<'a> Console<'a> {
             self.tx_in_progress.set(processid);
             self.tx_buffer.take().map(|buffer| {
                 // We first configure the header buffer
-                // that sends the process ID in the format "[1234567890] "
+                // that sends the process ID in the format "[1234567890]"
                 // for each outgoing communication
 
                 let (header_len, buffer) = if self.config.get_prepend_process_id() {
