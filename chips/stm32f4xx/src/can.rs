@@ -9,9 +9,11 @@
 //!
 
 use crate::clocks::{phclk, Stm32f4Clocks};
+use core::any::Any;
 use core::cell::Cell;
 use kernel::deferred_call::{DeferredCall, DeferredCallClient};
 use kernel::hil::can::{self, StandardBitTiming};
+use kernel::hil::can::{Id, Mode};
 use kernel::platform::chip::ClockInterface;
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
@@ -590,9 +592,14 @@ impl<'a> Can<'a> {
     }
 
     /// Configure a filter to receive messages
-    pub fn config_filter(&self, filter_info: can::FilterParameters, enable: bool) {
+    pub fn config_filter(
+        &self,
+        filter_info: can::FilterParameters,
+        enable: bool,
+        number: usize,
+    ) -> Result<(), kernel::ErrorCode> {
         // get position of the filter number
-        let filter_number = 1 << filter_info.number;
+        let filter_number = 1 << number;
 
         // start filter configuration
         self.registers.can_fmr.modify(CAN_FMR::FINIT::SET);
@@ -602,34 +609,104 @@ impl<'a> Can<'a> {
             CAN_FA1R::FACT.val(self.registers.can_fa1r.read(CAN_FA1R::FACT) & !filter_number),
         );
 
-        // request filter width to be 32 or 16 bits
-        match filter_info.scale_bits {
-            can::ScaleBits::Bits16 => {
-                self.registers.can_fs1r.modify(
-                    CAN_FS1R::FSC.val(self.registers.can_fs1r.read(CAN_FS1R::FSC) | filter_number),
-                );
-            }
-            can::ScaleBits::Bits32 => {
-                self.registers.can_fs1r.modify(
-                    CAN_FS1R::FSC.val(self.registers.can_fs1r.read(CAN_FS1R::FSC) & !filter_number),
-                );
-            }
-        }
+        // for more info on how these work check rm0090 32.7.4
+        // tldr is we match this bxCAN driver to MCAN functionality as much as possible
+        match filter_info.mode {
+            Mode::List(list) => {
+                let has_ext = list.iter().any(|id| matches!(id, can::Id::Extended(_)));
+                if has_ext {
+                    if list.len() > 2 {
+                        self.registers.can_fmr.modify(CAN_FMR::FINIT::CLEAR);
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
 
-        self.registers.can_firx[(filter_info.number as usize) * 2].modify(CAN_FiRx::FB.val(0));
-        self.registers.can_firx[(filter_info.number as usize) * 2 + 1].modify(CAN_FiRx::FB.val(0));
+                    self.registers.can_fs1r.modify(
+                        CAN_FS1R::FSC
+                            .val(self.registers.can_fs1r.read(CAN_FS1R::FSC) | filter_number),
+                    );
 
-        // request filter mode to be mask or list
-        match filter_info.identifier_mode {
-            can::IdentifierMode::List => {
-                self.registers.can_fm1r.modify(
-                    CAN_FM1R::FBM.val(self.registers.can_fm1r.read(CAN_FM1R::FBM) | filter_number),
-                );
+                    self.registers.can_fm1r.modify(
+                        CAN_FM1R::FBM
+                            .val(self.registers.can_fm1r.read(CAN_FM1R::FBM) | filter_number),
+                    );
+
+                    let fir1 = match list[0] {
+                        can::Id::Standard(val) => (val as u32) << 21,
+                        can::Id::Extended(val) => val << 3 | (1 << 2),
+                    };
+
+                    let fir2 = if list.len() == 2 {
+                        match list[1] {
+                            can::Id::Standard(val) => (val as u32) << 21,
+                            can::Id::Extended(val) => val << 3 | (1 << 2),
+                        }
+                    } else {
+                        //we pad the second one with the first result if its empty
+                        fir1
+                    };
+
+                    self.registers.can_firx[(number as usize) * 2].modify(CAN_FiRx::FB.val(fir1));
+                    self.registers.can_firx[(number as usize) * 2 + 1]
+                        .modify(CAN_FiRx::FB.val(fir2));
+                } else {
+                    if list.len() > 4 || list.is_empty() {
+                        self.registers.can_fmr.modify(CAN_FMR::FINIT::CLEAR);
+                        return Err(kernel::ErrorCode::INVAL);
+                    }
+                    self.registers.can_fs1r.modify(
+                        CAN_FS1R::FSC
+                            .val(self.registers.can_fs1r.read(CAN_FS1R::FSC) & !filter_number),
+                    );
+
+                    self.registers.can_fm1r.modify(
+                        CAN_FM1R::FBM
+                            .val(self.registers.can_fm1r.read(CAN_FM1R::FBM) | filter_number),
+                    );
+
+                    // we iterate over the given ids, as we know by now they are all standard
+                    // we put them into the filter banks and then we pad the leftover unused filter ids with the last id because 0x000 is a valid can id and can potentially cause trouble
+                    let mut count: usize = 0;
+
+                    let fir: u32 = match list[list.len() - 1] {
+                        can::Id::Standard(val) => (val << 5) as u32,
+                        can::Id::Extended(_) => return Err(kernel::ErrorCode::INVAL), // this will never be reached, as we dont have any extended IDs on this branch
+                    };
+
+                    //we init with the last id for padding purposes, again 0 is a valid id and may mess things up
+                    let mut ids = [fir; 4];
+
+                    
+                    //we fill array
+                    for id in list {
+                        if let can::Id::Standard(val) = id {
+                            ids[count] = (*val << 5) as u32;
+                        }
+                        count += 1;
+                    }
+
+                    
+                    //we know we have maximum 4 ids(padded if we received less) so we can use hardcoded indices.
+                    self.registers.can_firx[number * 2]
+                        .modify(CAN_FiRx::FB.val((ids[0] | (ids[1] << 16))));
+                    self.registers.can_firx[number * 2 + 1]
+                        .modify(CAN_FiRx::FB.val((ids[2] | (ids[3] << 16))));
+                }
             }
-            can::IdentifierMode::Mask => {
-                self.registers.can_fm1r.modify(
-                    CAN_FM1R::FBM.val(self.registers.can_fm1r.read(CAN_FM1R::FBM) & !filter_number),
-                );
+
+            Mode::Mask { value, bitmask } => {
+                if value.type_id() != bitmask.type_id() {
+                    return Err(kernel::ErrorCode::INVAL);
+                }
+
+                let both_std = value.type_id() == Id::Standard(0).type_id();
+                let both_ext = value.type_id() == Id::Extended(0).type_id();
+
+                if both_ext {
+                    //32 bit filter
+                }
+            }
+            Mode::Range(id1, id2) => {
+                return Err(kernel::ErrorCode::INVAL);
             }
         }
 
@@ -653,6 +730,7 @@ impl<'a> Can<'a> {
                 CAN_FA1R::FACT.val(self.registers.can_fa1r.read(CAN_FA1R::FACT) & !filter_number),
             );
         }
+        Ok(())
     }
 
     pub fn enable_filter_config(&self) {
@@ -1356,20 +1434,20 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can<'_> {
                     can::FilterParameters {
                         number: 0,
                         scale_bits: can::ScaleBits::Bits32,
-                        identifier_mode: can::IdentifierMode::Mask,
+                        identifier_mode: can::IdentifierMode::List,
                         fifo_number: 0,
                     },
                     true,
                 );
-                self.config_filter(
+                /*self.config_filter(
                     can::FilterParameters {
                         number: 1,
                         scale_bits: can::ScaleBits::Bits32,
-                        identifier_mode: can::IdentifierMode::Mask,
+                        identifier_mode: can::IdentifierMode::List,
                         fifo_number: 1,
                     },
                     true,
-                );
+                );*/
                 self.enable_filter_config();
                 self.enable_irq(CanInterruptMode::Fifo0Interrupt);
                 self.enable_irq(CanInterruptMode::Fifo1Interrupt);
@@ -1390,6 +1468,7 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can<'_> {
                         scale_bits: can::ScaleBits::Bits32,
                         identifier_mode: can::IdentifierMode::Mask,
                         fifo_number: 0,
+                        ids: &[] as &[can::Id],
                     },
                     false,
                 );
@@ -1399,6 +1478,7 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can<'_> {
                         scale_bits: can::ScaleBits::Bits32,
                         identifier_mode: can::IdentifierMode::Mask,
                         fifo_number: 1,
+                        ids: &[] as &[can::Id],
                     },
                     false,
                 );
