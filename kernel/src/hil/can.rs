@@ -126,7 +126,9 @@ impl From<Error> for ErrorCode {
     }
 }
 
-/// Mode of one of the filter elements. This most closely resembles Bosch MCAN as it is the most prevalent CAN peripheral
+/// Mode of one of the filter elements.
+///
+/// This most closely resembles Bosch MCAN as it is the most prevalent CAN peripheral
 /// Some drivers of other CAN peripherals(like bxCAN) can return no support on some of these modes
 /// Most, if not all CAN peripherals should support mask mode
 #[derive(Debug, Copy, Clone)]
@@ -155,8 +157,9 @@ pub enum Id {
 }
 
 /// This structure defines the parameters to configure a filter bank
-/// This is thought to most closely resemble the Bosch MCAN peripheral found on most modern MCUs, for chips using older or different peripheral
-/// some modes may return nosupport or invalid error
+///
+/// This is thought to most closely resemble the Bosch MCAN peripheral found on most modern MCUs
+/// For chips using older or different peripheral some modes may return NOSUPPORT or INVAL error
 #[derive(Copy, Clone)]
 pub struct FilterParameters<'a> {
     /// The way in which the message Ids will be filtered.
@@ -199,7 +202,7 @@ pub enum OperationMode {
     /// TX channel and immediately received on the RX channel
     Loopback,
 
-    /// Monitoring mode means that the CAN peripheral sends only the recessivIde
+    /// Monitoring mode means that the CAN peripheral sends only the recessive
     /// bits on the bus and cannot start a transmission, but can receive
     /// valid data frames and valid remote frames
     Monitoring,
@@ -549,7 +552,7 @@ pub trait Filters {
     ///
     /// * `filter` - A FilterParameters structure to define the filter
     ///   configuration
-    /// 
+    ///
     /// * 'number' = The filter Id to identify the filter bank to enable, will return inval if bigger than `filter_count()`
     ///
     /// # Return values:
@@ -563,7 +566,7 @@ pub trait Filters {
     ///
     /// # Arguments:
     ///
-    /// * `number` - The filter Id to identify the filter bank to disable, will return inval if bigger than `filter_count()`
+    /// * `number` - The filter Id to identify the filter bank to disable, will return INVAL if bigger than `filter_count()`
     ///
     /// # Return values:
     ///
@@ -571,7 +574,7 @@ pub trait Filters {
     /// * `Err(ErrorCode)` - indicates the error because of which the request
     ///   cannot be completed
     fn disable_filter(&self, number: usize) -> Result<(), ErrorCode>;
-    
+
     /// Returns whether the filter bank with the provided number is enabled
     fn is_enabled(&self, number: usize) -> Result<bool, ErrorCode>;
 
@@ -581,7 +584,7 @@ pub trait Filters {
     /// Returns the theoretical max number of standard filters, could be smaller if extended filters are also used
     fn filter_count_std(&self) -> usize;
 
-    /// Returns the theoretical max number of active extended filters, could be smaller if standard filters are also used
+    /// Returns the theoretical max number of extended filters, could be smaller if standard filters are also used
     fn filter_count_ext(&self) -> usize;
 
     /// Maximum number of identifiers accepted in a single `Mode::List` filter.
