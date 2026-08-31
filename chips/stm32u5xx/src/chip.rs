@@ -16,7 +16,8 @@ use crate::nvic::{
     EXTI14_IRQ, EXTI15_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ,
     GPDMA1_CH4_IRQ, GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ, GPDMA1_CH9_IRQ,
     GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ, GPDMA1_CH14_IRQ,
-    GPDMA1_CH15_IRQ, HASH_IRQ, I2C1_ER_IRQ, I2C1_EV_IRQ, PKA_IRQ, SPI1_IRQ, TIM2_IRQ, USART1_IRQ,
+    GPDMA1_CH15_IRQ, HASH_IRQ, I2C1_ER_IRQ, I2C1_EV_IRQ, PKA_IRQ, RTC_IRQ, SPI1_IRQ, TIM2_IRQ,
+    USART1_IRQ,
 };
 use crate::pwr;
 use crate::rcc;
@@ -373,6 +374,10 @@ impl InterruptService for Stm32u5xxDefaultPeripherals<'_> {
             }
             AES_IRQ => {
                 self.aes.handle_interrupt();
+                true
+            }
+            RTC_IRQ => {
+                self.rtc.handle_interrupt();
                 true
             }
             _ => false,

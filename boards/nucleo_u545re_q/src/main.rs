@@ -58,6 +58,7 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
+    watchdog: &'static stm32u545::iwdg::Iwdg<'static>,
     pwm: &'static capsules_extra::pwm::Pwm<'static, 1>,
     adc: &'static capsules_core::adc::AdcVirtualized<'static>,
     dac: &'static capsules_extra::dac::Dac<'static>,
@@ -116,7 +117,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
     type ProcessFault = ();
     type Scheduler = components::sched::round_robin::RoundRobinComponentType;
     type SchedulerTimer = cortexm33::systick::SysTick;
-    type WatchDog = ();
+    type WatchDog = stm32u545::iwdg::Iwdg<'static>;
     type ContextSwitchCallback = ();
 
     fn syscall_driver_lookup(&self) -> &Self::SyscallDriverLookup {
@@ -135,7 +136,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
         &self.systick
     }
     fn watchdog(&self) -> &Self::WatchDog {
-        &()
+        self.watchdog
     }
     fn context_switch_callback(&self) -> &Self::ContextSwitchCallback {
         &()
@@ -283,6 +284,9 @@ unsafe fn start() -> (
         stm32u545::dma::Dma::new(stm32u545::dma::DMA1_BASE)
     );
 
+    // Watchdog
+    let iwdg = static_init!(stm32u545::iwdg::Iwdg, stm32u545::iwdg::Iwdg::new());
+
     // Load Peripherals Bundle
     let periphs = static_init!(
         stm32u545::chip::Stm32u5xxDefaultPeripherals<'static>,
@@ -298,6 +302,9 @@ unsafe fn start() -> (
 
     // Initialize wiring (DMA, clocks)
     periphs.init();
+
+    iwdg.set_wakeup_timer(&periphs.rtc);
+    periphs.rtc.set_iwdg_waker(iwdg);
 
     // Board specific wiring
     periphs.tim2.start();
@@ -569,6 +576,7 @@ unsafe fn start() -> (
             i2c,
             button,
             alarm,
+            watchdog: iwdg,
             pwm,
             adc: adc_syscall,
             dac,
@@ -626,6 +634,15 @@ pub unsafe fn main() {
     let main_loop_capability = create_capability!(capabilities::MainLoopCapability);
 
     let (board_kernel, platform, chip) = start();
+
+    // Watchdog test TODO remove
+    /*
+    use kernel::platform::watchdog::WatchDog;
+    platform.watchdog().setup();
+
+    loop {}
+    */
+
     // Hand over control to the Tock Kernel Loop
     board_kernel.kernel_loop::<NucleoU545RE, ChipHw, { NUM_PROCS as u8 }>(
         platform,

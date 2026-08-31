@@ -17,6 +17,8 @@ use kernel::utilities::registers::interfaces::{ReadWriteable, Readable};
 use kernel::utilities::registers::{ReadOnly, WriteOnly, interfaces::Writeable, register_structs};
 use kernel::utilities::registers::{ReadWrite, register_bitfields};
 
+use crate::iwdg::{IwdgWaker, WakeupTimer};
+
 register_structs! {
 pub  RtcRegisters{
 
@@ -493,6 +495,8 @@ pub struct Rtc<'a> {
 
     deferred_call: DeferredCall,
     deferred_call_task: OptionalCell<DeferredCallTask>,
+
+    iwdg_waker: OptionalCell<&'a dyn IwdgWaker>,
 }
 
 impl DeferredCallClient for Rtc<'_> {
@@ -525,6 +529,7 @@ impl<'a> Rtc<'a> {
             }),
             deferred_call: DeferredCall::new(),
             deferred_call_task: OptionalCell::empty(),
+            iwdg_waker: OptionalCell::empty(),
         }
     }
     /// Bypass write protection.
@@ -733,6 +738,59 @@ impl<'a> Rtc<'a> {
             Month::November => 11,
             Month::December => 12,
         }
+    }
+
+    pub fn handle_interrupt(&self) {
+        if self.registers.rtc_sr.is_set(RTC_SR::WUTF) {
+            // Clear the interrupt
+            self.registers.rtc_scr.write(RTC_SCR::CWUTF::SET);
+
+            // Notify IWDG
+            self.iwdg_waker.map(|iwdg| {
+                iwdg.wakeup();
+            });
+        }
+    }
+
+    pub fn set_iwdg_waker(&self, iwdg: &'a dyn IwdgWaker) {
+        self.iwdg_waker.set(iwdg);
+    }
+}
+
+impl WakeupTimer for Rtc<'_> {
+    fn enable_watchdog_wakeup(&self, seconds: u16) {
+        self.bypass_write_protection();
+
+        // Disable WUT to modify it registers
+        self.registers.rtc_cr.modify(RTC_CR::WUTE::CLEAR);
+
+        // Wait for the write flag
+        while self.registers.rtc_icsr.read(RTC_ICSR::WUTWF) == 0 {}
+
+        // 1 Hz clock source
+        self.registers.rtc_cr.modify(RTC_CR::WUCKSEL.val(0b100));
+
+        // Schedule wakeup
+        self.registers
+            .rtc_wutr
+            .write(RTC_WUTR::WUT.val(seconds as u32));
+
+        // Enable wakeup timer and interrupt
+        self.registers
+            .rtc_cr
+            .modify(RTC_CR::WUTE::SET + RTC_CR::WUTIE::SET);
+
+        self.enable_write_protection();
+    }
+
+    fn disable_watchdog_wakeup(&self) {
+        self.bypass_write_protection();
+
+        self.registers
+            .rtc_cr
+            .modify(RTC_CR::WUTE::CLEAR + RTC_CR::WUTIE::CLEAR);
+
+        self.enable_write_protection();
     }
 }
 
