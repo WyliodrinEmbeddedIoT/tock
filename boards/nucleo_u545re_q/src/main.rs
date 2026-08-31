@@ -58,7 +58,6 @@ struct NucleoU545RE {
             stm32u545::tim::Tim2<'static>,
         >,
     >,
-    // Comment the line below if you don't need a watchdog
     watchdog: &'static stm32u545::iwdg::Iwdg<'static>,
     pwm: &'static capsules_extra::pwm::Pwm<'static, 1>,
     adc: &'static capsules_core::adc::AdcVirtualized<'static>,
@@ -118,10 +117,7 @@ impl KernelResources<ChipHw> for NucleoU545RE {
     type ProcessFault = ();
     type Scheduler = components::sched::round_robin::RoundRobinComponentType;
     type SchedulerTimer = cortexm33::systick::SysTick;
-    // Comment the line below if you do not need a watchdog
     type WatchDog = stm32u545::iwdg::Iwdg<'static>;
-    // Uncomment the line below if you dont need a watchdog
-    // type WatchDog = ();
     type ContextSwitchCallback = ();
 
     fn syscall_driver_lookup(&self) -> &Self::SyscallDriverLookup {
@@ -140,8 +136,6 @@ impl KernelResources<ChipHw> for NucleoU545RE {
         &self.systick
     }
     fn watchdog(&self) -> &Self::WatchDog {
-        // Return &() if you don't need a watchdog
-        // &()
         self.watchdog
     }
     fn context_switch_callback(&self) -> &Self::ContextSwitchCallback {
@@ -289,7 +283,8 @@ unsafe fn start() -> (
         stm32u545::dma::Dma,
         stm32u545::dma::Dma::new(stm32u545::dma::DMA1_BASE)
     );
-    // Comment the line blow if you do not need a watchdog
+
+    // Watchdog
     let iwdg = static_init!(stm32u545::iwdg::Iwdg, stm32u545::iwdg::Iwdg::new());
 
     // Load Peripherals Bundle
@@ -581,7 +576,7 @@ unsafe fn start() -> (
             i2c,
             button,
             alarm,
-            watchdog: iwdg, // Comment this if you do not need a watchdog
+            watchdog: iwdg,
             pwm,
             adc: adc_syscall,
             dac,
