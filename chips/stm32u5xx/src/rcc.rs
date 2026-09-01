@@ -11,7 +11,12 @@ register_structs! {
     pub RccRegisters {
         /// Control register
         (0x000 => cr: ReadWrite<u32, CR::Register>),
-        (0x004 => _reserved0: [u32; 33]),
+        (0x004 => _reserved0: [u32; 9]),
+        (0x028 => pll1cfgr: ReadWrite<u32, PLL1CFGR::Register>),
+        (0x02C => _reserved_b: [u32; 2]),
+        /// PLL1 Div Register
+        (0x034 => pll1divr: ReadWrite<u32, PLL1DIVR::Register>),
+        (0x038 => _reserved_c: [u32; 20]),
         /// AHB1 peripheral clock enable register
         (0x088 => ahb1enr: ReadWrite<u32, AHB1ENR::Register>),
         /// AHB2 peripheral clock enable register 1
@@ -22,7 +27,7 @@ register_structs! {
         (0x098 => _reserved2: [u32; 1]),
         /// APB1 peripheral clock enable register 1
         (0x09C => apb1enr1: ReadWrite<u32, APB1ENR1::Register>),
-        (0x0A0 => _reserved3: [u32; 1]), //this would be APB1ENR2, but unused for now
+        (0x0A0 => apb1enr2: ReadWrite<u32, APB1ENR2::Register>),
         /// APB2 peripheral clock enable register
         (0x0A4 => apb2enr: ReadWrite<u32, APB2ENR::Register>),
         /// APB3 peripheral clock enable register
@@ -40,7 +45,13 @@ register_structs! {
 register_bitfields![u32,
     pub CR [
         HSION OFFSET(8) NUMBITS(1) [],
-        HSIRDY OFFSET(10) NUMBITS(1) []
+        HSIRDY OFFSET(10) NUMBITS(1) [],
+        HSEON OFFSET(16) NUMBITS(1) [],
+        HSERDY OFFSET(17) NUMBITS(1) [],
+        HSEBYP OFFSET(18) NUMBITS(1) [],
+        HSEEXT OFFSET(20) NUMBITS(1) [],
+        PLL1ON OFFSET(24) NUMBITS(1) [],
+        PLL1RDY OFFSET(25) NUMBITS(1) [],
     ],
     pub AHB1ENR [
         GPDMA1EN OFFSET(0) NUMBITS(1) []
@@ -68,6 +79,9 @@ register_bitfields![u32,
         TIM2EN OFFSET(0) NUMBITS(1) [],
         TIM3EN OFFSET(1) NUMBITS(1) []
     ],
+    pub APB1ENR2 [
+        FDCAN1EN OFFSET(9) NUMBITS(1) [],
+    ],
     pub APB2ENR [
         USART1EN OFFSET(14) NUMBITS(1) []
     ],
@@ -80,6 +94,11 @@ register_bitfields![u32,
             SYSCLK = 1,
             HSI16 = 2,
             LSE = 3
+        ],
+        FDCAN1SEL OFFSET(24) NUMBITS(2) [
+            HSE = 0,
+            PLL1_Q = 1,
+            PLL2_P = 2,
         ]
     ],
     pub CCIPR3 [
@@ -96,6 +115,28 @@ register_bitfields![u32,
             LSI = 1
         ]
     ],
+    pub PLL1CFGR [
+            //HSI16 is 16mhz, we feed directly into pll1 and then feed into fdcan thru pll_q
+            PLL1SRC OFFSET(0) NUMBITS(2) [
+                NONE = 0,
+                MSIS = 1,
+                HSI16 = 2,
+                HSE = 3,
+            ],
+            //pll1 input range, 00-01-10 is 4-8mhz and 11 is 8-16mhz
+            PLL1RGE OFFSET(2) NUMBITS(2) [
+                LOW = 0,
+                HIGH = 3
+            ],
+            //input clock divider
+            PLL1M OFFSET(8) NUMBITS(2) [],
+            PLL1QEN OFFSET(17) NUMBITS(1) [],
+        ],
+
+        pub PLL1DIVR [
+            PLL1N OFFSET(0) NUMBITS(9) [],
+            PLL1Q OFFSET(16) NUMBITS(7) []
+        ]
 ];
 
 /// Base address for RCC in Nonsecure mode
@@ -172,5 +213,28 @@ impl Rcc {
 
     pub fn enable_hash(&self) {
         self.registers.ahb2enr1.modify(AHB2ENR1::HASHEN::SET);
+    }
+
+    pub fn enable_fdcan(&self) {
+        //enable HSI16
+        self.registers.cr.modify(CR::HSION::SET);
+        //wait for HSI16 to be ready
+        while !self.registers.cr.is_set(CR::HSIRDY) {}
+        //route HSI16 to PLL1
+        self.registers.pll1cfgr.modify(PLL1CFGR::PLL1SRC::HSI16);
+        //configure PLL1, 16mhz*8/16=8mhz out of pll1q
+        self.registers.pll1cfgr.modify(PLL1CFGR::PLL1M.val(0));
+        self.registers.pll1divr.modify(PLL1DIVR::PLL1N.val(7));
+        self.registers.pll1divr.modify(PLL1DIVR::PLL1Q.val(15));
+        //enable PLL1
+        self.registers.pll1cfgr.modify(PLL1CFGR::PLL1QEN::SET);
+        self.registers.pll1cfgr.modify(PLL1CFGR::PLL1RGE::HIGH);
+        self.registers.cr.modify(CR::PLL1ON::SET);
+        //wait for PLL1 to be ready
+        while !self.registers.cr.is_set(CR::PLL1RDY) {}
+        //route FDCAN1 to pll1q
+        self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::PLL1_Q);
+        //self.registers.ccipr1.modify(CCIPR1::FDCAN1SEL::HSE);
+        self.registers.apb1enr2.modify(APB1ENR2::FDCAN1EN::SET);
     }
 }

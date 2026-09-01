@@ -10,6 +10,7 @@ use components::hmac_component_static;
 use kernel::capabilities;
 use kernel::component::Component;
 use kernel::debug::PanicResources;
+use kernel::deferred_call::DeferredCallClient;
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
 use kernel::utilities::single_thread_value::SingleThreadValue;
@@ -65,6 +66,7 @@ struct NucleoU545RE {
         stm32u545::hash::sha256::Sha256Adapter<'static>,
         32,
     >,
+    can: &'static capsules_extra::can::CanCapsule<'static, stm32u545::can::Can>,
 }
 
 impl SyscallDriverLookup for NucleoU545RE {
@@ -82,6 +84,7 @@ impl SyscallDriverLookup for NucleoU545RE {
             capsules_extra::dac::DRIVER_NUM => f(Some(self.dac)),
             capsules_core::gpio::DRIVER_NUM => f(Some(self.gpio)),
             capsules_extra::hmac::DRIVER_NUM => f(Some(self.hmac)),
+            capsules_extra::can::DRIVER_NUM => f(Some(self.can)),
             _ => f(None),
         }
     }
@@ -140,6 +143,16 @@ unsafe fn set_pin_primary_functions(periphs: &stm32u545::chip::Stm32u5xxDefaultP
     let btn = periphs.gpio_c.pin(PinId::Pin13);
     btn.make_input();
     btn.set_floating_state(kernel::hil::gpio::FloatingState::PullDown);
+
+    //FDCAN Pins, TX is PA12, RX is PA11, they are on CN10, 12 and 14 respectively
+    let tx = periphs.gpio_a.pin(PinId::Pin12);
+    let rx = periphs.gpio_a.pin(PinId::Pin11);
+    tx.set_alternate_function(9);
+    tx.set_speed_high();
+    tx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
+    rx.set_alternate_function(9);
+    rx.set_speed_high();
+    rx.set_mode(stm32u545::gpio::Mode::AlternateFunction);
 
     // Arduino A0 (PA_0 = ADC1_IN5 - Channel5)
     periphs
@@ -216,6 +229,9 @@ unsafe fn start() -> (
     periphs.tim2.start();
     set_pin_primary_functions(periphs);
 
+    //FDCAN Registration
+    periphs.can1.register();
+
     // Create an adapter for the HASH peripheral.
     // In this way it is ensured that only one mode is used by the peripheral.
     let sha256 = static_init!(
@@ -237,6 +253,15 @@ unsafe fn start() -> (
     let alarm_mux = components::alarm::AlarmMuxComponent::new(&periphs.tim2).finalize(
         components::alarm_mux_component_static!(stm32u545::tim::Tim2),
     );
+
+    //CAN Component
+    let can = components::can::CanComponent::new(
+        board_kernel,
+        capsules_extra::can::DRIVER_NUM,
+        &periphs.can1,
+        create_capability!(capabilities::MemoryAllocationCapability),
+    )
+    .finalize(components::can_component_static!(stm32u545::can::Can));
 
     // Capsules
     let console = components::console::ConsoleComponent::new(
@@ -418,7 +443,8 @@ unsafe fn start() -> (
             adc: adc_syscall,
             dac,
             gpio,
-            hmac
+            hmac,
+            can
         }
     );
 

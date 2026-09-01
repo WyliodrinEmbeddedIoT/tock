@@ -4,16 +4,17 @@
 // Copyright OxidOS Automotive 2026.
 
 use crate::adc::{self, SamplingTime as AdcSamplingTime};
+use crate::can::{self, Can};
 use crate::dma::{ChannelId, Dma};
 use crate::gpio;
 use crate::hash;
 use crate::nvic::{
     ADC1_2_IRQ, EXTI0_IRQ, EXTI1_IRQ, EXTI2_IRQ, EXTI3_IRQ, EXTI4_IRQ, EXTI5_IRQ, EXTI6_IRQ,
     EXTI7_IRQ, EXTI8_IRQ, EXTI9_IRQ, EXTI10_IRQ, EXTI11_IRQ, EXTI12_IRQ, EXTI13_IRQ, EXTI14_IRQ,
-    EXTI15_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ, GPDMA1_CH3_IRQ, GPDMA1_CH4_IRQ,
-    GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ, GPDMA1_CH9_IRQ,
-    GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ, GPDMA1_CH14_IRQ,
-    GPDMA1_CH15_IRQ, HASH_IRQ, TIM2_IRQ, USART1_IRQ,
+    EXTI15_IRQ, FDCAN1_IT0_IRQ, FDCAN1_IT1_IRQ, GPDMA1_CH0_IRQ, GPDMA1_CH1_IRQ, GPDMA1_CH2_IRQ,
+    GPDMA1_CH3_IRQ, GPDMA1_CH4_IRQ, GPDMA1_CH5_IRQ, GPDMA1_CH6_IRQ, GPDMA1_CH7_IRQ, GPDMA1_CH8_IRQ,
+    GPDMA1_CH9_IRQ, GPDMA1_CH10_IRQ, GPDMA1_CH11_IRQ, GPDMA1_CH12_IRQ, GPDMA1_CH13_IRQ,
+    GPDMA1_CH14_IRQ, GPDMA1_CH15_IRQ, HASH_IRQ, TIM2_IRQ, USART1_IRQ,
 };
 use crate::pwr;
 use crate::rcc;
@@ -46,6 +47,7 @@ pub struct Stm32u5xxDefaultPeripherals<'a> {
     pub gpio_c: gpio::Port<'a>,
     pub dac: dac::Dac,
     pub hash: hash::hash::Hash<'a>,
+    pub can1: can::Can,
 }
 
 fn enable_tim2_clock() {
@@ -82,6 +84,7 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
             gpio_c: gpio::Port::new(gpio::GPIO_C_BASE, exti, gpio::GpioPort::PortC),
             dac: dac::Dac::new(dac::DAC_BASE, enable_dac1_clock),
             hash: hash::hash::Hash::new(hash::regs::HASH_BASE),
+            can1: Can::new(can::SEC_FDCAN1_BASE, can::SEC_FDCAN1_RAM_BASE),
         }
     }
 
@@ -107,6 +110,8 @@ impl<'a> Stm32u5xxDefaultPeripherals<'a> {
         self.adc1.enable(AdcSamplingTime::ClockCycles20);
 
         self.rcc.enable_dac1();
+
+        self.rcc.enable_fdcan();
 
         // Deferred Calls
         self.usart1.register();
@@ -280,6 +285,14 @@ impl InterruptService for Stm32u5xxDefaultPeripherals<'_> {
             }
             HASH_IRQ => {
                 self.hash.handle_interupts();
+                true
+            }
+            FDCAN1_IT0_IRQ => {
+                self.can1.handle_interrupt();
+                true
+            }
+            FDCAN1_IT1_IRQ => {
+                self.can1.handle_interrupt();
                 true
             }
             _ => false,
