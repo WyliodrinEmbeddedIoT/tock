@@ -725,8 +725,6 @@ impl From<CanState> for can::State {
 pub struct Can {
     registers: StaticRef<Registers>,
     can_state: Cell<CanState>,
-    error_interrupt_counter: Cell<u32>,
-    failed_messages: Cell<u32>,
 
     // communication params
     automatic_retransmission: Cell<bool>,
@@ -760,10 +758,7 @@ impl Can {
         Can {
             registers,
             can_state: Cell::new(CanState::Sleep),
-            error_interrupt_counter: Cell::new(0),
-            failed_messages: Cell::new(0),
             automatic_retransmission: Cell::new(true),
-            //automatic_wake_up: Cell::new(false),
             operating_mode: OptionalCell::empty(),
             bit_timing: OptionalCell::empty(),
             controller_client: OptionalCell::empty(),
@@ -779,12 +774,12 @@ impl Can {
     }
 
     /// This function is used for busy waiting and checks if the closure
-    /// received as an argument returns a true value for 'times' times.
+    /// received as an argument returns a true value for `times` times.
     ///
     /// Usage: check is the INIT bit in the FDCAN_CCCR is set for 200_000 times
-    /// '''ignore
-    ///    //Can::wait_for(20000, || self.registers.fdcan_cccr.is_set(FDCAN_CCCR::INIT))s
-    /// '''
+    /// ```ignore
+    ///    //Can::wait_for(20000, || self.registers.fdcan_cccr.is_set(FDCAN_CCCR::INIT))
+    /// ```
     fn wait_for(times: usize, f: impl Fn() -> bool) -> bool {
         for _ in 0..times {
             if f() {
@@ -797,7 +792,6 @@ impl Can {
 
     pub fn enable(&self) -> Result<(), kernel::ErrorCode> {
         self.enable_irqs();
-        //debug!("i am being enabled!");
         //initialize the peripheral
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::SET);
         //we wait for init to be written as specified in rm0456 70.4.5
@@ -808,7 +802,6 @@ impl Can {
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::CCE::SET);
 
         self.can_state.set(CanState::Initialization);
-        //debug!("i set my state to enabled!");
         //we are doing a standard CAN driver for now, FDOE=0 disables FD support
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::FDOE::CLEAR);
 
@@ -821,16 +814,12 @@ impl Can {
 
         //set transmit order priority (fifo vs queue), we set TXBC=1 so we use queue mode
         self.registers.fdcan_txbc.modify(FDCAN_TXBC::TFQM::SET);
-        //we enable transmission interrupt for the first TX buffer only, this driver only sends ONE CAN message at a time.
-        //self.registers.fdcan_txbtie.set(1 << 0);
 
         //we flip the DAR (disable automatic retransmission register) depending on the parameter passed into the struct
         match self.automatic_retransmission.get() {
             true => self.registers.fdcan_cccr.modify(FDCAN_CCCR::DAR::CLEAR),
             false => self.registers.fdcan_cccr.modify(FDCAN_CCCR::DAR::SET),
         }
-
-        debug!("i configured automatic retransmission!");
 
         //rm0456 70.3.4
         //note: normal mode isnt explicitly mentioned, as it doesnt need any configuration upon startup
@@ -867,24 +856,6 @@ impl Can {
             self.disable();
             return Err(kernel::ErrorCode::INVAL);
         }
-        debug!("i fully finished enabling!");
-
-        //we only setup one filter for one enabled rx fifo
-        /*let _ = self.config_filter(
-            can::FilterParameters {
-                mode: Mode::Range(can::Id::Standard(0x123), can::Id::Standard(0x124)),
-                fifo_number: 0,
-            },
-            15,
-        );*/
-
-        let _ = self.config_filter(
-            can::FilterParameters {
-                mode: Mode::Range(can::Id::Extended(0x12345), can::Id::Extended(0x12348)),
-                fifo_number: 0,
-            },
-            31,
-        );
         Ok(())
     }
 
@@ -897,7 +868,7 @@ impl Can {
     /// Mode::Range => RANGE (All IDs in the range are accepted). Types must match (standard/extended).
     /// Non-matching frames are rejected (RXGFC.ANFS/ANFE = REJECT).
     ///
-    /// All filters are currently routed to FIFO 0, so 'fifo_number' must be 0.
+    /// All filters are currently routed to FIFO 0, so `fifo_number` must be 0.
     pub fn config_filter(
         &self,
         filter_info: can::FilterParameters,
@@ -1103,7 +1074,6 @@ impl Can {
                     if number < self.filter_count_std() || number >= self.filter_count() {
                         return Err(kernel::ErrorCode::INVAL);
                     }
-                    debug!("both extended");
                     let id1 = if let can::Id::Extended(id1) = id1 {
                         id1
                     } else {
@@ -1142,7 +1112,6 @@ impl Can {
                         );
                     }
                 } else if matches!((id1, id2), (can::Id::Standard(_), can::Id::Standard(_))) {
-                    debug!("both std!");
                     if number >= self.filter_count_std() {
                         return Err(kernel::ErrorCode::INVAL);
                     }
@@ -1204,11 +1173,7 @@ impl Can {
         }) {
             return Err(kernel::ErrorCode::FAIL);
         }
-        debug!("waiting to exit init");
-        //while self.registers.fdcan_cccr.is_set(FDCAN_CCCR::INIT) {}
-        debug!("exit init");
         self.can_state.set(CanState::Normal);
-        debug!("i entered normal mode");
         Ok(())
     }
 
@@ -1220,7 +1185,6 @@ impl Can {
         self.registers.fdcan_cccr.modify(FDCAN_CCCR::INIT::SET);
         self.can_state.set(CanState::Sleep);
         self.disable_irqs();
-        debug!("i went to sleep");
     }
 
     //map interrupt registers to interrupt modes
@@ -1252,7 +1216,6 @@ impl Can {
         self.registers.fdcan_ile.modify(FDCAN_ILE::EINT0::SET);
 
         self.registers.fdcan_ils.modify(FDCAN_ILS::PERR::CLEAR);
-        debug!("i enabled all my irqs");
     }
 
     pub fn disable_irq(&self, interrupt: CanInterruptMode) {
@@ -1296,13 +1259,14 @@ impl Can {
     }
 
     //rm0456 70.3.9 for more details
+    /// Function to send an 8-byte message on the CAN bus.
+    /// Currently 8 bytes is the only supported length.
     pub fn send_8byte_message(
         &self,
         id: can::Id,
         dlc: usize,
         rtr: u8,
     ) -> Result<(), kernel::ErrorCode> {
-        debug!("i am sending an 8 byte message");
         if self.can_state.get() == CanState::Normal {
             if self.registers.fdcan_txfqs.is_set(FDCAN_TXFQS::TFQF) {
                 return Err(kernel::ErrorCode::BUSY);
@@ -1371,15 +1335,18 @@ impl Can {
         }
     }
 
+    //see rm0456 70.3.4, 70.4.31 and 70.4.28
+    /// Handles the transmit interrupt, in case there were any issues with the transmission,
+    /// the capsule is notified through a RunningError state, currently it can be either BusOff or Transmission.
+    /// BusOff is thrown when the bus is off, while transmission is only thrown if the peripheral gave up on sending that particular
+    /// message and abandoned it.
     pub fn handle_transmit_interrupt(&self) {
-        debug!(
-            "TX handler: client={} tx_buf={}",
-            self.transmit_client.is_some(),
-            self.tx_buffer.is_some()
-        );
         let state;
         let idx = self.last_tx_index.get();
-        //check if the bus is off, error if yes
+        //check if transmission occured on the mailbox, if yes then return ok
+        //else check if the bus is off, error if yes
+        //if its still pending, we return and wait for the next interrupt
+        //if not, then it was abandoned and we throw a transmission error
         if self.registers.fdcan_txbto.get() & (1 << idx) != 0 {
             state = Ok(());
         } else if self.registers.fdcan_psr.is_set(FDCAN_PSR::BO) {
@@ -1389,6 +1356,8 @@ impl Can {
         } else {
             state = Err(can::Error::Transmission); //abandoned
         }
+
+        //if the state was an error, we set the driver state to running error
         if let Err(err) = state {
             self.can_state.set(CanState::RunningError(err));
         } else {
@@ -1398,22 +1367,16 @@ impl Can {
         //pass the buffer back to the client
         self.transmit_client.map(|client| {
             if let Some(buf) = self.tx_buffer.take() {
-                debug!("calling transmit_complete");
                 client.transmit_complete(state, buf);
-            } else {
-                debug!("TX handler: tx_buffer was EMPTY");
             }
         });
     }
 
+    /// Dispatches to the appropriate interrupt handler based on the interrupt flags.
     pub fn handle_interrupt(&self) {
-        //debug!("i am handling an interrupt");
         let ir = self.registers.fdcan_ir.extract();
-        //debug!("handle_interrupt IR={:#x}", ir.get());
-
         //transmit completed
         if ir.is_set(FDCAN_IR::TC) || ir.is_set(FDCAN_IR::TCF) {
-            //debug!("dispatching TC");
             self.handle_transmit_interrupt();
         }
         //rx fifo 0 new message
@@ -1422,15 +1385,6 @@ impl Can {
         }
         //message ram acces failure (see rm0456 70.4.15)
         if ir.is_set(FDCAN_IR::MRAF) {
-            debug!(
-                "MRAF! txfqs_pi={} rxf0s_gi={} txbto={:#x}",
-                self.registers.fdcan_txfqs.read(FDCAN_TXFQS::TFQPI),
-                self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0GI),
-                self.registers.fdcan_txbto.get()
-            );
-
-            self.failed_messages
-                .set(self.failed_messages.get().saturating_add(1));
             //txbto = tx buffer transmission occured(rm0456 70.4.31).
             //we only one use tx slot, but we rotate thru the available mailboxes. so we check the bit of the last mailbox we filled and if the transmission DIDN'T occur,
             //we fail it back so we dont deadlock
@@ -1450,14 +1404,6 @@ impl Can {
         {
             self.handle_error_interrupt();
         }
-        debug!(
-            "TEC={} REC={} PSR.LEC={} EP={} BO={}",
-            self.registers.fdcan_ecr.read(FDCAN_ECR::TEC),
-            self.registers.fdcan_ecr.read(FDCAN_ECR::REC),
-            self.registers.fdcan_psr.read(FDCAN_PSR::LEC),
-            self.registers.fdcan_psr.is_set(FDCAN_PSR::EP),
-            self.registers.fdcan_psr.is_set(FDCAN_PSR::BO)
-        );
 
         //set the bits in IR to ack the fact that we handled the interrupt
         self.registers.fdcan_ir.set(ir.get());
@@ -1472,10 +1418,7 @@ impl Can {
             //pass the buffer back to the client
             self.transmit_client.map(|client| {
                 if let Some(buf) = self.tx_buffer.take() {
-                    debug!("calling transmit_complete");
                     client.transmit_complete(Err(can::Error::BusOff), buf);
-                } else {
-                    debug!("TX handler: tx_buffer was EMPTY");
                 }
             });
         }
@@ -1503,14 +1446,6 @@ impl Can {
             0b111 | _ => {} //unreachable
         }
 
-        debug!(
-            "Error Interrupt Fired! Can state: {:?}",
-            self.can_state.get()
-        );
-
-        self.error_interrupt_counter
-            .replace(self.error_interrupt_counter.get() + 1);
-
         if let CanState::RunningError(err) = self.can_state.get() {
             self.controller_client.map(|controller_client| {
                 controller_client.state_changed(kernel::hil::can::State::Error(err));
@@ -1519,15 +1454,6 @@ impl Can {
     }
 
     pub fn handle_fifo0_interrupt(&self) {
-        //debug!("rx_buffer present: {}", self.rx_buffer.is_some());
-        debug!("i am handling a fifo0 interrupt");
-        debug!(
-            "TC={} TXBTO={:#x} IR={:#x}",
-            self.registers.fdcan_ir.is_set(FDCAN_IR::TC),
-            self.registers.fdcan_txbto.get(),
-            self.registers.fdcan_ir.get()
-        );
-
         while self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0FL) != 0 {
             //check which rx fifo slot we need to read
             let get_index = self.registers.fdcan_rxf0s.read(FDCAN_RXF0S::F0GI);
@@ -1581,10 +1507,7 @@ impl DeferredCallClient for Can {
             Some(action) => match action {
                 //we need to get out of init, so advance the FSM
                 AsyncAction::Enable => {
-                    debug!("i am being asked to enable thru an async action");
                     if let Err(enable_err) = self.enter_normal_mode() {
-                        debug!("enabling thru an async action bugged tf out");
-                        debug!("error code is {:?}", enable_err);
                         self.controller_client.map(|controller_client| {
                             controller_client.state_changed(self.can_state.get().into());
                             controller_client.enabled(Err(enable_err));
@@ -1592,7 +1515,6 @@ impl DeferredCallClient for Can {
                         return;
                     }
                     self.controller_client.map(|controller_client| {
-                        debug!("enabling thru an async action worked");
                         controller_client.state_changed(can::State::Running);
                         controller_client.enabled(Ok(()));
                     });
@@ -1831,17 +1753,17 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can {
     ///
     /// Unlike the bxCAN driver, this doesn't install a permissive default filter
     /// because it's not needed: all frames will be accepted into FIFO0 by default until at least one filter is set
-    /// through 'Filters::enable_filter'. At that point, all matching frames will be routed to FIFO0.
+    /// through `Filters::enable_filter`. At that point, all matching frames will be routed to FIFO0.
     /// And all non-matching frames will be rejected.
     ///
     /// Only Rx FIFO 0 is drained. All filters route there regardless of
-    /// 'FilterParameters::fifo_number'.
+    /// `FilterParameters::fifo_number`.
     ///
     /// # Return values:
     ///
-    /// * 'Ok(())' - The reception process was started.
-    ///  Received frames are delivered through 'ReceiveClient::message_received'
-    /// * 'Err((ErrorCode::OFF, buffer))' - The peripheral is not ready to receive
+    /// * `Ok(())` - The reception process was started.
+    ///  Received frames are delivered through `ReceiveClient::message_received`
+    /// * `Err((ErrorCode::OFF, buffer))` - The peripheral is not ready to receive
     fn start_receive_process(
         &self,
         buffer: &'static mut [u8; can::STANDARD_CAN_PACKET_SIZE],
@@ -1888,7 +1810,7 @@ impl can::Receive<{ can::STANDARD_CAN_PACKET_SIZE }> for Can {
 
 /// Filter indices 0–27 address the standard filter array while 28–35 address the
 /// extended filter array (M_CAN keeps them separate, see rm0456 70.3.11 and 70.3.12)
-/// 'enable_filter' rejects a mode whose identifier width doesn't match the range
+/// `enable_filter` rejects a mode whose identifier width doesn't match the range
 /// the index falls in.
 impl can::Filters for Can {
     fn enable_filter(
