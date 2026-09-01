@@ -762,7 +762,7 @@ impl Can {
             can_state: Cell::new(CanState::Sleep),
             error_interrupt_counter: Cell::new(0),
             failed_messages: Cell::new(0),
-            automatic_retransmission: Cell::new(false),
+            automatic_retransmission: Cell::new(true),
             //automatic_wake_up: Cell::new(false),
             operating_mode: OptionalCell::empty(),
             bit_timing: OptionalCell::empty(),
@@ -885,7 +885,6 @@ impl Can {
             },
             31,
         );
-
         Ok(())
     }
 
@@ -1383,15 +1382,17 @@ impl Can {
         //check if the bus is off, error if yes
         if self.registers.fdcan_txbto.get() & (1 << idx) != 0 {
             state = Ok(());
-        } else if self.registers.fdcan_txbcf.get() & (1 << idx) != 0 {
-            state = Err(can::Error::Transmission); //cancelled
         } else if self.registers.fdcan_psr.is_set(FDCAN_PSR::BO) {
             state = Err(can::Error::BusOff);
+        } else if self.registers.fdcan_txbrp.get() & (1 << idx) != 0 {
+            return; //still pending, not done yet
         } else {
-            return; //the buffer isnt for our tx mailbox, don't consume it. this is future proofing. right now we only use one tx mailbox at a time
+            state = Err(can::Error::Transmission); //abandoned
         }
         if let Err(err) = state {
             self.can_state.set(CanState::RunningError(err));
+        } else {
+            self.can_state.set(CanState::Normal);
         }
 
         //pass the buffer back to the client
