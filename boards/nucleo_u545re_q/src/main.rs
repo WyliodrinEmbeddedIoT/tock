@@ -65,6 +65,17 @@ struct NucleoU545RE {
         kernel::hil::led::LedHigh<'static, stm32u545::gpio::Pin<'static>>,
         1,
     >,
+    seven_segment: &'static capsules_core::sevensegment::SevenSegmentDriver<
+        'static,
+        SevenSegmentShiftRegister<
+            'static,
+            Sr74HC<GpioHw>,
+            capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+                'static,
+                stm32u545::tim::Tim2<'static>,
+            >,
+        >,
+    >,
     button: &'static capsules_core::button::Button<'static, stm32u545::gpio::Pin<'static>>,
     alarm: &'static capsules_core::alarm::AlarmDriver<
         'static,
@@ -108,6 +119,7 @@ impl SyscallDriverLookup for NucleoU545RE {
         match driver_num {
             capsules_core::console::DRIVER_NUM => f(Some(self.console)),
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
+            capsules_core::sevensegment::DRIVER_NUM => f(Some(self.seven_segment)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules_extra::pwm::DRIVER_NUM => f(Some(self.pwm)),
@@ -610,39 +622,6 @@ unsafe fn start() -> (
         stm32u545::i2c::I2c
     ));
 
-    // Platform and Interrupts
-    let platform = static_init!(
-        NucleoU545RE,
-        NucleoU545RE {
-            console,
-            scheduler: components::sched::round_robin::RoundRobinComponent::new(processes)
-                .finalize(components::round_robin_component_static!(NUM_PROCS)),
-            systick: cortexm33::systick::SysTick::new(),
-            led,
-            i2c,
-            button,
-            alarm,
-            pwm,
-            adc: adc_syscall,
-            dac,
-            gpio,
-            crc,
-            hmac,
-            aes: aes_driver,
-            spi,
-            date_time,
-        }
-    );
-
-    let chip = static_init!(
-        stm32u545::chip::Stm32u5xx<stm32u545::chip::Stm32u5xxDefaultPeripherals>,
-        stm32u545::chip::Stm32u5xx::new(periphs)
-    );
-
-    PANIC_RESOURCES.get().map(|resources| {
-        resources.chip.put(chip);
-    });
-
     let display_alarm = static_init!(
         capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
             'static,
@@ -673,13 +652,67 @@ unsafe fn start() -> (
             Cell::new(0),
             0,
             50,
+            Cell::new(false),
         )
     );
 
     display_alarm.set_alarm_client(display);
     display.init();
 
+    let seven_segment = static_init!(
+        capsules_core::sevensegment::SevenSegmentDriver<
+            'static,
+            SevenSegmentShiftRegister<
+                'static,
+                Sr74HC<GpioHw>,
+                capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+                    'static,
+                    stm32u545::tim::Tim2<'static>,
+                >,
+            >,
+        >,
+        capsules_core::sevensegment::SevenSegmentDriver::new(display)
+    );
+
+    // Platform and Interrupts
+    let platform = static_init!(
+        NucleoU545RE,
+        NucleoU545RE {
+            console,
+            scheduler: components::sched::round_robin::RoundRobinComponent::new(processes)
+                .finalize(components::round_robin_component_static!(NUM_PROCS)),
+            systick: cortexm33::systick::SysTick::new(),
+            led,
+            seven_segment,
+            i2c,
+            button,
+            alarm,
+            pwm,
+            adc: adc_syscall,
+            dac,
+            gpio,
+            crc,
+            hmac,
+            aes: aes_driver,
+            spi,
+            date_time,
+        }
+    );
+
+    let chip = static_init!(
+        stm32u545::chip::Stm32u5xx<stm32u545::chip::Stm32u5xxDefaultPeripherals>,
+        stm32u545::chip::Stm32u5xx::new(periphs)
+    );
+
+    PANIC_RESOURCES.get().map(|resources| {
+        resources.chip.put(chip);
+    });
+
+    /*
+
     let _ = display.write(1234, 0);
+
+    */
 
     // Symbols for linker
     extern "C" {
