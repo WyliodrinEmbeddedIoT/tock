@@ -14,9 +14,6 @@
 //! * ✓ init
 //! * ✓ is_busy
 //! * ✓ read_write_bytes
-//! * write_byte
-//! * read_byte
-//! * read_write_byte
 //! * ✓ specify_chip_select
 //! * ✓ set_rate
 //! * ✓ get_rate
@@ -46,16 +43,8 @@ use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeabl
 use kernel::utilities::registers::{ReadWrite, WriteOnly, register_bitfields};
 use nrf5x::pinmux::Pinmux;
 
-const INSTANCES: [StaticRef<SpimRegisters>; 3] = unsafe {
-    [
-        StaticRef::new(0x40003000 as *const SpimRegisters),
-        StaticRef::new(0x40004000 as *const SpimRegisters),
-        StaticRef::new(0x40023000 as *const SpimRegisters),
-    ]
-};
-
 #[repr(C)]
-struct SpimRegisters {
+pub struct SpimRegisters {
     _reserved0: [u8; 16],                            // reserved
     tasks_start: WriteOnly<u32, TASK::Register>,     // Start SPI transaction
     tasks_stop: WriteOnly<u32, TASK::Register>,      // Stop SPI transaction
@@ -251,9 +240,9 @@ pub struct SPIM<'a> {
 }
 
 impl<'a> SPIM<'a> {
-    pub const fn new(instance: usize) -> SPIM<'a> {
+    pub const fn new(registers: StaticRef<SpimRegisters>) -> SPIM<'a> {
         SPIM {
-            registers: INSTANCES[instance],
+            registers,
             client: OptionalCell::empty(),
             chip_select: OptionalCell::empty(),
             busy: Cell::new(false),
@@ -406,18 +395,6 @@ impl<'a> hil::spi::SpiMaster<'a> for SPIM<'a> {
 
         self.registers.tasks_start.write(TASK::TASK::SET);
         Ok(())
-    }
-
-    fn write_byte(&self, _val: u8) -> Result<(), ErrorCode> {
-        unimplemented!("SPI: Use `read_write_bytes()` instead.");
-    }
-
-    fn read_byte(&self) -> Result<u8, ErrorCode> {
-        unimplemented!("SPI: Use `read_write_bytes()` instead.");
-    }
-
-    fn read_write_byte(&self, _val: u8) -> Result<u8, ErrorCode> {
-        unimplemented!("SPI: Use `read_write_bytes()` instead.");
     }
 
     // Tell the SPI peripheral what to use as a chip select pin.

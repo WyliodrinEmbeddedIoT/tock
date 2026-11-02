@@ -7,6 +7,40 @@
 use enum_primitive::cast::FromPrimitive;
 use enum_primitive::enum_from_primitive;
 
+/// Create a `DRIVER_NUM` for a second (or third, etc.) instance of a
+/// [`SyscallDriver`](kernel::syscall::SyscallDriver).
+///
+/// Creating additional driver numbers for known drivers uses the second most
+/// significant nibble of the 32-bit driver number. This allows creating up to
+/// 15 additional driver numbers for the same driver. The original driver of
+/// course has 0 in this field.
+///
+/// The format is like this:
+///
+/// ```text
+/// 32         28         24                                        0
+///  ┌──────────┬──────────┬────────────────────────────────────────┐
+///  │ 0        │ Instance │ Driver Number                          │
+///  │          │ Number   │                                        │
+///  └──────────┴──────────┴────────────────────────────────────────┘
+/// ```
+pub const fn dup_driver_num(driver_num: usize, instance_num: usize) -> usize {
+    assert!(
+        instance_num < 16,
+        "This mechanism only supports up to 15 additional driver numbers."
+    );
+    assert!(
+        (driver_num & 0x0f00_0000) == 0,
+        "Must use the base driver number to create a duplicate"
+    );
+    assert!(
+        instance_num > 0,
+        "This mechanism is for new instance indices above the base driver number."
+    );
+
+    (instance_num << 24) | driver_num
+}
+
 enum_from_primitive! {
 #[derive(Debug, PartialEq)]
 // syscall driver numbers

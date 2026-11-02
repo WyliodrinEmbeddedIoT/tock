@@ -124,6 +124,17 @@ impl SyscallDriverLookup for Platform {
 /// This is in a separate, inline(never) function so that its stack frame is
 /// removed when this function returns. Otherwise, the stack space used for
 /// these static_inits is wasted.
+///
+/// # Safety
+///
+/// Some of the default nRF52 peripherals use DMA. As such, the default
+/// peripherals must be unique. This requires:
+///
+/// - This constructor must be called at most once.
+/// - There must not be additional instances of the DMA-enabled peripheral
+///   drivers.
+/// - There must not be any other code that accesses the DMA buffer and length
+///   registers of the DMA-enabled peripherals.
 #[inline(never)]
 unsafe fn create_peripherals() -> &'static mut Nrf52840DefaultPeripherals<'static> {
     let ieee802154_ack_buf = static_init!(
@@ -131,11 +142,15 @@ unsafe fn create_peripherals() -> &'static mut Nrf52840DefaultPeripherals<'stati
         [0; nrf52840::ieee802154_radio::ACK_BUF_SIZE]
     );
     let aes_ecb_buf = static_init!([u8; 48], [0; 48]);
-    // Initialize chip peripheral drivers
-    let nrf52840_peripherals = static_init!(
-        Nrf52840DefaultPeripherals,
-        Nrf52840DefaultPeripherals::new(ieee802154_ack_buf, aes_ecb_buf)
+    let ficr = static_init!(
+        nrf52840::ficr::Ficr,
+        nrf52840::ficr::Ficr::new(nrf52840::chip::FICR_BASE)
     );
+    // SAFETY: Satisfied by function-level requirements.
+    let peripherals =
+        unsafe { Nrf52840DefaultPeripherals::new(ficr, ieee802154_ack_buf, aes_ecb_buf) };
+    // Initialize chip peripheral drivers
+    let nrf52840_peripherals = static_init!(Nrf52840DefaultPeripherals, peripherals);
 
     nrf52840_peripherals
 }
@@ -190,7 +205,17 @@ impl kernel::process::ProcessLoadingAsyncClient for Platform {
 }
 
 /// Main function called after RAM initialized.
-#[no_mangle]
+///
+/// # Safety
+///
+/// ## `no_mangle`
+///
+/// We use `main` as a symbol in the arch crate's initialization routine to jump
+/// here. We guarantee no other symbol has the same name.
+///
+/// Note: this requires a global/uniqueness guarantee.
+/// See <https://github.com/tock/tock/issues/5250>.
+#[unsafe(no_mangle)]
 pub unsafe fn main() {
     //--------------------------------------------------------------------------
     // INITIAL SETUP
@@ -212,7 +237,9 @@ pub unsafe fn main() {
 
     // Set up peripheral drivers. Called in separate function to reduce stack
     // usage.
-    let nrf52840_peripherals = create_peripherals();
+    //
+    // SAFETY: This is the only copy and only user of the DMA peripherals.
+    let nrf52840_peripherals = unsafe { create_peripherals() };
 
     // Set up circular peripheral dependencies.
     nrf52840_peripherals.init();
@@ -250,6 +277,8 @@ pub unsafe fn main() {
         BUTTON_RST_PIN,
         nrf52840::uicr::Regulator0Output::DEFAULT,
         &base_peripherals.nvmc,
+        &base_peripherals.uicr,
+        &base_peripherals.approtect,
     )
     .finalize(());
 
@@ -333,7 +362,11 @@ pub unsafe fn main() {
         uart_mux,
         mux_alarm,
         process_printer,
-        Some(cortexm4::support::reset),
+        Some(|| {
+            cortexm4::support::reset(&kernel::create_capability!(
+                kernel::capabilities::CpuStateControlCapability
+            ))
+        }),
         process_console_cap,
     )
     .finalize(components::process_console_component_static!(

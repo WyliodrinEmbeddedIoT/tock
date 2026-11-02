@@ -17,7 +17,6 @@ version = "0.2.4-dev"
 dependencies = [
  "arty_e21_chip",
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "kernel",
@@ -54,10 +53,8 @@ dependencies = [
 name = "capsules-aes-gcm"
 version = "0.2.4-dev"
 dependencies = [
- "enum_primitive",
  "ghash",
  "kernel",
- "tickv",
 ]
 
 [[package]]
@@ -66,7 +63,6 @@ version = "0.2.4-dev"
 dependencies = [
  "enum_primitive",
  "kernel",
- "tickv",
 ]
 
 [[package]]
@@ -139,7 +135,6 @@ name = "cortexm0"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm",
- "kernel",
 ]
 
 [[package]]
@@ -201,7 +196,6 @@ name = "cortexv7m"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm",
- "kernel",
 ]
 
 [[package]]
@@ -240,7 +234,6 @@ name = "cy8cproto_62_4243_w"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm0p",
@@ -277,8 +270,6 @@ version = "0.2.4-dev"
 dependencies = [
  "e310x",
  "kernel",
- "rv32i",
- "sifive",
 ]
 
 [[package]]
@@ -287,8 +278,6 @@ version = "0.2.4-dev"
 dependencies = [
  "e310x",
  "kernel",
- "rv32i",
- "sifive",
 ]
 
 [[package]]
@@ -402,6 +391,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp32-c3-devkit-rust-2"
+version = "0.2.4-dev"
+dependencies = [
+ "capsules-core",
+ "capsules-extra",
+ "capsules-system",
+ "components",
+ "esp32",
+ "esp32-c3",
+ "kernel",
+ "rv32i",
+ "tock_build_scripts",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,7 +418,7 @@ dependencies = [
 [[package]]
 name = "flux-attrs"
 version = "0.1.0"
-source = "git+https://github.com/flux-rs/flux.git?rev=8256bd03c72f4ba4633ff969fac6c53928969edc#8256bd03c72f4ba4633ff969fac6c53928969edc"
+source = "git+https://github.com/flux-rs/flux.git?rev=dab48f5c3dd50b7764db5bb5dd139607bbb59d4e#dab48f5c3dd50b7764db5bb5dd139607bbb59d4e"
 dependencies = [
  "flux-attrs-impl",
 ]
@@ -422,7 +426,7 @@ dependencies = [
 [[package]]
 name = "flux-attrs-impl"
 version = "0.1.0"
-source = "git+https://github.com/flux-rs/flux.git?rev=8256bd03c72f4ba4633ff969fac6c53928969edc#8256bd03c72f4ba4633ff969fac6c53928969edc"
+source = "git+https://github.com/flux-rs/flux.git?rev=dab48f5c3dd50b7764db5bb5dd139607bbb59d4e#dab48f5c3dd50b7764db5bb5dd139607bbb59d4e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -432,7 +436,7 @@ dependencies = [
 [[package]]
 name = "flux-rs"
 version = "0.1.0"
-source = "git+https://github.com/flux-rs/flux.git?rev=8256bd03c72f4ba4633ff969fac6c53928969edc#8256bd03c72f4ba4633ff969fac6c53928969edc"
+source = "git+https://github.com/flux-rs/flux.git?rev=dab48f5c3dd50b7764db5bb5dd139607bbb59d4e#dab48f5c3dd50b7764db5bb5dd139607bbb59d4e"
 dependencies = [
  "flux-attrs",
 ]
@@ -488,7 +492,6 @@ name = "hifive1"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "e310_g002",
@@ -503,7 +506,6 @@ name = "hifive_inventor"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "e310_g003",
@@ -588,7 +590,6 @@ name = "litex_arty"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "kernel",
@@ -602,7 +603,6 @@ name = "litex_sim"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "kernel",
@@ -625,7 +625,6 @@ name = "lora_e5_mini"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm4",
@@ -654,7 +653,6 @@ name = "lowrisc"
 version = "0.2.4-dev"
 dependencies = [
  "kernel",
- "rv32i",
 ]
 
 [[package]]
@@ -665,7 +663,6 @@ dependencies = [
  "capsules-system",
  "components",
  "cortexm33",
- "enum_primitive",
  "kernel",
  "lpc55s6x",
  "segger",
@@ -709,7 +706,6 @@ dependencies = [
  "kernel",
  "nrf52",
  "nrf52833",
- "nrf52_components",
  "tock_build_scripts",
 ]
 
@@ -725,8 +721,46 @@ dependencies = [
  "kernel",
  "nrf52",
  "nrf52833",
- "nrf52_components",
  "tock_build_scripts",
+]
+
+[[package]]
+name = "mps2-an385"
+version = "0.2.4-dev"
+dependencies = [
+ "cortexm3",
+ "kernel",
+ "mps2_base",
+ "qemu_arm_mps2",
+ "qemu_arm_mps2-unsafe",
+ "qemu_arm_mps2_an385",
+ "tock_build_scripts",
+]
+
+[[package]]
+name = "mps2-an386"
+version = "0.2.4-dev"
+dependencies = [
+ "cortexm4",
+ "kernel",
+ "mps2_base",
+ "qemu_arm_mps2",
+ "qemu_arm_mps2-unsafe",
+ "qemu_arm_mps2_an386",
+ "tock_build_scripts",
+]
+
+[[package]]
+name = "mps2_base"
+version = "0.2.4-dev"
+dependencies = [
+ "capsules-core",
+ "capsules-system",
+ "components",
+ "cortexm",
+ "kernel",
+ "qemu_arm_mps2",
+ "qemu_arm_mps2-unsafe",
 ]
 
 [[package]]
@@ -734,7 +768,6 @@ name = "msp-exp432p401r"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm4",
@@ -748,7 +781,6 @@ name = "msp432"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4",
- "enum_primitive",
  "kernel",
 ]
 
@@ -813,7 +845,6 @@ dependencies = [
 name = "nrf52832"
 version = "0.2.4-dev"
 dependencies = [
- "cortexm4f",
  "kernel",
  "nrf52",
 ]
@@ -822,7 +853,6 @@ dependencies = [
 name = "nrf52833"
 version = "0.2.4-dev"
 dependencies = [
- "cortexm4f",
  "kernel",
  "nrf52",
 ]
@@ -831,7 +861,6 @@ dependencies = [
 name = "nrf52840"
 version = "0.2.4-dev"
 dependencies = [
- "cortexm4f",
  "kernel",
  "nrf52",
 ]
@@ -1051,6 +1080,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "nrf52840dk-test-usb-cdc"
+version = "0.2.4-dev"
+dependencies = [
+ "capsules-core",
+ "capsules-extra",
+ "capsules-system",
+ "components",
+ "cortexm4",
+ "kernel",
+ "nrf52840",
+ "nrf52840dk-test-base",
+ "nrf52_components",
+ "segger",
+ "tock_build_scripts",
+]
+
+[[package]]
 name = "nrf52840dk-thread-tutorial"
 version = "0.2.4-dev"
 dependencies = [
@@ -1069,8 +1115,6 @@ name = "nrf52_components"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
- "capsules-system",
  "components",
  "cortexm4",
  "kernel",
@@ -1150,7 +1194,6 @@ dependencies = [
  "cortexm33",
  "kernel",
  "stm32u545",
- "stm32u5xx-unsafe",
  "tock_build_scripts",
 ]
 
@@ -1247,7 +1290,6 @@ name = "psc3"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm33",
- "enum_primitive",
  "kernel",
 ]
 
@@ -1256,7 +1298,6 @@ name = "psc3m5_evk"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm33",
@@ -1270,8 +1311,37 @@ name = "psoc62xa"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm0p",
- "enum_primitive",
  "kernel",
+]
+
+[[package]]
+name = "qemu_arm_mps2"
+version = "0.2.4-dev"
+dependencies = [
+ "kernel",
+]
+
+[[package]]
+name = "qemu_arm_mps2-unsafe"
+version = "0.2.4-dev"
+dependencies = [
+ "cortexm",
+ "kernel",
+ "qemu_arm_mps2",
+]
+
+[[package]]
+name = "qemu_arm_mps2_an385"
+version = "0.2.4-dev"
+dependencies = [
+ "cortexm3",
+]
+
+[[package]]
+name = "qemu_arm_mps2_an386"
+version = "0.2.4-dev"
+dependencies = [
+ "cortexm4",
 ]
 
 [[package]]
@@ -1279,7 +1349,6 @@ name = "qemu_i486_q35"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "kernel",
@@ -1302,7 +1371,6 @@ dependencies = [
  "kernel",
  "qemu_rv32_virt_chip",
  "rv32i",
- "sifive",
  "tock_build_scripts",
 ]
 
@@ -1318,6 +1386,24 @@ dependencies = [
  "qemu_rv32_virt",
  "qemu_rv32_virt_chip",
  "rv32i",
+ "tock-tbf",
+ "tock_build_scripts",
+]
+
+[[package]]
+name = "qemu_rv32_virt-test-ci"
+version = "0.2.4-dev"
+dependencies = [
+ "capsules-core",
+ "capsules-extra",
+ "capsules-system",
+ "components",
+ "ecdsa-sw",
+ "kernel",
+ "qemu_rv32_virt",
+ "qemu_rv32_virt_chip",
+ "rv32i",
+ "sifive",
  "tock-tbf",
  "tock_build_scripts",
 ]
@@ -1362,7 +1448,6 @@ dependencies = [
  "kernel",
  "qemu_rv64_virt_chip",
  "rv64i",
- "sifive",
  "tock_build_scripts",
 ]
 
@@ -1435,7 +1520,6 @@ name = "raspberry_pi_pico_2"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm33",
@@ -1494,7 +1578,6 @@ name = "redboard_redv"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "e310_g002",
@@ -1563,8 +1646,6 @@ version = "0.2.4-dev"
 dependencies = [
  "kernel",
  "riscv",
- "riscv-csr",
- "tock-registers",
 ]
 
 [[package]]
@@ -1573,8 +1654,6 @@ version = "0.2.4-dev"
 dependencies = [
  "kernel",
  "riscv",
- "riscv-csr",
- "tock-registers",
 ]
 
 [[package]]
@@ -1644,7 +1723,6 @@ dependencies = [
  "capsules-system",
  "components",
  "cortexm4",
- "enum_primitive",
  "kernel",
  "nrf52840",
  "nrf52_components",
@@ -1680,7 +1758,6 @@ name = "stm32f401cc"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4f",
- "enum_primitive",
  "kernel",
  "stm32f4xx",
 ]
@@ -1690,7 +1767,6 @@ name = "stm32f412g"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4f",
- "enum_primitive",
  "kernel",
  "stm32f4xx",
 ]
@@ -1728,7 +1804,6 @@ name = "stm32f429zi"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4f",
- "enum_primitive",
  "kernel",
  "stm32f4xx",
 ]
@@ -1738,7 +1813,6 @@ name = "stm32f446re"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4f",
- "enum_primitive",
  "kernel",
  "stm32f4xx",
 ]
@@ -1757,7 +1831,6 @@ name = "stm32u545"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm33",
- "kernel",
  "stm32u5xx",
 ]
 
@@ -1783,7 +1856,6 @@ name = "stm32wle5jc"
 version = "0.2.4-dev"
 dependencies = [
  "cortexm4",
- "enum_primitive",
  "kernel",
  "stm32wle5xx",
 ]
@@ -1819,7 +1891,6 @@ name = "teensy40"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm7",
@@ -1892,7 +1963,6 @@ name = "veer_el2_sim"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "kernel",
@@ -1928,7 +1998,6 @@ name = "weact-f401ccu6"
 version = "0.2.4-dev"
 dependencies = [
  "capsules-core",
- "capsules-extra",
  "capsules-system",
  "components",
  "cortexm4",
@@ -1958,7 +2027,6 @@ name = "x86"
 version = "0.2.4-dev"
 dependencies = [
  "kernel",
- "tock-cells",
  "tock-registers",
 ]
 

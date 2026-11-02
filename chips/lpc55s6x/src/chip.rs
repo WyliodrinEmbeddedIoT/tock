@@ -15,6 +15,7 @@ use crate::ctimer0::LPCTimer;
 use crate::flexcomm::Flexcomm;
 use crate::gpio::Pins;
 use crate::interrupts;
+use crate::rng::RNG;
 use crate::uart::Uart;
 
 #[repr(u8)]
@@ -30,9 +31,12 @@ pub struct Lpc55s69<'a, I: InterruptService + 'a> {
 }
 
 impl<'a, I: InterruptService> Lpc55s69<'a, I> {
-    pub unsafe fn new(interrupt_service: &'a I) -> Self {
+    pub fn new(interrupt_service: &'a I) -> Self {
+        // SAFETY: All LPC55S6x chips are Cortex-M33 cores with valid MPU hardware.
+        let mpu = unsafe { cortexm33::mpu::new() };
+
         Self {
-            mpu: cortexm33::mpu::new(),
+            mpu,
             userspace_kernel_boundary: cortexm33::syscall::SysCall::new(),
             interrupt_service,
         }
@@ -85,9 +89,8 @@ impl<I: InterruptService> Chip for Lpc55s69<'_, I> {
     }
 
     fn sleep(&self) {
-        unsafe {
-            cortexm33::support::wfi();
-        }
+        let cap = kernel::create_capability!(kernel::capabilities::CpuStateControlCapability);
+        cortexm33::support::wfi(&cap);
     }
 
     fn with_interrupts_disabled<F, R>(&self, f: F) -> R
@@ -106,6 +109,7 @@ pub struct Lpc55s69DefaultPeripheral<'a> {
     pub pins: Pins<'a>,
     pub ctimer0: LPCTimer<'a>,
     pub uart: Uart<'a>,
+    pub rng: RNG<'a>,
 }
 
 impl Lpc55s69DefaultPeripheral<'_> {
@@ -114,7 +118,12 @@ impl Lpc55s69DefaultPeripheral<'_> {
             pins: Pins::new(),
             ctimer0: LPCTimer::new(),
             uart: Uart::new_uart0(clocks, flexcomm),
+            rng: RNG::new(),
         }
+    }
+
+    pub fn init(&'static self) {
+        kernel::deferred_call::DeferredCallClient::register(&self.rng);
     }
 }
 
