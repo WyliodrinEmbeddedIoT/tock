@@ -74,6 +74,7 @@ struct NucleoU545RE {
                 'static,
                 stm32u545::tim::Tim2<'static>,
             >,
+            4,
         >,
     >,
     button: &'static capsules_core::button::Button<'static, stm32u545::gpio::Pin<'static>>,
@@ -642,6 +643,7 @@ unsafe fn start() -> (
                 'static,
                 stm32u545::tim::Tim2<'static>,
             >,
+            4,
         >,
         SevenSegmentShiftRegister::new(
             sr,
@@ -669,6 +671,7 @@ unsafe fn start() -> (
                     'static,
                     stm32u545::tim::Tim2<'static>,
                 >,
+                4,
             >,
         >,
         capsules_core::sevensegment::SevenSegmentDriver::new(display)
