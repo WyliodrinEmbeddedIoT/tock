@@ -13,13 +13,28 @@ pub struct Nrf52832DefaultPeripherals<'a> {
     pub nrf52: Nrf52DefaultPeripherals<'a>,
     pub gpio_port: crate::gpio::Port<'a, { crate::gpio::NUM_PINS }>,
 }
-impl Nrf52832DefaultPeripherals<'_> {
-    pub unsafe fn new(aes_ecb_buf: &'static mut [u8; 48]) -> Self {
+impl<'a> Nrf52832DefaultPeripherals<'a> {
+    /// Create default peripherals for an nRF52832 microcontroller.
+    ///
+    /// # Safety
+    ///
+    /// Some of these peripherals use DMA. As such, the default peripherals must
+    /// be unique. This requires:
+    ///
+    /// - This constructor must be called at most once.
+    /// - There must not be additional instances of the DMA-enabled peripheral
+    ///   drivers.
+    /// - There must not be any other code that accesses the DMA buffer and
+    ///   length registers of the DMA-enabled peripherals.
+    pub unsafe fn new(ficr: &'a nrf52::ficr::Ficr, aes_ecb_buf: &'static mut [u8; 48]) -> Self {
+        // SAFETY: Satisfied by function-level safety requirements.
+        let nrf52_peripherals = unsafe { Nrf52DefaultPeripherals::new(ficr, aes_ecb_buf) };
         Self {
-            nrf52: Nrf52DefaultPeripherals::new(aes_ecb_buf),
+            nrf52: nrf52_peripherals,
             gpio_port: crate::gpio::nrf52832_gpio_create(),
         }
     }
+
     // Necessary for setting up circular dependencies
     pub fn init(&'static self) {
         self.nrf52.init();

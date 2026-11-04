@@ -1,0 +1,60 @@
+# Licensed under the Apache License, Version 2.0 or the MIT License.
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+# Copyright Tock Contributors 2026.
+
+# Makefile for building the Tock kernel for the qemu-system-arm `mps2-an385`
+# (Cortex-M3) platform / machine type.
+
+include ../../Makefile.common
+
+QEMU_CMD := qemu-system-arm
+
+# Base address of the "prog" (app) flash region; must match chip_layout.ld.
+APP_ADDRESS := 0x00040000
+
+# The apps image `tockloader` packs for us. It holds apps only -- the kernel
+# is loaded separately, by QEMU's `-kernel` -- so it is based at the start of
+# the "prog" region rather than at the start of flash. Covered by the
+# top-level `*.bin` .gitignore rule.
+LOCAL_BOARD     := mps2_an385
+LOCAL_BOARD_BIN := $(LOCAL_BOARD)_apps.bin
+TOCKLOADER_ARCH := cortex-m3
+
+QEMU_CMDLINE_EXTRA ?= \
+
+# Peripherals attached by default:
+# - CMSDK APB UART0 (attached to stdio)
+QEMU_BASE_CMDLINE := \
+  $(QEMU_CMD) \
+    -machine mps2-an385 \
+    -nographic \
+    -semihosting \
+    $(QEMU_CMDLINE_EXTRA)
+
+# Run the kernel inside a qemu-system-arm "mps2-an385" machine simulation.
+.PHONY: run
+run: $(TOCK_ROOT_DIRECTORY)target/$(TARGET)/release/$(PLATFORM).bin
+	@echo
+	@echo -e "Running $$($(QEMU_CMD) --version | head -n1) with\n"\
+	  " - kernel $<\n"\
+	  " - apps $(LOCAL_BOARD_BIN)"
+	@echo "To exit type C-a x"
+	@echo
+	$(QEMU_BASE_CMDLINE) -kernel $< \
+	  -device loader,file=$(LOCAL_BOARD_BIN),addr=$(APP_ADDRESS)
+
+.PHONY: qemu
+qemu: run
+
+# Register this board's apps image as tockloader's "local board", so
+# `tockloader install`/`list`/`uninstall` operate on it with no extra flags.
+# tockloader stores a single local board for the whole user account, in its
+# own user data directory rather than in this tree, so this replaces any
+# board already registered. Re-run when switching boards.
+.PHONY: init
+init:
+	tockloader local-board set $(LOCAL_BOARD) \
+	  --binary-path $(LOCAL_BOARD_BIN) \
+	  --arch $(TOCKLOADER_ARCH) \
+	  --flash-address $(APP_ADDRESS) \
+	  --app-address $(APP_ADDRESS)
