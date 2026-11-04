@@ -3,6 +3,7 @@ use kernel::hil::sevensegment::SevenSegment;
 use kernel::ErrorCode;
 use kernel::process::{Error, ProcessId};
 use kernel::syscall::{CommandReturn, SyscallDriver};
+use tickv::success_codes;
 
 use crate::driver;
 pub const DRIVER_NUM: usize = driver::NUM::SevenSegment as usize;
@@ -34,14 +35,22 @@ impl<'a, S: SevenSegment> SyscallDriver for SevenSegmentDriver<'a, S> {
                 if r2 > 9999 {
                     CommandReturn::failure(ErrorCode::INVAL)
                 } else {
-                    let _ = self.seven_segment.write(r2 as u16, r3 as u8);
-                    CommandReturn::success()
+                    let rez = self.seven_segment.write(r2, r3 as u8);
+                    if rez == Ok(()) {
+                        CommandReturn::success()
+                    } else {
+                        CommandReturn::failure(ErrorCode::FAIL)
+                    }
                 }
             }
 
             3 => {
-                let _ = self.seven_segment.clear();
-                CommandReturn::success()
+                let rez = self.seven_segment.clear();
+                if rez == Ok(()) {
+                    CommandReturn::success()
+                } else {
+                    CommandReturn::failure(ErrorCode::FAIL)
+                }
             }
 
             _ => CommandReturn::failure(ErrorCode::NOSUPPORT),

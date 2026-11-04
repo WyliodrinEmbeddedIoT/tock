@@ -6,10 +6,10 @@ use kernel::hil::time::{Alarm, AlarmClient, ConvertTicks};
 
 use crate::seven_segment;
 
-pub struct SevenSegmentShiftRegister<'a, Sr: ShiftRegister, A: Alarm<'a>> {
+pub struct SevenSegmentShiftRegister<'a, Sr: ShiftRegister, A: Alarm<'a>, const DIGITS: usize> {
     shift_register: &'a Sr,
     segment_map_digit: [u8; 10],
-    seven_segment: [u8; 4],
+    seven_segment: [u8; DIGITS],
     alarm: &'a A,
     number: Cell<usize>,
     position: Cell<usize>,
@@ -17,15 +17,17 @@ pub struct SevenSegmentShiftRegister<'a, Sr: ShiftRegister, A: Alarm<'a>> {
     activ: Cell<bool>,
 }
 
-impl<'a, Sr: ShiftRegister, A: Alarm<'a>> SevenSegmentShiftRegister<'a, Sr, A> {
+impl<'a, Sr: ShiftRegister, A: Alarm<'a>, const DIGITS: usize>
+    SevenSegmentShiftRegister<'a, Sr, A, DIGITS>
+{
     pub fn new(
         shift_register: &'static Sr,
         segment_map_digit: [u8; 10],
-        seven_segment: [u8; 4],
+        seven_segment: [u8; DIGITS],
         alarm: &'a A,
         number: Cell<usize>,
         position: Cell<usize>,
-        timing: u8,
+        timing: usize,
         refresh_rate: usize,
         activ: Cell<bool>,
     ) -> Self {
@@ -42,21 +44,24 @@ impl<'a, Sr: ShiftRegister, A: Alarm<'a>> SevenSegmentShiftRegister<'a, Sr, A> {
     }
 
     pub fn init(&self) {
-        self.next_digit();
+        self.next_digit(DIGITS);
     }
 
-    fn next_digit(&self) {
+    /// Displays one digit at a time
+    /// Number of digits must be given as a parameter
+    fn next_digit(&self, nr_digits: usize) {
         let number = self.number.get();
         let pos = self.position.get();
         let aux: usize = 10;
 
         if self.activ.get() {
-            let _ = self
-                .shift_register
-                .write(self.segment_map_digit[(number / aux.pow((3 - pos) as u32)) % 10]);
-            let _ = self.shift_register.write(self.seven_segment[pos]);
+            let _ = self.shift_register.write(
+                self.segment_map_digit[(number / aux.pow((nr_digits - pos - 1) as u32)) % 10]
+                    as usize,
+            );
+            let _ = self.shift_register.write(self.seven_segment[pos] as usize);
 
-            self.position.set((pos + 1) % 4);
+            self.position.set((pos + 1) % nr_digits);
         } else {
             let _ = self.shift_register.write(0x00);
             let _ = self.shift_register.write(0x00);
@@ -66,22 +71,26 @@ impl<'a, Sr: ShiftRegister, A: Alarm<'a>> SevenSegmentShiftRegister<'a, Sr, A> {
     }
 }
 
-impl<'a, Sr: ShiftRegister, A: Alarm<'a>> AlarmClient for SevenSegmentShiftRegister<'a, Sr, A> {
+impl<'a, Sr: ShiftRegister, A: Alarm<'a>, const DIGITS: usize> AlarmClient
+    for SevenSegmentShiftRegister<'a, Sr, A, DIGITS>
+{
     fn alarm(&self) {
-        self.next_digit();
+        self.next_digit(DIGITS);
     }
 }
 
-impl<'a, Sr: ShiftRegister, A: Alarm<'a>> SevenSegment for SevenSegmentShiftRegister<'a, Sr, A> {
+impl<'a, Sr: ShiftRegister, A: Alarm<'a>, const DIGITS: usize> SevenSegment
+    for SevenSegmentShiftRegister<'a, Sr, A, DIGITS>
+{
     fn num_digits(&self) -> u8 {
-        4
+        DIGITS as u8
     }
 
     fn has_point(&self) -> bool {
         false
     }
 
-    fn write(&self, number: u16, _point: u8) -> Result<(), ErrorCode> {
+    fn write(&self, number: usize, _point: u8) -> Result<(), ErrorCode> {
         self.number.set(number as usize);
         self.activ.set(true);
         Ok(())
