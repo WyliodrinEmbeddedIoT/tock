@@ -24,6 +24,7 @@ pub mod led;
 pub mod low_level_debug;
 pub mod process_console;
 pub mod rng;
+pub mod sevensegment;
 pub mod spi_controller;
 pub mod spi_peripheral;
 pub mod virtualizers;

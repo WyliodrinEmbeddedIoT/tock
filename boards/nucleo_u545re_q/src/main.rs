@@ -6,23 +6,33 @@
 #![no_std]
 #![no_main]
 
+use core::cell::Cell;
+
+use capsules_extra::sevensegment::SevenSegmentShiftRegister;
+use capsules_extra::sr74hc::Sr74HC;
 use components::hmac_component_static;
 use kernel::capabilities::{self, MemoryAllocationCapability};
 use kernel::component::Component;
 use kernel::debug;
 use kernel::debug::PanicResources;
 use kernel::hil::gpio::{Configure, Output};
+use kernel::hil::sevensegment::SevenSegment;
+use kernel::hil::shift_register::ShiftRegister;
 use kernel::hil::symmetric_encryption::AES256;
+use kernel::hil::time::Alarm;
 use kernel::platform::chip::Chip;
 use kernel::platform::{KernelResources, SyscallDriverLookup};
-use kernel::utilities::StaticRef;
 use kernel::utilities::single_thread_value::SingleThreadValue;
+use kernel::utilities::{StaticRef, static_init};
 use kernel::{create_capability, static_init};
 
-use stm32u545::gpio::PinId;
+use stm32u545::gpio::{Pin, PinId};
 use stm32u545::usart::{USART1_BASE, UsartRegisters};
 
 pub mod io;
+
+const SEGMENT_MAP_DIGIT: [u8; 10] = [0x03, 0x9F, 0x25, 0x0D, 0x99, 0x49, 0x41, 0x1F, 0x01, 0x09];
+const SEVEN_SEGMENT: [u8; 4] = [0x8F, 0x4F, 0x2F, 0x1F];
 
 extern "C" {
     static _sappmem: u8;
@@ -46,7 +56,6 @@ static PANIC_RESOURCES: SingleThreadValue<PanicResources<ChipHw, ProcessPrinterI
 const PANIC_USART: StaticRef<UsartRegisters> = USART1_BASE;
 
 kernel::stack_size! {0x2000}
-
 struct NucleoU545RE {
     console: &'static capsules_core::console::Console<'static>,
     scheduler: &'static components::sched::round_robin::RoundRobinComponentType,
@@ -55,6 +64,18 @@ struct NucleoU545RE {
         'static,
         kernel::hil::led::LedHigh<'static, stm32u545::gpio::Pin<'static>>,
         1,
+    >,
+    seven_segment: &'static capsules_core::sevensegment::SevenSegmentDriver<
+        'static,
+        SevenSegmentShiftRegister<
+            'static,
+            Sr74HC<GpioHw>,
+            capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+                'static,
+                stm32u545::tim::Tim2<'static>,
+            >,
+            4,
+        >,
     >,
     button: &'static capsules_core::button::Button<'static, stm32u545::gpio::Pin<'static>>,
     alarm: &'static capsules_core::alarm::AlarmDriver<
@@ -99,6 +120,7 @@ impl SyscallDriverLookup for NucleoU545RE {
         match driver_num {
             capsules_core::console::DRIVER_NUM => f(Some(self.console)),
             capsules_core::led::DRIVER_NUM => f(Some(self.led)),
+            capsules_core::sevensegment::DRIVER_NUM => f(Some(self.seven_segment)),
             capsules_core::button::DRIVER_NUM => f(Some(self.button)),
             capsules_core::alarm::DRIVER_NUM => f(Some(self.alarm)),
             capsules_extra::pwm::DRIVER_NUM => f(Some(self.pwm)),
@@ -310,6 +332,14 @@ unsafe fn start() -> (
 
     // Board specific wiring
     set_pin_primary_functions(periphs);
+
+    let buzzer = periphs.gpio_b.pin(PinId::Pin03);
+    buzzer.set();
+    buzzer.make_output();
+
+    let latch = periphs.gpio_b.pin(PinId::Pin05);
+    let clock = periphs.gpio_a.pin(PinId::Pin08);
+    let data = periphs.gpio_c.pin(PinId::Pin07);
 
     // Create an adapter for the HASH peripheral
     // In this way it is ensured that only one mode is used by the peripheral
@@ -526,12 +556,12 @@ unsafe fn start() -> (
             2 => periphs.gpio_c.pin(PinId::Pin08), // D2
             // D3 is used for SPI clock
             // 3 => periphs.gpio_b.pin(PinId::Pin03), // D3
-            4 => periphs.gpio_b.pin(PinId::Pin05), // D4
+            //4 => periphs.gpio_b.pin(PinId::Pin05), // D4
             // D4 is used for PWM
             // 5 => periphs.gpio_b.pin(PinId::Pin04), // D5
             6 => periphs.gpio_b.pin(PinId::Pin10), // D6
-            7 => periphs.gpio_a.pin(PinId::Pin08), // D7
-            8 => periphs.gpio_c.pin(PinId::Pin07), // D8
+            //7 => periphs.gpio_a.pin(PinId::Pin08), // D7
+            //8 => periphs.gpio_c.pin(PinId::Pin07), // D8
             9 => periphs.gpio_c.pin(PinId::Pin06), // D9
             // D10 - D12 are used for SPI
             // 10 => periphs.gpio_c.pin(PinId::Pin09), // D10
@@ -593,6 +623,60 @@ unsafe fn start() -> (
         stm32u545::i2c::I2c
     ));
 
+    let display_alarm = static_init!(
+        capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+            'static,
+            stm32u545::tim::Tim2<'static>,
+        >,
+        capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm::new(alarm_mux)
+    );
+    //let display_alarm = static_buffer.0.write(VirtualMuxAlarm::new(alarm_mux));
+
+    display_alarm.setup();
+
+    let sr = static_init!(Sr74HC<GpioHw>, Sr74HC::new(latch, clock, data));
+    let display = static_init!(
+        SevenSegmentShiftRegister<
+            'static,
+            Sr74HC<GpioHw>,
+            capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+                'static,
+                stm32u545::tim::Tim2<'static>,
+            >,
+            4,
+        >,
+        SevenSegmentShiftRegister::new(
+            sr,
+            SEGMENT_MAP_DIGIT,
+            SEVEN_SEGMENT,
+            display_alarm,
+            Cell::new(0),
+            Cell::new(0),
+            0,
+            50,
+            Cell::new(false),
+        )
+    );
+
+    display_alarm.set_alarm_client(display);
+    display.init();
+
+    let seven_segment = static_init!(
+        capsules_core::sevensegment::SevenSegmentDriver<
+            'static,
+            SevenSegmentShiftRegister<
+                'static,
+                Sr74HC<GpioHw>,
+                capsules_core::virtualizers::virtual_alarm::VirtualMuxAlarm<
+                    'static,
+                    stm32u545::tim::Tim2<'static>,
+                >,
+                4,
+            >,
+        >,
+        capsules_core::sevensegment::SevenSegmentDriver::new(display)
+    );
+
     // Platform and Interrupts
     let platform = static_init!(
         NucleoU545RE,
@@ -602,6 +686,7 @@ unsafe fn start() -> (
                 .finalize(components::round_robin_component_static!(NUM_PROCS)),
             systick: cortexm33::systick::SysTick::new(),
             led,
+            seven_segment,
             i2c,
             button,
             alarm,
@@ -625,6 +710,12 @@ unsafe fn start() -> (
     PANIC_RESOURCES.get().map(|resources| {
         resources.chip.put(chip);
     });
+
+    /*
+
+    let _ = display.write(1234, 0);
+
+    */
 
     // Symbols for linker
     extern "C" {
